@@ -1,0 +1,8 @@
+# Ignore contents of data folder, but keep the folder
+data/*
+!data/.gitkeep
+
+# Ignore cache directories
+**/__pycache__/
+**/.pytest_cache/
+verification_output.txt
