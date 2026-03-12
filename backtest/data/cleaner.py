@@ -12,16 +12,27 @@ class CleaningReport:
     partial_bars_trimmed: int = 0
     warnings: list[str] = field(default_factory=list)
 
+    # Gap breakdown buckets (populated by _detect_gaps)
+    gaps_minor: int = 0       # 2-5 min (data noise)
+    gaps_session: int = 0     # 6-360 min (early closes, holidays)
+    gaps_large: int = 0       # >360 min (multi-day closures)
+
     def print(self):
         print("--- Cleaning Report ---")
-        print(f"  Duplicate timestamps removed : {self.duplicate_timestamps_removed}")
-        print(f"  Gaps found                   : {self.gaps_found}")
-        print(f"  Anomalous bars flagged        : {self.anomalous_bars_flagged}")
-        print(f"  Partial bars trimmed          : {self.partial_bars_trimmed}")
-        if self.warnings:
-            print("  Warnings:")
-            for w in self.warnings:
-                print(f"    - {w}")
+        print(f"  Duplicates removed  : {self.duplicate_timestamps_removed}")
+        if self.gaps_found:
+            print(f"  Gaps found          : {self.gaps_found}  "
+                  f"(minor 2-5m: {self.gaps_minor}  "
+                  f"session: {self.gaps_session}  "
+                  f"large >6h: {self.gaps_large})")
+        else:
+            print(f"  Gaps found          : 0")
+        print(f"  Anomalous bars      : {self.anomalous_bars_flagged}")
+        print(f"  Partial bars trimmed: {self.partial_bars_trimmed}")
+        # Only print non-gap warnings (zero-range, extreme range, etc.)
+        other = [w for w in self.warnings if not w.startswith("Gap detected")]
+        for w in other:
+            print(f"  ! {w}")
         print("-----------------------")
 
 
@@ -81,6 +92,7 @@ class DataCleaner:
         """
         Detect gaps larger than the expected bar interval.
         Gaps during the daily maintenance window (16:00–18:00 ET) are ignored.
+        Buckets gaps by size rather than printing each one individually.
         """
         expected_delta = pd.Timedelta(minutes=timeframe_minutes)
         deltas = df.index.to_series().diff().dropna()
@@ -90,21 +102,22 @@ class DataCleaner:
             if delta <= expected_delta:
                 continue
 
-            # Ignore the daily 16:00–18:00 maintenance window
             prev_time = (timestamp - delta).time()
             if self._is_maintenance_window(prev_time):
                 continue
 
-            # Ignore weekend gaps (Friday close to Sunday open)
             prev_ts = timestamp - delta
             if prev_ts.weekday() == 4:  # Friday
                 continue
 
             gaps += 1
-            report.warnings.append(
-                f"Gap detected: {timestamp - delta} -> {timestamp} "
-                f"({int(delta.total_seconds() / 60)} min)"
-            )
+            minutes = int(delta.total_seconds() / 60)
+            if minutes <= 5:
+                report.gaps_minor += 1
+            elif minutes <= 360:
+                report.gaps_session += 1
+            else:
+                report.gaps_large += 1
 
         report.gaps_found = gaps
 
