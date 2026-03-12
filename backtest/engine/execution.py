@@ -234,7 +234,11 @@ class ExecutionEngine:
 
             # Normal intrabar SL check
             if sl is not None and bar.low <= sl:
-                exit_price = max(bar.open, sl)  # gap protection
+                # Gap protection: if bar opened below SL, fill at open (worse).
+                # Otherwise fill at SL level.
+                # Long SL is below entry, so adverse move is downward.
+                # Worse price = lower price = min(open, sl).
+                exit_price = min(bar.open, sl)
                 return ExitResult(exit_price=exit_price, exit_reason=ExitReason.SL)
 
             # Normal intrabar TP check (only if SL not hit)
@@ -254,7 +258,10 @@ class ExecutionEngine:
 
             # Normal intrabar SL check
             if sl is not None and bar.high >= sl:
-                exit_price = min(bar.open, sl)
+                # Gap protection: if bar opened above SL, fill at open (worse).
+                # Short SL is above entry, so adverse move is upward.
+                # Worse price = higher price = max(open, sl).
+                exit_price = max(bar.open, sl)
                 return ExitResult(exit_price=exit_price, exit_reason=ExitReason.SL)
 
             # Normal intrabar TP check
