@@ -230,6 +230,34 @@ class DataLoader:
 
         return bar_map
 
+    def build_market_data(self, df_1m: pd.DataFrame, df_5m: pd.DataFrame) -> MarketData:
+        """
+        Build a MarketData object from already-cleaned DataFrames.
+        Used when loading from parquet cache — skips file parsing and cleaning.
+        """
+        bar_map = self._build_bar_map(df_1m, df_5m)
+        arrays_1m = self._extract_arrays(df_1m)
+        arrays_5m = self._extract_arrays(df_5m)
+        trading_dates = sorted(df_1m.index.normalize().unique().tolist())
+        trading_dates = [ts.date() for ts in trading_dates]
+
+        return MarketData(
+            df_1m=df_1m,
+            df_5m=df_5m,
+            open_1m=arrays_1m["open"],
+            high_1m=arrays_1m["high"],
+            low_1m=arrays_1m["low"],
+            close_1m=arrays_1m["close"],
+            volume_1m=arrays_1m["volume"],
+            open_5m=arrays_5m["open"],
+            high_5m=arrays_5m["high"],
+            low_5m=arrays_5m["low"],
+            close_5m=arrays_5m["close"],
+            volume_5m=arrays_5m["volume"],
+            bar_map=bar_map,
+            trading_dates=trading_dates,
+        )
+
     def _extract_arrays(self, df: pd.DataFrame) -> dict[str, np.ndarray]:
         """Pre-extract OHLCV as numpy arrays for fast loop access."""
         return {

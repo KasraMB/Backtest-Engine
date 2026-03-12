@@ -1,0 +1,488 @@
+from __future__ import annotations
+import logging
+from datetime import time
+from typing import Optional, Type, Union
+
+import numpy as np
+
+from backtest.data.market_data import MarketData
+from backtest.engine.execution import Bar, ExecutionEngine, PendingOrder
+from backtest.engine.risk import Account, RiskManager
+from backtest.runner.config import RunConfig
+from backtest.strategy.base import BaseStrategy
+from backtest.strategy.enums import ExitReason, OrderType
+from backtest.strategy.order import Order
+from backtest.strategy.update import OpenPosition, Trade
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# RunResult — raw output of a single backtest run
+# ---------------------------------------------------------------------------
+
+class RunResult:
+    """
+    Raw output of a single backtest run.
+    Passed to the PerformanceEngine in Phase 6 to compute metrics.
+    """
+
+    def __init__(
+        self,
+        trades: list[Trade],
+        equity_curve: list[float],
+        config: RunConfig,
+        strategy_name: str,
+    ):
+        self.trades = trades
+        self.equity_curve = equity_curve
+        self.config = config
+        self.strategy_name = strategy_name
+
+    @property
+    def n_trades(self) -> int:
+        return len(self.trades)
+
+    @property
+    def total_net_pnl(self) -> float:
+        return sum(t.net_pnl_dollars for t in self.trades)
+
+    @property
+    def win_rate(self) -> float:
+        if not self.trades:
+            return 0.0
+        return sum(1 for t in self.trades if t.is_winner) / len(self.trades)
+
+    def print_summary(self) -> None:
+        print(f"\n{'='*50}")
+        print(f"  Strategy : {self.strategy_name}")
+        print(f"  Trades   : {self.n_trades}")
+        print(f"  Win Rate : {self.win_rate:.1%}")
+        print(f"  Net PnL  : ${self.total_net_pnl:,.2f}")
+        print(f"  Final Eq : ${self.equity_curve[-1]:,.2f}" if self.equity_curve else "")
+        print(f"{'='*50}")
+
+    def print_trades(self, max_trades: int = 20) -> None:
+        """Print the first N trades in a readable format."""
+        print(f"\n{'─'*90}")
+        print(f"{'#':>4}  {'Entry Bar':>9}  {'Exit Bar':>8}  {'Dir':>4}  "
+              f"{'Qty':>4}  {'Entry':>8}  {'Exit':>8}  "
+              f"{'PnL pts':>8}  {'Net $':>9}  {'Reason'}")
+        print(f"{'─'*90}")
+        for idx, t in enumerate(self.trades[:max_trades]):
+            direction = "LONG" if t.direction == 1 else "SHORT"
+            print(
+                f"{idx+1:>4}  {t.entry_bar:>9}  {t.exit_bar:>8}  {direction:>4}  "
+                f"{t.contracts:>4.0f}  {t.entry_price:>8.2f}  {t.exit_price:>8.2f}  "
+                f"{t.pnl_points:>+8.2f}  {t.net_pnl_dollars:>+9.2f}  {t.exit_reason.name}"
+            )
+        if len(self.trades) > max_trades:
+            print(f"  ... and {len(self.trades) - max_trades} more trades")
+        print(f"{'─'*90}")
+
+
+# ---------------------------------------------------------------------------
+# Active bar set builder
+# ---------------------------------------------------------------------------
+
+def build_active_bar_set(
+    data: MarketData,
+    trading_hours: Optional[list[tuple[time, time]]],
+) -> set[int]:
+    """
+    Pre-compute the set of 1m bar indices that fall within the strategy's
+    declared trading_hours. Used to gate generate_signals calls.
+
+    If trading_hours is None, returns all bar indices.
+    """
+    if trading_hours is None:
+        return set(range(len(data.df_1m)))
+
+    active = set()
+    timestamps = data.df_1m.index
+
+    for i, ts in enumerate(timestamps):
+        t = ts.time()
+        for start, end in trading_hours:
+            if start <= end:
+                if start <= t <= end:
+                    active.add(i)
+                    break
+            else:
+                # Overnight window: e.g. (18:00, 08:00)
+                if t >= start or t <= end:
+                    active.add(i)
+                    break
+
+    return active
+
+
+# ---------------------------------------------------------------------------
+# EOD bar detection
+# ---------------------------------------------------------------------------
+
+def build_eod_bar_set(data: MarketData, eod_exit_time: time) -> set[int]:
+    """
+    Pre-compute bar indices that are the last bar of each session at or after
+    eod_exit_time. These trigger forced EOD exits.
+
+    Strategy: for each trading date, find the last bar whose time >= eod_exit_time.
+    """
+    eod_bars = set()
+    timestamps = data.df_1m.index
+
+    from collections import defaultdict
+    date_bars: dict = defaultdict(list)
+
+    for i, ts in enumerate(timestamps):
+        date_bars[ts.date()].append((i, ts.time()))
+
+    for bars in date_bars.values():
+        # Find bars at or after eod_exit_time
+        eod_candidates = [(i, t) for i, t in bars if t >= eod_exit_time]
+        if eod_candidates:
+            # The last bar on the day that is at or after eod time
+            last_idx = eod_candidates[-1][0]
+            eod_bars.add(last_idx)
+        else:
+            # Session ended before eod_exit_time (e.g. holiday early close)
+            # treat the last bar of the session as EOD
+            eod_bars.add(bars[-1][0])
+
+    return eod_bars
+
+
+# ---------------------------------------------------------------------------
+# Core bar loop
+# ---------------------------------------------------------------------------
+
+def _run_single(
+    strategy_class: Type[BaseStrategy],
+    data: MarketData,
+    config: RunConfig,
+) -> RunResult:
+    """
+    Execute the full bar loop for a single strategy + config combination.
+
+    Bar processing order (per bar i):
+      1. If pending order: check expiry -> check fill -> if filled:
+           validate SL/TP at fill, resolve contracts, check same-bar exit
+           if same-bar exit: record trade, clear position -> step 4
+           else: create OpenPosition -> step 2
+      2. If position open:
+           manage_position() -> apply PositionUpdate -> update trail
+           check exits (SL -> TP -> EOD -> signal-based)
+           if exit: record trade, clear position -> step 4
+      3. If no position AND i in active_bars AND i >= min_lookback:
+           generate_signals() -> if Order: validate, resolve size, register pending
+      4. Advance
+    """
+    # --- Setup ---
+    strategy = strategy_class(config.params)
+    engine = ExecutionEngine(
+        slippage_points=config.slippage_points,
+        commission_per_contract=config.commission_per_contract,
+        eod_exit_time=config.eod_exit_time,
+    )
+    risk_manager = RiskManager()
+    account = Account(balance=config.starting_capital)
+
+    active_bars = build_active_bar_set(data, strategy.trading_hours)
+    eod_bars = build_eod_bar_set(data, config.eod_exit_time)
+
+    # Pre-extract numpy arrays for the hot path
+    opens  = data.open_1m
+    highs  = data.high_1m
+    lows   = data.low_1m
+    closes = data.close_1m
+    n_bars = len(opens)
+
+    trades: list[Trade] = []
+    equity_curve: list[float] = [account.balance]
+
+    position: Optional[OpenPosition] = None
+    pending: Optional[PendingOrder] = None
+
+    # --- Main loop ---
+    for i in range(n_bars):
+        bar = Bar(
+            index=i,
+            open=opens[i],
+            high=highs[i],
+            low=lows[i],
+            close=closes[i],
+            bar_time=data.df_1m.index[i].time(),
+        )
+        is_eod = i in eod_bars
+
+        # ── Step 1: Pending order ──────────────────────────────────────────
+        if pending is not None:
+
+            # Check expiry first
+            if engine.tick_expiry(pending):
+                logger.debug(f"Bar {i}: pending order expired, cancelled")
+                pending = None
+
+            else:
+                # Market orders are handled at signal time (step 3), not here.
+                # Non-market orders: attempt fill
+                if pending.order.order_type != OrderType.MARKET:
+                    fill = engine.attempt_fill(pending, bar)
+                else:
+                    fill = None  # shouldn't reach here for MARKET
+
+                if fill is not None:
+                    fill.contracts = risk_manager.resolve_contracts(
+                        pending.order, account, fill.fill_price
+                    )
+
+                    # Validate SL/TP against actual fill price
+                    _validate_sl_tp_at_fill(pending.order, fill.fill_price)
+
+                    if position is not None:
+                        # Delta resolution — existing position
+                        trade_or_position = _apply_delta(
+                            engine, pending.order, fill, position,
+                            bar, i, trades, account
+                        )
+                        position = trade_or_position  # None if fully closed
+                    else:
+                        # New position from scratch
+                        position = _open_position(pending.order, fill, i)
+
+                        # Check same-bar exit
+                        same_bar = engine.check_same_bar_exit(position, bar, fill.fill_price)
+                        if same_bar is not None:
+                            trade = engine.build_trade(position, i, same_bar.exit_price, same_bar.exit_reason)
+                            _record_trade(trade, trades, account, equity_curve)
+                            position = None
+
+                    pending = None  # order consumed regardless
+
+        # ── Step 2: Position management ────────────────────────────────────
+        if position is not None:
+
+            # manage_position hook
+            update = strategy.manage_position(data, i, position)
+            if update is not None:
+                forced = engine.apply_position_update(position, update, bar.close)
+                if forced is not None:
+                    trade = engine.build_trade(position, i, forced.exit_price, forced.exit_reason)
+                    _record_trade(trade, trades, account, equity_curve)
+                    position = None
+
+        if position is not None:
+            # Normal exit checks (trail update happens inside check_exits)
+            exit_result = engine.check_exits(position, bar, is_last_bar_of_session=is_eod)
+            if exit_result is not None:
+                trade = engine.build_trade(position, i, exit_result.exit_price, exit_result.exit_reason)
+                _record_trade(trade, trades, account, equity_curve)
+                position = None
+
+        # ── Step 3: Signal generation ──────────────────────────────────────
+        if position is None and pending is None:
+            if i >= strategy.min_lookback and i in active_bars:
+                order = strategy.generate_signals(data, i)
+                if order is not None:
+                    if order.order_type == OrderType.MARKET:
+                        # Market orders fill immediately at bar close
+                        fill_price = bar.close
+                        contracts = risk_manager.resolve_contracts(order, account, fill_price)
+                        _validate_sl_tp_at_fill(order, fill_price)
+
+                        from backtest.engine.execution import FillResult
+                        fill = FillResult(fill_price=fill_price, contracts=contracts)
+                        position = _open_position(order, fill, i)
+
+                        # Check same-bar exit for market orders too
+                        same_bar = engine.check_same_bar_exit(position, bar, fill_price)
+                        if same_bar is not None:
+                            trade = engine.build_trade(position, i, same_bar.exit_price, same_bar.exit_reason)
+                            _record_trade(trade, trades, account, equity_curve)
+                            position = None
+                    else:
+                        # Limit/Stop/StopLimit: register as pending
+                        bars_remaining = order.expiry_bars  # None = GTC
+                        pending = PendingOrder(
+                            order=order,
+                            registered_bar=i,
+                            bars_remaining=bars_remaining,
+                        )
+
+        # ── Step 4: Advance (equity curve snapshot) ─────────────────────────
+        # Mark-to-market the open position at bar close
+        if position is not None:
+            unrealized = _unrealized_pnl(position, bar.close)
+            equity_curve.append(account.balance + unrealized)
+        else:
+            equity_curve.append(account.balance)
+
+    # Force-close any position still open at end of data
+    if position is not None:
+        last_bar = Bar(
+            index=n_bars - 1,
+            open=opens[-1], high=highs[-1], low=lows[-1], close=closes[-1],
+            bar_time=data.df_1m.index[-1].time(),
+        )
+        trade = engine.build_trade(position, n_bars - 1, closes[-1], ExitReason.FORCED_EXIT)
+        _record_trade(trade, trades, account, equity_curve)
+        position = None
+
+    return RunResult(
+        trades=trades,
+        equity_curve=equity_curve,
+        config=config,
+        strategy_name=strategy_class.__name__,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
+
+def run_backtest(
+    strategy_class: Type[BaseStrategy],
+    config: Union[RunConfig, list[RunConfig]],
+    data: MarketData = None,
+) -> Union[RunResult, list[RunResult]]:
+    """
+    Run a backtest for the given strategy class and config(s).
+
+    Args:
+        strategy_class: The strategy class (not an instance — runner instantiates fresh).
+        config:         A single RunConfig, or a list for grid search.
+        data:           Pre-loaded MarketData. If None, raises ValueError
+                        (data loading is the caller's responsibility in Phase 4).
+
+    Returns:
+        RunResult for a single config, or list[RunResult] for grid search.
+    """
+    if data is None:
+        raise ValueError("data must be provided. Load it with DataLoader first.")
+
+    if isinstance(config, list):
+        return [_run_single(strategy_class, data, c) for c in config]
+    else:
+        return _run_single(strategy_class, data, config)
+
+
+# ---------------------------------------------------------------------------
+# Private helpers
+# ---------------------------------------------------------------------------
+
+def _open_position(order: Order, fill, entry_bar: int) -> OpenPosition:
+    """Create an OpenPosition from a filled order."""
+    return OpenPosition(
+        direction=order.direction,
+        entry_price=fill.fill_price,
+        entry_bar=entry_bar,
+        contracts=fill.contracts,
+        sl_price=order.sl_price,
+        tp_price=order.tp_price,
+        trail_points=order.trail_points,
+        trail_activation_points=order.trail_activation_points,
+    )
+
+
+def _record_trade(
+    trade: Trade,
+    trades: list[Trade],
+    account: Account,
+    equity_curve: list[float],
+) -> None:
+    """Record a completed trade and update account balance."""
+    trades.append(trade)
+    account.balance += trade.net_pnl_dollars
+    equity_curve.append(account.balance)
+
+
+def _unrealized_pnl(position: OpenPosition, current_price: float) -> float:
+    """Mark-to-market PnL for an open position."""
+    from backtest.strategy.update import POINT_VALUE
+    return (current_price - position.entry_price) * position.direction * position.contracts * POINT_VALUE
+
+
+def _validate_sl_tp_at_fill(order: Order, fill_price: float) -> None:
+    """
+    Validate SL/TP against actual fill price. Log warnings for violations
+    but don't crash — the order has already filled.
+    """
+    if order.sl_price is not None:
+        if order.direction == 1 and order.sl_price >= fill_price:
+            logger.warning(
+                f"SL {order.sl_price} is at or above fill price {fill_price} on long — "
+                f"position will exit immediately"
+            )
+        elif order.direction == -1 and order.sl_price <= fill_price:
+            logger.warning(
+                f"SL {order.sl_price} is at or below fill price {fill_price} on short — "
+                f"position will exit immediately"
+            )
+
+    if order.tp_price is not None:
+        if order.direction == 1 and order.tp_price <= fill_price:
+            logger.warning(
+                f"TP {order.tp_price} is at or below fill price {fill_price} on long"
+            )
+        elif order.direction == -1 and order.tp_price >= fill_price:
+            logger.warning(
+                f"TP {order.tp_price} is at or above fill price {fill_price} on short"
+            )
+
+
+def _apply_delta(
+    engine: ExecutionEngine,
+    order: Order,
+    fill,
+    position: OpenPosition,
+    bar: Bar,
+    bar_idx: int,
+    trades: list[Trade],
+    account: Account,
+) -> Optional[OpenPosition]:
+    """
+    Apply delta resolution when a signal fires while a position is open.
+    Returns the new OpenPosition (or None if fully closed with no new open).
+    """
+    equity_curve_stub: list[float] = []  # not used here, caller manages equity
+
+    contracts_to_close, contracts_to_open = engine.resolve_delta(
+        order, fill.contracts, position
+    )
+
+    new_position = position
+
+    if contracts_to_close > 0:
+        # Partial or full close
+        if contracts_to_close >= position.contracts:
+            # Full close
+            trade = engine.build_trade(position, bar_idx, fill.fill_price, ExitReason.SIGNAL)
+            trades.append(trade)
+            account.balance += trade.net_pnl_dollars
+            new_position = None
+        else:
+            # Partial close — reduce contract count, record partial trade
+            partial = OpenPosition(
+                direction=position.direction,
+                entry_price=position.entry_price,
+                entry_bar=position.entry_bar,
+                contracts=contracts_to_close,
+                sl_price=position.sl_price,
+                tp_price=position.tp_price,
+                trail_points=position.trail_points,
+                trail_activation_points=position.trail_activation_points,
+                trail_sl_price=position.trail_sl_price,
+                trail_watermark=position.trail_watermark,
+            )
+            trade = engine.build_trade(partial, bar_idx, fill.fill_price, ExitReason.SIGNAL)
+            trades.append(trade)
+            account.balance += trade.net_pnl_dollars
+            position.contracts -= contracts_to_close
+            new_position = position
+
+    if contracts_to_open > 0:
+        from backtest.engine.execution import FillResult
+        new_fill = FillResult(fill_price=fill.fill_price, contracts=contracts_to_open)
+        new_position = _open_position(order, new_fill, bar_idx)
+
+    return new_position
