@@ -206,27 +206,28 @@ class DataLoader:
         """
         For each 1m bar at index i, find the index of the last COMPLETED 5m bar.
 
-        A 5m bar is complete when the next 5m bar has started — meaning we can
-        only see a 5m bar at 9:30 once the 9:35 bar has begun.
+        A 5m bar starting at T is complete once we reach T + 5min.
+        Uses vectorized numpy searchsorted — O(N log M) instead of O(N) Python loop.
 
         Returns an int array of length len(df_1m).
         -1 means no completed 5m bar is visible yet.
         """
-        bar_map = np.full(len(df_1m), -1, dtype=np.int64)
-        timestamps_5m = df_5m.index
+        ts_1m = df_1m.index.asi8  # int64 ticks since epoch (resolution varies by pandas version)
+        ts_5m = df_5m.index.asi8
 
-        current_5m_idx = -1
+        # Auto-detect tick resolution by comparing to known nanosecond value.
+        # Pandas < 2.0 uses nanoseconds; Pandas >= 2.0 uses the index's native resolution
+        # (often microseconds for tz-aware DatetimeIndex).
+        known_ns = int(df_5m.index[0].timestamp() * 1e9)
+        ratio     = known_ns / ts_5m[0]           # 1000 = us ticks, 1 = ns ticks
+        five_min_ticks = np.int64(round(5 * 60 * 1e9 / ratio))
 
-        for i, ts_1m in enumerate(df_1m.index):
-            # Advance the 5m pointer: find the last 5m bar that STARTED before ts_1m
-            # A 5m bar starting at T is complete once we reach T + 5min
-            while (
-                current_5m_idx + 1 < len(timestamps_5m)
-                and timestamps_5m[current_5m_idx + 1] + pd.Timedelta(minutes=5) <= ts_1m
-            ):
-                current_5m_idx += 1
+        completion_times = ts_5m + five_min_ticks
 
-            bar_map[i] = current_5m_idx
+        # count = number of 5m bars whose completion time <= current 1m timestamp
+        # last completed index = count - 1  (-1 = none yet)
+        counts  = np.searchsorted(completion_times, ts_1m, side="right")
+        bar_map = counts.astype(np.int64) - 1
 
         return bar_map
 

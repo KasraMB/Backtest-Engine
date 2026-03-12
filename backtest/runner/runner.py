@@ -317,7 +317,9 @@ def _run_single(
         else:
             equity_curve.append(account.balance)
 
-    # Force-close any position still open at end of data
+    # Force-close any position still open at end of data.
+    # Step 4 already appended the last bar's mark-to-market snapshot, so we
+    # overwrite that final point with the settled realised value after closing.
     if position is not None:
         last_bar = Bar(
             index=n_bars - 1,
@@ -326,6 +328,7 @@ def _run_single(
         )
         trade = engine.build_trade(position, n_bars - 1, closes[-1], ExitReason.FORCED_EXIT)
         _record_trade(trade, trades, account, equity_curve)
+        equity_curve[-1] = account.balance   # overwrite last MTM with final realised
         position = None
 
     return RunResult(
@@ -344,6 +347,7 @@ def run_backtest(
     strategy_class: Type[BaseStrategy],
     config: Union[RunConfig, list[RunConfig]],
     data: MarketData = None,
+    validate: bool = True,
 ) -> Union[RunResult, list[RunResult]]:
     """
     Run a backtest for the given strategy class and config(s).
@@ -351,14 +355,28 @@ def run_backtest(
     Args:
         strategy_class: The strategy class (not an instance — runner instantiates fresh).
         config:         A single RunConfig, or a list for grid search.
-        data:           Pre-loaded MarketData. If None, raises ValueError
-                        (data loading is the caller's responsibility in Phase 4).
+        data:           Pre-loaded MarketData. If None, raises ValueError.
+        validate:       Run the validation layer before the backtest (default True).
+                        Set to False to skip for speed during grid search after
+                        initial validation passes.
 
     Returns:
         RunResult for a single config, or list[RunResult] for grid search.
     """
     if data is None:
         raise ValueError("data must be provided. Load it with DataLoader first.")
+
+    # Run validation on the first config (or the only config)
+    if validate:
+        from backtest.runner.validator import Validator, ValidationError
+        first_config = config[0] if isinstance(config, list) else config
+        report = Validator().run(strategy_class, first_config, data)
+        report.print(strategy_class.__name__)
+        if not report.passed:
+            raise ValidationError(
+                f"Strategy {strategy_class.__name__} failed validation. "
+                f"Fix the above issues before running a full backtest."
+            )
 
     if isinstance(config, list):
         return [_run_single(strategy_class, data, c) for c in config]
@@ -390,10 +408,15 @@ def _record_trade(
     account: Account,
     equity_curve: list[float],
 ) -> None:
-    """Record a completed trade and update account balance."""
+    """Record a completed trade and update account balance.
+
+    Does NOT append to equity_curve — step 4 of the bar loop appends a
+    mark-to-market snapshot every bar.  Appending here too inserts an extra
+    settled-cash point mid-bar, causing duplicate indices and a transient
+    dip to realised cash whenever a position closes intra-bar.
+    """
     trades.append(trade)
     account.balance += trade.net_pnl_dollars
-    equity_curve.append(account.balance)
 
 
 def _unrealized_pnl(position: OpenPosition, current_price: float) -> float:
