@@ -631,19 +631,6 @@ function toggleReverse(rev) {
       }}
     }});
 
-    // Fib levels (OTE=gold, STDV=orange, SESSION_OTE=cyan)
-    if (w.fibs && w.fibs.length > 0) {{
-      var fibColors = {{ 'OTE': 'rgba(56,139,253,0.65)', 'STDV': 'rgba(38,166,154,0.65)', 'SESSION_OTE': 'rgba(38,166,154,0.65)' }};
-      w.fibs.forEach(function(fib) {{
-        var fc = fibColors[fib.t] || 'rgba(180,180,180,0.45)';
-        shapes.push({{
-          type: 'line', xref: 'x', yref: 'y',
-          x0: x0, x1: x1, y0: fib.p, y1: fib.p,
-          line: {{ color: fc, width: 1, dash: 'dashdot' }}
-        }});
-      }});
-    }}
-
     // ── Annotations ───────────────────────────────────────────────────────────
     var absPnl = Math.abs(w.pnl).toLocaleString('en-US', {{maximumFractionDigits: 0}});
     var pnlStr = (w.pnl >= 0 ? '+$' : '-$') + absPnl;
@@ -698,6 +685,34 @@ function toggleReverse(rev) {
         font: {{size: 11, color: '#ef5350'}},
         showarrow: false, xanchor: 'left',
         bgcolor: 'rgba(22,27,34,0.85)'
+      }});
+    }}
+
+    // Fib levels (OTE=purple, STDV=blue, SESSION_OTE=yellow)
+    if (w.fibs && w.fibs.length > 0) {{
+      var fibColors = {{ 'OTE': 'rgba(160,80,255,0.70)', 'STDV': 'rgba(56,139,253,0.70)', 'SESSION_OTE': 'rgba(230,200,0,0.80)' }};
+      var fibLabels = {{
+        'OTE':         function(v) {{ return 'OTE ' + (v * 100).toFixed(1) + '%'; }},
+        'STDV':        function(v) {{ return 'STDV ' + v.toFixed(2) + 'x'; }},
+        'SESSION_OTE': function(v) {{ return 'Sess OTE ' + (v * 100).toFixed(1) + '%'; }}
+      }};
+      w.fibs.forEach(function(fib) {{
+        var fc = fibColors[fib.t] || 'rgba(180,180,180,0.45)';
+        shapes.push({{
+          type: 'line', xref: 'x', yref: 'y',
+          x0: x0, x1: x1, y0: fib.p, y1: fib.p,
+          line: {{ color: fc, width: 1, dash: 'dashdot' }}
+        }});
+        var lbFn = fibLabels[fib.t];
+        if (lbFn) {{
+          anns.push({{
+            xref: 'x', yref: 'y', x: x0, y: fib.p,
+            text: lbFn(fib.v) + ' ',
+            font: {{ size: 9, color: fc }},
+            showarrow: false, xanchor: 'right',
+            bgcolor: 'rgba(22,27,34,0.75)'
+          }});
+        }}
       }});
     }}
 
