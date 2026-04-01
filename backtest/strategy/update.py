@@ -51,7 +51,8 @@ class OpenPosition:
     mfe_points:   float = 0.0  # max favorable excursion from entry (points, always >= 0)
     trade_reason: str   = ''   # human-readable entry rationale set by the strategy
     order_placed_bar: Optional[int] = None  # bar index when the limit/stop order was registered
-    fib_levels:   list  = field(default_factory=list)  # [{p, t, d, v}] captured at signal time
+    fib_levels:      list = field(default_factory=list)  # [{p, t, d, v}] captured at signal time
+    signal_features: dict = field(default_factory=dict)  # ML feature snapshot at signal time
 
     def is_long(self) -> bool:
         return self.direction == 1
@@ -126,7 +127,8 @@ class Trade:
     mfe_points:   float = 0.0  # max favorable excursion from entry (points)
     trade_reason: str   = ''   # human-readable entry rationale set by the strategy
     order_placed_bar: Optional[int] = None  # bar index when the limit/stop order was registered
-    fib_levels:   list  = field(default_factory=list)  # [{p, t, d, v}] captured at signal time
+    fib_levels:      list = field(default_factory=list)  # [{p, t, d, v}] captured at signal time
+    signal_features: dict = field(default_factory=dict)  # ML feature snapshot at signal time
 
     @property
     def _initial_risk_points(self) -> Optional[float]:

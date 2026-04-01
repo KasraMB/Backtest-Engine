@@ -777,6 +777,11 @@ class ICTSMCStrategy(BaseStrategy):
         self.po3_max_accum_gap_bars:     int   = p.get('po3_max_accum_gap_bars', 10)
         self.po3_min_manipulation_size_atr_mult: float = p.get('po3_min_manipulation_size_atr_mult', 0.0)
 
+        # ML filter — optional trained MLModel instance.
+        # When set, generate_signals queries the model before consuming any zone.
+        # Skipped signals leave the zone unconsumed so it can fire on a later bar.
+        self.ml_model = p.get('ml_model', None)
+
         # POI detection lookback limit (5m bars).  500 ≈ 2 weeks; keeps daily
         # POI recomputation O(constant) instead of O(growing history).
         self.poi_lookback_5m_bars: int = p.get('poi_lookback_5m_bars', 500)
@@ -861,13 +866,15 @@ class ICTSMCStrategy(BaseStrategy):
         self._phase1_date_ord:    int  = -1
         self._validated_levels:   List[ValidLevel] = []
         self._session_ote_groups: List[SessionOTEGroup] = []
-        self._session_atr:        float = 14.0   # fallback; overwritten by Phase 1
+        self._session_atr:          float = 14.0   # fallback; overwritten by Phase 1
+        self._overnight_range_atr:  float = 0.0    # overnight H-L / ATR; set in Phase 1
 
         # Daily trade limit tracking
         self._daily_trade_count: int  = 0
         self._daily_won:         bool = False
         self._consumed_afz_bars: set  = set()   # furthest_bar indices used for any order today
-        self._pending_fib_levels: dict = {}     # bar_index → fib level list, for on_fill
+        self._pending_fib_levels:    dict = {}  # bar_index → fib level list, for on_fill
+        self._pending_signal_features: dict = {}  # bar_index → signal_features dict
 
         # Position management context
         self._pos_ctx: Optional[PosCtx] = None
@@ -1612,6 +1619,14 @@ class ICTSMCStrategy(BaseStrategy):
         ov_idx_1m          = np.where(ov_mask_1m)[0]
         overnight_start_1m = int(ov_idx_1m[0]) if len(ov_idx_1m) > 0 else 0
 
+        # Overnight range — used as an ML feature
+        if overnight_start_1m < n_1m:
+            _ov_h = data.high_1m[overnight_start_1m:n_1m].max()
+            _ov_l = data.low_1m[overnight_start_1m:n_1m].min()
+            self._overnight_range_atr = float((_ov_h - _ov_l) / max(_phase1_atr, 1e-9))
+        else:
+            self._overnight_range_atr = 0.0
+
         # Detect manipulation legs — timeframe determined by manip_leg_timeframe
         if self.manip_leg_timeframe == '1m':
             # Convert 5m zone boundaries to 1m space.
@@ -1922,61 +1937,68 @@ class ICTSMCStrategy(BaseStrategy):
     # TP computation
     # ------------------------------------------------------------------
 
-    def _compute_tp(self, trade_dir: int, entry: float, sl: float,
-                     zone_top: float, zone_bot: float,
-                     extreme: float) -> Optional[float]:
+    def _compute_tp_candidates(
+        self, trade_dir: int, entry: float, sl: float,
+        zone_top: float, zone_bot: float, extreme: float,
+    ) -> List[Tuple[float, bool]]:
         """
-        Compute TP as the closest STDV extension from the AFZ zone that:
-        1) Has swing or POI confluence on 1m/5m/15m/30m
-        2) Gives RR >= min_rr
-        extreme = lowestLow (long) or highestHigh (short).
+        Return all STDV extension levels that meet min_rr, as (price, has_confluence).
+        Ordered nearest → farthest.  Empty list if geometry is invalid.
         """
         risk = abs(entry - sl)
         if risk < 1e-9:
-            return None
+            return []
 
         tol = self.tp_confluence_tolerance_atr_mult * self._session_atr
 
         if trade_dir == 1:
-            # Bullish: fib_range = zone_top - lowestLow; extensions above zone_top
             fib_range = zone_top - extreme
             if fib_range <= 0:
-                return None
-            tp_candidates = [zone_top + m * fib_range for m in STDV_MULTS]
+                return []
+            prices     = [zone_top + m * fib_range for m in STDV_MULTS]
             sw_targets = self._sw_lo_all
         else:
-            # Bearish: fib_range = highestHigh - zone_bot; extensions below zone_bot
             fib_range = extreme - zone_bot
             if fib_range <= 0:
-                return None
-            tp_candidates = [zone_bot - m * fib_range for m in STDV_MULTS]
+                return []
+            prices     = [zone_bot - m * fib_range for m in STDV_MULTS]
             sw_targets = self._sw_hi_all
 
-        # TP POIs: 5m + 15m + 30m only (per spec 7.2)
         tp_pois = self._poi_5m + self._poi_15m + self._poi_30m
+        result: List[Tuple[float, bool]] = []
 
-        fallback_tp: Optional[float] = None
-        for tp_price in tp_candidates:
-            # RR check
+        for tp_price in prices:
             if abs(tp_price - entry) / risk < self.min_rr:
                 continue
-            # Track first extension clearing min_rr as fallback (no confluence required)
-            if fallback_tp is None:
-                fallback_tp = tp_price
-            # Swing confluence (vectorised distance check)
             has_conf = (len(sw_targets) > 0 and
                         float(np.abs(sw_targets - tp_price).min()) <= tol)
-            # POI confluence
             if not has_conf:
                 for poi in tp_pois:
                     if not poi.invalidated and _poi_matches_price(poi, tp_price, tol):
                         has_conf = True
                         break
-            if has_conf:
-                return tp_price
+            result.append((tp_price, has_conf))
 
-        # No confluent level found — fall back to closest extension meeting min_rr
-        return fallback_tp
+        return result
+
+    def _compute_tp(self, trade_dir: int, entry: float, sl: float,
+                     zone_top: float, zone_bot: float,
+                     extreme: float, tp_idx: Optional[int] = None) -> Optional[float]:
+        """
+        Select a TP from the candidate list.
+
+        If tp_idx is given (ML-chosen), use that index (clamped to list length).
+        Otherwise use default selection: first confluent candidate, else first candidate.
+        """
+        candidates = self._compute_tp_candidates(trade_dir, entry, sl, zone_top, zone_bot, extreme)
+        if not candidates:
+            return None
+        if tp_idx is not None:
+            return candidates[min(tp_idx, len(candidates) - 1)][0]
+        for price, has_conf in candidates:
+            if has_conf:
+                return price
+        return candidates[0][0]
 
     # ------------------------------------------------------------------
     # ML hook defaults
@@ -1985,6 +2007,67 @@ class ICTSMCStrategy(BaseStrategy):
     def _default_level_policy(self, active_levels: List[ValidLevel]) -> Optional[ValidLevel]:
         """Default: return the first active level."""
         return active_levels[0] if active_levels else None
+
+    # ------------------------------------------------------------------
+    # Signal feature extraction — called just before zone consumption
+    # ------------------------------------------------------------------
+
+    def _extract_signal_features(
+        self,
+        chosen:      'ValidLevel',
+        entry:       float,
+        sl:          float,
+        zone_top:    float,
+        zone_bot:    float,
+        tp_candidates: List[Tuple[float, bool]],
+        chosen_tp:   float,
+        data:        'MarketData',
+        i:           int,
+    ) -> dict:
+        """
+        Build the signal_features dict for this trade opportunity.
+        All values are plain scalars — safe to pickle / JSON-serialise.
+        """
+        from backtest.ml.features import encode_signal_features
+        from datetime import datetime as _dt
+
+        atr = self._session_atr
+        t_min = int(self._bar_times_min[i])
+        tod   = int(self._bar_dates_ord[i])
+
+        # day_of_week from ordinal date
+        try:
+            dow = _dt.fromordinal(tod).weekday()
+        except Exception:
+            dow = 0
+
+        # manip_leg_size_atr
+        if chosen.manip_leg is not None:
+            leg = chosen.manip_leg
+            leg_size_atr = (leg.swing_hi_price - leg.swing_lo_price) / max(atr, 1e-9)
+        else:
+            leg_size_atr = 0.0
+
+        return encode_signal_features(
+            fib_type=chosen.fib_type,
+            direction=chosen.direction,
+            fib_value=chosen.fib_value,
+            confluence_kind=chosen.confluence_kind or '',
+            confluence_tf=chosen.confluence_tf or '',
+            manip_leg_size_atr=leg_size_atr,
+            zone_top=zone_top,
+            zone_bot=zone_bot,
+            entry=entry,
+            sl=sl,
+            atr=atr,
+            tp_candidates=tp_candidates,
+            chosen_tp=chosen_tp,
+            time_since_open_min=max(0, t_min - SESSION_START_MIN),
+            day_of_week=dow,
+            overnight_range_atr=self._overnight_range_atr,
+            n_validated_levels=len(self._validated_levels),
+            close_price=float(data.close_1m[i]),
+        )
 
     # ------------------------------------------------------------------
     # generate_signals — Phase 2 execution
@@ -2005,8 +2088,9 @@ class ICTSMCStrategy(BaseStrategy):
             self._pos_ctx            = None   # any prior trade should be closed by EOD
             self._daily_trade_count  = 0
             self._daily_won          = False
-            self._consumed_afz_bars  = set()
-            self._pending_fib_levels = {}
+            self._consumed_afz_bars      = set()
+            self._pending_fib_levels     = {}
+            self._pending_signal_features = {}
 
         # Detect a completed trade from earlier today: generate_signals is only
         # called when flat, so _pos_ctx still set means the trade just closed.
@@ -2110,8 +2194,32 @@ class ICTSMCStrategy(BaseStrategy):
         if furthest_bar in self._consumed_afz_bars:
             return None
 
-        # Compute TP
-        tp = self._compute_tp(chosen.direction, entry, sl, zone_top, zone_bot, extreme)
+        # Build ordered TP candidate list
+        tp_candidates = self._compute_tp_candidates(
+            chosen.direction, entry, sl, zone_top, zone_bot, extreme)
+        if not tp_candidates:
+            return None
+
+        # ML decision — queried BEFORE zone is consumed so a skip leaves it available
+        tp_idx: Optional[int] = None
+        if self.ml_model is not None:
+            # Compute default TP for feature extraction (first confluent / fallback)
+            _default_tp = next((p for p, c in tp_candidates if c), tp_candidates[0][0])
+            signal_feats = self._extract_signal_features(
+                chosen, entry, sl, zone_top, zone_bot,
+                tp_candidates, _default_tp, data, i)
+            skip, tp_idx = self.ml_model.decide(signal_feats, len(tp_candidates))
+            if skip:
+                return None  # zone NOT consumed; can fire again next bar
+        else:
+            signal_feats = self._extract_signal_features(
+                chosen, entry, sl, zone_top, zone_bot,
+                tp_candidates,
+                next((p for p, c in tp_candidates if c), tp_candidates[0][0]),
+                data, i)
+
+        tp = self._compute_tp(chosen.direction, entry, sl, zone_top, zone_bot, extreme,
+                              tp_idx=tp_idx)
         if tp is None:
             return None
 
@@ -2126,11 +2234,12 @@ class ICTSMCStrategy(BaseStrategy):
         self._consumed_afz_bars.add(furthest_bar)
         chosen.invalidated = True   # level fully consumed — no further AFZ entries
 
-        # Snapshot all validated levels for trade inspector rendering
+        # Snapshot fib levels + signal features for on_fill
         self._pending_fib_levels[i] = [
             {"p": lv.price, "t": lv.fib_type, "d": lv.direction, "v": lv.fib_value}
             for lv in self._validated_levels
         ]
+        self._pending_signal_features[i] = signal_feats
 
         if chosen.fib_type == 'OTE':
             fib_str = f"OTE {chosen.fib_value * 100:.1f}%"
@@ -2174,7 +2283,8 @@ class ICTSMCStrategy(BaseStrategy):
     def on_fill(self, position: OpenPosition, data: MarketData, bar_index: int) -> None:
         """Called immediately after fill. SL/TP already on position from Order."""
         position.set_initial_sl_tp(position.sl_price, position.tp_price)
-        position.fib_levels = self._pending_fib_levels.pop(position.order_placed_bar, [])
+        position.fib_levels      = self._pending_fib_levels.pop(position.order_placed_bar, [])
+        position.signal_features = self._pending_signal_features.pop(position.order_placed_bar, {})
         self._daily_trade_count += 1
         self._pos_ctx = PosCtx(
             direction=position.direction,

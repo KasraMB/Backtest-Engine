@@ -464,6 +464,7 @@ class ExecutionEngine:
             trade_reason=position.trade_reason,
             order_placed_bar=position.order_placed_bar,
             fib_levels=list(position.fib_levels),
+            signal_features=dict(position.signal_features),
         )
 
     # ------------------------------------------------------------------
