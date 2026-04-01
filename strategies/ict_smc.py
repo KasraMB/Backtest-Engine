@@ -128,6 +128,7 @@ class SessionOTEGroup:
     anchor_price: float  # first anchor (100% level) — invalidated when price returns here
     direction:    int    # -1 = short (high anchor), +1 = long (low anchor)
     extreme:      float  # current second anchor (0% level) — updated live during session
+    extreme_kind: str   = ''   # named session level of the extreme if applicable (e.g. 'NYAM_L'), else ''
     invalidated:  bool  = False
     levels:       List['ValidLevel'] = field(default_factory=list)  # linked ValidLevels
 
@@ -1147,11 +1148,23 @@ class ICTSMCStrategy(BaseStrategy):
                     and ote_size < self.min_ote_size_atr_mult * phase1_atr):
                 continue
 
+            if sk == 'NYAM_H':
+                _extreme_kind = 'NYAM_L'
+            elif sk == 'NYAM_L':
+                _extreme_kind = 'NYAM_H'
+            else:
+                # Check if the extreme price coincides with a named session level
+                _extreme_kind = ''
+                for _spoi in session_pois:
+                    if abs(_spoi.near - extreme) <= 0.25 and _spoi.session_kind:
+                        _extreme_kind = _spoi.session_kind
+                        break
             group = SessionOTEGroup(
                 anchor_kind=sk,
                 anchor_price=anchor_price,
                 direction=direction,
                 extreme=extreme,
+                extreme_kind=_extreme_kind,
             )
 
             any_valid = False
@@ -2096,7 +2109,13 @@ class ICTSMCStrategy(BaseStrategy):
         elif chosen.fib_type == 'STDV':
             fib_str = f"STDV {chosen.fib_value:.2f}x reversal"
         else:
-            fib_str = f"Session OTE {chosen.fib_value * 100:.1f}%"
+            grp = chosen.ote_group
+            if grp is not None:
+                extreme_label = grp.extreme_kind if grp.extreme_kind else f"{grp.extreme:.2f}"
+                anchor_label = f"{grp.anchor_kind} → {extreme_label}"
+            else:
+                anchor_label = ""
+            fib_str = f"Session OTE {chosen.fib_value * 100:.1f}% ({anchor_label})" if anchor_label else f"Session OTE {chosen.fib_value * 100:.1f}%"
         if chosen.confluence_kind:
             tf_str = f"[{chosen.confluence_tf}] " if chosen.confluence_tf else ""
             conf_str = f"{tf_str}{chosen.confluence_kind} @ {chosen.confluence_price:.2f}"
