@@ -758,6 +758,12 @@ class ICTSMCStrategy(BaseStrategy):
         # Minimum OTE (0%→100%) size expressed as a multiple of ATR.
         # Applies to OTE and SESSION_OTE levels; 0.0 (default) = no filter.
         self.min_ote_size_atr_mult:       float = p.get('min_ote_size_atr_mult', 0.0)
+        # Max validated levels kept per session for each fib type.
+        # Priority: biggest manipulation leg range; tiebreak by proximity to 09:30 open.
+        # 0 = keep all (no limit).
+        self.max_ote_per_session:         int   = p.get('max_ote_per_session', 1)
+        self.max_stdv_per_session:        int   = p.get('max_stdv_per_session', 1)
+        self.max_session_ote_per_session: int   = p.get('max_session_ote_per_session', 1)
 
         # PO3 accumulation parameters
         self.po3_lookback:               int   = p.get('po3_lookback', 6)
@@ -1813,13 +1819,22 @@ class ICTSMCStrategy(BaseStrategy):
         def _dist_to_open(lv: ValidLevel) -> float:
             return abs(lv.price - session_open) if session_open is not None else 0.0
 
+        _limits = {
+            'OTE':         self.max_ote_per_session,
+            'STDV':        self.max_stdv_per_session,
+            'SESSION_OTE': self.max_session_ote_per_session,
+        }
         filtered: List[ValidLevel] = []
         for fib_type in ('OTE', 'STDV', 'SESSION_OTE'):
             group = [lv for lv in self._validated_levels if lv.fib_type == fib_type]
             if not group:
                 continue
-            best = min(group, key=lambda lv: (-_leg_range(lv), _dist_to_open(lv)))
-            filtered.append(best)
+            limit = _limits[fib_type]
+            if limit == 0 or limit >= len(group):
+                filtered.extend(group)
+            else:
+                ranked = sorted(group, key=lambda lv: (-_leg_range(lv), _dist_to_open(lv)))
+                filtered.extend(ranked[:limit])
         self._validated_levels = filtered
 
     # ------------------------------------------------------------------
