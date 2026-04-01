@@ -113,6 +113,7 @@ class ValidLevel:
     fib_value:        float = 0.0  # e.g. 0.618 for OTE, 2.0 for STDV
     confluence_kind:  str   = ''   # POI kind that validated this level (e.g. 'FVG', 'PDH')
     confluence_price: float = 0.0  # midpoint of the matching POI zone
+    confluence_tf:    str   = ''   # timeframe of the matching POI ('1m','5m','15m','30m','session')
     ote_group:        Optional['SessionOTEGroup'] = None   # set for SESSION_OTE levels only
 
 
@@ -1172,11 +1173,16 @@ class ICTSMCStrategy(BaseStrategy):
 
                 # POI confluence check
                 confirmed_poi: Optional[POI] = None
-                for cpoi in poi_list:
+                confirmed_tf: str = ''
+                for (ctf, cpoi) in poi_list:
                     if cpoi.invalidated:
+                        continue
+                    # Direction filter: POI must match trade direction or be neutral (SESSION)
+                    if cpoi.direction != 0 and cpoi.direction != direction:
                         continue
                     if _poi_matches_price(cpoi, level_price, tol):
                         confirmed_poi = cpoi
+                        confirmed_tf = ctf
                         break
 
                 if confirmed_poi is None:
@@ -1195,6 +1201,7 @@ class ICTSMCStrategy(BaseStrategy):
                     confluence_kind=(confirmed_poi.kind if confirmed_poi.kind != 'SESSION'
                                      else confirmed_poi.session_kind),
                     confluence_price=round((confirmed_poi.near + confirmed_poi.far) / 2, 2),
+                    confluence_tf=confirmed_tf,
                     ote_group=group,
                 )
                 group.levels.append(lv)
@@ -1693,17 +1700,17 @@ class ICTSMCStrategy(BaseStrategy):
                             set(self.validation_poi_types.get('STDV', [])) |
                             set(self.validation_poi_types.get('SESSION_OTE', [])))
 
-        def _build_poi_list(fib_type: str) -> List[POI]:
+        def _build_poi_list(fib_type: str) -> List[Tuple[str, POI]]:
             allowed: set = set(self.validation_poi_types.get(fib_type, list(_default_sources)))
             tfs = self.validation_timeframes.get(fib_type, _default_tfs)
-            result: List[POI] = []
+            result: List[Tuple[str, POI]] = []
             for tf in tfs:
                 for poi in _tf_to_pois.get(tf, []):
                     if poi.kind in allowed:
-                        result.append(poi)
+                        result.append((tf, poi))
             for poi in session_pois:
                 if poi.session_kind in allowed:
-                    result.append(poi)
+                    result.append(('session', poi))
             return result
 
         poi_by_fib: dict = {ft: _build_poi_list(ft) for ft in ('OTE', 'STDV', 'SESSION_OTE')}
@@ -1734,8 +1741,11 @@ class ICTSMCStrategy(BaseStrategy):
                 if key in seen:
                     continue
                 poi_list = poi_by_fib.get(fib_type, [])
-                for poi in poi_list:
+                for (tf, poi) in poi_list:
                     if poi.invalidated:
+                        continue
+                    # Direction filter: POI must match trade direction or be neutral (SESSION)
+                    if poi.direction != 0 and poi.direction != fdir:
                         continue
                     # Skip POIs that formed at or after the leg started.
                     # created_bar == -1 means unknown (15m/30m/session POIs) — allow them.
@@ -1751,6 +1761,7 @@ class ICTSMCStrategy(BaseStrategy):
                             fib_value=fib_value,
                             confluence_kind=poi.kind if poi.kind != 'SESSION' else poi.session_kind,
                             confluence_price=round((poi.near + poi.far) / 2, 2),
+                            confluence_tf=tf,
                         ))
                         break
 
@@ -2086,8 +2097,11 @@ class ICTSMCStrategy(BaseStrategy):
             fib_str = f"STDV {chosen.fib_value:.2f}x reversal"
         else:
             fib_str = f"Session OTE {chosen.fib_value * 100:.1f}%"
-        conf_str = (f"{chosen.confluence_kind} @ {chosen.confluence_price:.2f}"
-                    if chosen.confluence_kind else "")
+        if chosen.confluence_kind:
+            tf_str = f"[{chosen.confluence_tf}] " if chosen.confluence_tf else ""
+            conf_str = f"{tf_str}{chosen.confluence_kind} @ {chosen.confluence_price:.2f}"
+        else:
+            conf_str = ""
         trade_reason = f"{fib_str} | {conf_str}" if conf_str else fib_str
 
         return Order(
