@@ -70,14 +70,14 @@ config = RunConfig(
     params={
         "contracts": 1, "swing_n": 1,
         "cisd_min_series_candles": 2, "cisd_min_body_ratio": 0.5,
-        "rb_min_wick_ratio": 0.3, "confluence_tolerance_pts": 2.5,
+        "rb_min_wick_ratio": 0.3, "confluence_tolerance_atr_mult": 0.18,
         "level_penetration_atr_mult": 0.5, "min_rr": 5.0,
         "tick_offset": 0.5, "order_expiry_bars": 10,
         "session_level_validity_days": 2,
         "po3_lookback": 6, "po3_atr_mult": 0.95, "po3_atr_len": 14,
         "po3_band_pct": 0.3, "po3_vol_sens": 1.0, "po3_max_r2": 0.4,
         "po3_min_dir_changes": 2, "po3_min_candles": 3,
-        "po3_max_accum_gap_bars": 10, "po3_min_manipulation_size_pts": 0.0,
+        "po3_max_accum_gap_bars": 10, "po3_min_manipulation_size_atr_mult": 0.0,
         "max_trades_per_day": 2,
     },
 )
