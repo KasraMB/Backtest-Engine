@@ -87,56 +87,35 @@ def compute_benchmark(
     mdd_fixed   = _max_dd(eq_fixed)
 
     # ── B&H Compounding ──────────────────────────────────────────────────
-    # Simulate day-by-day: at start of each session, hold as many whole
-    # contracts as equity allows.  Rebalance (add contracts) when equity
-    # grows enough.  Pay slippage + commission on each newly added contract.
-    eq_compound = np.empty(n_bars + 1)
-    eq_compound[0] = starting_capital
-
-    # Build day boundaries: list of (first_bar_idx, last_bar_idx) per day
+    # Vectorised: build day boundaries once, loop only over days (~3760),
+    # fill bar ranges with numpy slices instead of per-bar Python loops.
     timestamps = data.df_1m.index
-    day_to_bars: dict = {}
-    for i, ts in enumerate(timestamps):
-        d = ts.date()
-        if d not in day_to_bars:
-            day_to_bars[d] = [i, i]
-        else:
-            day_to_bars[d][1] = i
+    date_codes = timestamps.normalize().asi8          # int64 per bar
+    change      = np.concatenate([[True], date_codes[1:] != date_codes[:-1]])
+    first_bars  = np.where(change)[0]                 # first bar of each day
+    last_bars   = np.concatenate([first_bars[1:] - 1, [n_bars - 1]])
 
-    sorted_days = sorted(day_to_bars.keys())
+    eq_compound      = np.empty(n_bars + 1)
+    eq_compound[0]   = starting_capital
+    balance          = starting_capital
+    contracts        = 0
+    avg_cost         = 0.0
 
-    balance      = starting_capital
-    contracts    = 0
-    avg_cost     = 0.0   # avg entry price of current contracts (for P&L calc)
-
-    bar_cursor = 0       # we fill eq_compound bar by bar
-
-    for day in sorted_days:
-        first_bar, last_bar = day_to_bars[day]
-
-        # Rebalance at session open: target contracts = floor(balance / notional)
+    for first_bar, last_bar in zip(first_bars, last_bars):
         day_open = float(opens[first_bar])
-        target = max(0, int(balance / (day_open * POINT_VALUE)))
+        target   = max(0, int(balance / (day_open * POINT_VALUE)))
 
         if target > contracts:
             added    = target - contracts
             fill     = day_open + slippage_points
-            cost     = added * commission_per_contract
-            # Update weighted avg entry price
-            avg_cost = (avg_cost * contracts + fill * added) / target if target > 0 else fill
-            balance -= cost
+            balance -= added * commission_per_contract
+            avg_cost = ((avg_cost * contracts + fill * added) / target
+                        if target > 0 else fill)
             contracts = target
 
-        # Fill equity bar-by-bar through this session
-        for i in range(first_bar, last_bar + 1):
-            unrealized = (closes[i] - avg_cost) * contracts * POINT_VALUE
-            eq_compound[i + 1] = balance + unrealized
-
-        # At session close: mark balance to market (realise unrealised for
-        # accounting, but don't actually exit — avg_cost doesn't change)
-        # We keep balance as cash + unrealised; no daily settlement needed.
-
-        bar_cursor = last_bar + 1
+        # Vectorised fill: one numpy op instead of per-bar loop
+        unrealized = (closes[first_bar:last_bar + 1] - avg_cost) * contracts * POINT_VALUE
+        eq_compound[first_bar + 1:last_bar + 2] = balance + unrealized
 
     pnl_compound   = float(eq_compound[-1] - starting_capital)
     cagr_compound  = _cagr(eq_compound[-1], starting_capital, years)
@@ -176,19 +155,16 @@ def _max_dd(equity: np.ndarray) -> float:
 
 
 def _daily_sharpe(equity: np.ndarray, data: MarketData) -> float:
-    """Sharpe from daily dollar P&L — matches PerformanceEngine._sharpe."""
-    timestamps = data.df_1m.index
-    last_bar_of_day: dict = {}
-    for i, ts in enumerate(timestamps):
-        last_bar_of_day[ts.date()] = i
+    """Sharpe from daily dollar P&L — vectorised."""
+    ts         = data.df_1m.index
+    date_codes = ts.normalize().asi8
+    change     = np.concatenate([[True], date_codes[1:] != date_codes[:-1]])
+    first_bars = np.where(change)[0]
+    last_bars  = np.concatenate([first_bars[1:] - 1, [len(ts) - 1]])
 
-    sorted_dates = sorted(last_bar_of_day.keys())
-    daily_eq = np.array(
-        [equity[last_bar_of_day[d] + 1] for d in sorted_dates],
-        dtype=np.float64,
-    )
+    daily_eq      = equity[last_bars + 1]
     eq_with_start = np.concatenate([[equity[0]], daily_eq])
-    dollar_pnl = np.diff(eq_with_start)   # dollar change, not % return
+    dollar_pnl    = np.diff(eq_with_start)
 
     if len(dollar_pnl) < 2 or dollar_pnl.std() == 0:
         return 0.0

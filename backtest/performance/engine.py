@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from backtest.data.market_data import MarketData
 
 POINT_VALUE = 20.0
-N_MC_SIMS   = 10_000
+N_MC_SIMS   = 2_000
 MC_PERCENTILES = [5, 25, 50, 75, 95]
 
 
@@ -30,6 +30,15 @@ class PerformanceEngine:
         data: "MarketData",
         n_mc_sims: int = N_MC_SIMS,
     ) -> Results:
+        import time as _time
+        _t0 = _time.perf_counter()
+        def _tick(label, t_prev, threshold=0.3):
+            """Print only if this step took longer than threshold seconds."""
+            t = _time.perf_counter()
+            if t - t_prev >= threshold:
+                print(f"    [{label}]  {t - t_prev:.2f}s")
+            return t
+
         trades     = result.trades
         equity     = np.array(result.equity_curve, dtype=np.float64)
         capital    = result.config.starting_capital
@@ -41,6 +50,20 @@ class PerformanceEngine:
 
         pnls      = np.array([t.net_pnl_dollars for t in trades], dtype=np.float64)
         durations = np.array([t.exit_bar - t.entry_bar for t in trades], dtype=np.float64)
+
+        # Pre-build a lightweight date→pnl lookup used by _daily_equity_returns
+        # for trade-resolution equity curves (reversed runs).  Built early so
+        # _sharpe/_sortino can use it even before the full trade log is ready.
+        # Guard: exit_bar may exceed test data length, clamp to valid range.
+        _max_bar = len(data.df_1m) - 1
+        self._trade_log_for_daily = [
+            {"exit": data.df_1m.index[min(t.exit_bar, _max_bar)].strftime("%Y-%m-%d"),
+             "net_pnl": t.net_pnl_dollars}
+            for t in trades
+        ]
+
+        total_commission = float(sum(t.commission_paid  for t in trades))
+        total_slippage   = float(sum(t.slippage_paid    for t in trades))
 
         # ── Core stats ───────────────────────────────────────────────────────
         n_trades       = len(trades)
@@ -56,46 +79,45 @@ class PerformanceEngine:
         expectancy_r   = avg_trade / abs(avg_loss) if avg_loss != 0 else np.inf
         largest_win    = float(pnls.max())
         largest_loss   = float(pnls.min())
-
-        # Streaks
         win_streak, loss_streak = self._streaks(pnls)
+        _t = _tick("core stats + streaks", _t0)
 
         # ── Equity curve & drawdown ──────────────────────────────────────────
         dd_stats        = self._drawdown_stats(equity, n_days)
         dd_curve_pct    = self._drawdown_curve(equity)
-
-        # ── CAGR ─────────────────────────────────────────────────────────────
         years = n_days / 252.0
         if equity[-1] <= 0:
-            # Equity wiped out — CAGR is -100% or worse; geometric formula undefined
             cagr = -1.0
         else:
             cagr = (equity[-1] / capital) ** (1.0 / max(years, 1e-9)) - 1.0
+        _t = _tick("drawdown + CAGR", _t)
 
         # ── Risk-adjusted ────────────────────────────────────────────────────
         sharpe  = self._sharpe(trades, capital, data, equity)
         sortino = self._sortino(trades, capital, data, equity)
-        # Calmar = CAGR / abs(max_dd_pct). Preserves sign of CAGR so a losing
-        # strategy shows negative Calmar rather than a misleadingly large positive.
         calmar  = (cagr / abs(dd_stats.max_dd_pct)) if dd_stats.max_dd_pct != 0 else np.inf
+        _t = _tick("Sharpe / Sortino / Calmar", _t)
 
         # ── MAE / MFE ────────────────────────────────────────────────────────
         mae_arr, mfe_arr = self._mae_mfe(trades, data)
         avg_mae = float(mae_arr.mean()) if len(mae_arr) else 0.0
         avg_mfe = float(mfe_arr.mean()) if len(mfe_arr) else 0.0
+        _t = _tick("MAE / MFE", _t)
 
-        # ── Exit breakdown ───────────────────────────────────────────────────
+        # ── Exit / hourly breakdown ───────────────────────────────────────────
         exit_breakdown = self._exit_breakdown(trades)
-
-        # ── Hourly breakdown ─────────────────────────────────────────────────
         hourly = self._hourly_breakdown(trades, data)
+        _t = _tick("exit + hourly breakdown", _t)
 
         # ── Monte Carlo ──────────────────────────────────────────────────────
         mc = self._monte_carlo(pnls, capital, n_mc_sims)
+        _t = _tick(f"Monte Carlo ({n_mc_sims:,} sims)", _t)
 
         # ── Bootstrap p-value & CIs ──────────────────────────────────────────
         pvalue = self._bootstrap_pvalue(pnls, n_mc_sims)
+        _t = _tick("bootstrap p-value", _t)
         cis    = self._confidence_intervals(pnls, capital, n_mc_sims, data, equity)
+        _t = _tick("confidence intervals", _t)
 
         # ── Benchmark ────────────────────────────────────────────────────────
         from backtest.performance.benchmark import compute_benchmark
@@ -104,9 +126,12 @@ class PerformanceEngine:
             slippage_points         = result.config.slippage_points,
             commission_per_contract = result.config.commission_per_contract,
         )
+        _t = _tick("benchmark", _t)
 
         # ── Trade log ────────────────────────────────────────────────────────
         trade_log = self._build_trade_log(trades, data)
+        _t = _tick("trade log", _t)
+        print(f"    [TOTAL compute()]  {_t - _t0:.2f}s")
 
         return Results(
             strategy_name       = strat_name,
@@ -115,6 +140,8 @@ class PerformanceEngine:
             total_net_pnl       = float(pnls.sum()),
             cagr                = float(cagr),
             final_equity        = float(equity[-1]),
+            total_commission    = total_commission,
+            total_slippage      = total_slippage,
             n_trades            = n_trades,
             win_rate            = win_rate,
             avg_win_dollars     = avg_win,
@@ -138,6 +165,7 @@ class PerformanceEngine:
             mfe_per_trade       = mfe_arr,
             equity_curve        = equity,
             drawdown_curve_pct  = dd_curve_pct,
+            equity_timestamps   = data.df_1m.index,
             exit_breakdown      = exit_breakdown,
             hourly_breakdown    = hourly,
             trade_durations_bars = durations,
@@ -188,40 +216,60 @@ class PerformanceEngine:
             max_dd_duration_days = max_dur_days,
         )
 
+    @staticmethod
+    def _build_day_index(data: "MarketData"):
+        """
+        Vectorised: returns (unique_dates, last_bar_idx) arrays, cached on data.
+        unique_dates : numpy array of date objects, shape (n_days,)
+        last_bar_idx : index into df_1m of the last bar each day, shape (n_days,)
+        """
+        cached = getattr(data, '_day_index_cache', None)
+        if cached is not None:
+            return cached
+        ts = data.df_1m.index
+        date_codes = ts.normalize().asi8           # int64, one per bar
+        change = np.concatenate([[True], date_codes[1:] != date_codes[:-1]])
+        first_bar_idx = np.where(change)[0]
+        last_bar_idx  = np.concatenate([first_bar_idx[1:] - 1, [len(ts) - 1]])
+        unique_dates  = ts[first_bar_idx].date    # numpy array of datetime.date
+        result = (unique_dates, last_bar_idx)
+        try:
+            data._day_index_cache = result
+        except Exception:
+            pass
+        return result
+
     def _daily_equity_returns(self, equity: np.ndarray, data: "MarketData") -> np.ndarray:
         """
-        Resample the bar-by-bar equity curve to one dollar P&L per trading day.
+        Dollar equity change per trading day.
 
-        Returns DOLLAR changes (not percentage returns) because:
-        1. A fixed-contract futures strategy earns dollars, not reinvested %.
-        2. Percentage returns blow up as equity approaches or crosses zero,
-           producing outliers that inflate std and destroy the Sharpe CI.
-
-        e.g. equity $10,000 → -$5,000 gives a -150% return which dominates
-        the distribution even though it represents a normal sized day in dollars.
-
-        The Sharpe computed from dollar daily P&L is:
-            (mean_daily_pnl / std_daily_pnl) * sqrt(252)
-        which is the standard definition for a constant-size strategy.
+        Bar-resolution  (len = n_bars+1): index equity[last_bar+1] per day.
+        Trade-resolution (len != n_bars+1): group trade PnLs by exit date via
+          self._trade_log_for_daily, walk forward across all trading days.
         """
-        timestamps = data.df_1m.index   # length == len(equity) - 1
+        unique_dates, last_bar_idx = self._build_day_index(data)
 
-        # Build a map: date -> last bar index on that date
-        last_bar_of_day: dict = {}
-        for i, ts in enumerate(timestamps):
-            last_bar_of_day[ts.date()] = i   # later bars overwrite earlier ones
+        if len(equity) == len(data.df_1m) + 1:
+            # fast vectorised path
+            daily_eq = equity[last_bar_idx + 1]
+        else:
+            trade_log = getattr(self, '_trade_log_for_daily', None)
+            if not trade_log:
+                return np.array([])
+            date_pnl: dict = {}
+            for t in trade_log:
+                key = t["exit"][:10]
+                date_pnl[key] = date_pnl.get(key, 0.0) + t["net_pnl"]
+            running = float(equity[0])
+            daily_eq_list = []
+            for d in unique_dates:
+                key = d.isoformat() if hasattr(d, 'isoformat') else str(d)
+                running += date_pnl.get(key, 0.0)
+                daily_eq_list.append(running)
+            daily_eq = np.array(daily_eq_list, dtype=np.float64)
 
-        sorted_dates = sorted(last_bar_of_day.keys())
-        # equity[i+1] corresponds to bar i (equity[0] = starting capital)
-        daily_eq = np.array(
-            [equity[last_bar_of_day[d] + 1] for d in sorted_dates],
-            dtype=np.float64,
-        )
-
-        # Dollar change per day (prepend starting capital for first day's return)
-        eq_with_start = np.concatenate([[equity[0]], daily_eq])
-        dollar_pnl = np.diff(eq_with_start)   # simple difference, not divided by prior equity
-        return dollar_pnl
+        eq_with_start = np.concatenate([[float(equity[0])], daily_eq])
+        return np.diff(eq_with_start)
 
     def _sharpe(self, trades, capital: float, data: "MarketData", equity: np.ndarray = None) -> float:
         """Sharpe ratio from daily dollar P&L. mean/std * sqrt(252)."""
@@ -338,86 +386,74 @@ class PerformanceEngine:
         capital: float,
         n_sims: int,
     ) -> MonteCarloResults:
+        """
+        Vectorised Monte Carlo.  Uses float32 curves (halves memory vs float64;
+        $0.01 precision is more than sufficient).  Percentile curves are computed
+        via np.partition (O(n_sims) per time-step) on the transposed buffer,
+        avoiding a full sort across all n_sims × (n+1) values.
+
+        Memory: n_sims × (n+1) × 4 bytes.
+          2,000 sims × 12,451 steps = 100 MB   ← typical Huang strategy
+          2,000 sims ×  3,100 steps =  25 MB   ← typical ORB strategy
+        """
         rng = np.random.default_rng(42)
         n   = len(pnls)
+        pct_ranks = {p: max(0, int(round(p / 100 * (n_sims - 1)))) for p in MC_PERCENTILES}
 
-        def _equity_from_pnls(sim_pnls: np.ndarray) -> np.ndarray:
-            eq = np.empty(n + 1)
-            eq[0] = capital
-            np.cumsum(sim_pnls, out=eq[1:])
-            eq[1:] += capital
-            return eq
+        def _run_sims(sample_fn):
+            # Build all curves at once in float32
+            samp   = sample_fn(n_sims)                   # (n_sims, n) float64
+            curves = np.empty((n_sims, n + 1), dtype=np.float32)
+            curves[:, 0] = capital
+            np.cumsum(samp, axis=1, out=curves[:, 1:])
+            curves[:, 1:] += capital
 
-        def _max_dd_pct(eq: np.ndarray) -> float:
-            peak = np.maximum.accumulate(eq)
-            dd   = (eq - peak) / np.where(peak == 0, 1, peak)
-            return float(dd.min())
+            finals  = curves[:, -1].astype(np.float64)
 
-        # ── Shuffle (without replacement) ────────────────────────────────────
-        shuf_finals = np.empty(n_sims)
-        shuf_dd     = np.empty(n_sims)
-        shuf_curves = []
+            # Max drawdown per sim (in float64 for accuracy)
+            c64  = curves.astype(np.float64)
+            peak = np.maximum.accumulate(c64, axis=1)
+            safe = np.where(peak == 0, 1.0, peak)
+            max_dds = ((c64 - peak) / safe).min(axis=1)
+            del c64, peak, safe                          # free float64 copy early
 
-        for s in range(n_sims):
-            shuffled = rng.permutation(pnls)
-            eq       = _equity_from_pnls(shuffled)
-            shuf_finals[s] = eq[-1]
-            shuf_dd[s]     = _max_dd_pct(eq)
-            shuf_curves.append(eq)
+            # Percentile curves via partition on transposed buffer
+            # buf_T shape: (n+1, n_sims) — each row = one time-step across all sims
+            buf_T = curves.T
+            pcts  = {}
+            for p, rank in pct_ranks.items():
+                pcts[p] = np.partition(buf_T, rank, axis=1)[:, rank].astype(np.float64)
 
-        shuf_curves_arr = np.array(shuf_curves)
-        shuf_pcts = {}
-        for p in MC_PERCENTILES:
-            try:
-                shuf_pcts[p] = np.percentile(shuf_curves_arr, p, axis=0)
-            except Exception:
-                shuf_pcts[p] = shuf_curves_arr[0]
+            return finals, max_dds, pcts
 
-        # ── Bootstrap (with replacement) ─────────────────────────────────────
-        boot_finals = np.empty(n_sims)
-        boot_dd     = np.empty(n_sims)
-        boot_curves = []
-
-        for s in range(n_sims):
-            resampled = rng.choice(pnls, size=n, replace=True)
-            eq        = _equity_from_pnls(resampled)
-            boot_finals[s] = eq[-1]
-            boot_dd[s]     = _max_dd_pct(eq)
-            boot_curves.append(eq)
-
-        boot_curves_arr = np.array(boot_curves)
-        boot_pcts = {}
-        for p in MC_PERCENTILES:
-            try:
-                boot_pcts[p] = np.percentile(boot_curves_arr, p, axis=0)
-            except Exception:
-                boot_pcts[p] = boot_curves_arr[0]
+        shuf_finals, shuf_dd, shuf_pcts = _run_sims(
+            lambda ns: pnls[np.argsort(rng.random((ns, n)), axis=1)]
+        )
+        boot_finals, boot_dd, boot_pcts = _run_sims(
+            lambda ns: pnls[rng.integers(0, n, size=(ns, n))]
+        )
 
         return MonteCarloResults(
-            shuffle_percentiles   = shuf_pcts,
-            bootstrap_percentiles = boot_pcts,
-            shuffle_final_equity  = shuf_finals,
-            bootstrap_final_equity= boot_finals,
-            shuffle_max_dd_pct    = shuf_dd,
-            bootstrap_max_dd_pct  = boot_dd,
-            shuffle_p5            = float(np.percentile(shuf_finals, 5)),
-            shuffle_p50           = float(np.percentile(shuf_finals, 50)),
-            shuffle_p95           = float(np.percentile(shuf_finals, 95)),
-            bootstrap_p5          = float(np.percentile(boot_finals, 5)),
-            bootstrap_p50         = float(np.percentile(boot_finals, 50)),
-            bootstrap_p95         = float(np.percentile(boot_finals, 95)),
+            shuffle_percentiles    = shuf_pcts,
+            bootstrap_percentiles  = boot_pcts,
+            shuffle_final_equity   = shuf_finals,
+            bootstrap_final_equity = boot_finals,
+            shuffle_max_dd_pct     = shuf_dd,
+            bootstrap_max_dd_pct   = boot_dd,
+            shuffle_p5             = float(np.percentile(shuf_finals, 5)),
+            shuffle_p50            = float(np.percentile(shuf_finals, 50)),
+            shuffle_p95            = float(np.percentile(shuf_finals, 95)),
+            bootstrap_p5           = float(np.percentile(boot_finals, 5)),
+            bootstrap_p50          = float(np.percentile(boot_finals, 50)),
+            bootstrap_p95          = float(np.percentile(boot_finals, 95)),
         )
 
     def _bootstrap_pvalue(self, pnls: np.ndarray, n_sims: int) -> float:
-        """
-        Bootstrap p-value for H0: E[trade PnL] <= 0.
-        p-value = fraction of bootstrap means <= 0.
-        """
+        """Bootstrap p-value for H0: E[trade PnL] <= 0."""
         rng = np.random.default_rng(42)
         n   = len(pnls)
-        boot_means = np.empty(n_sims)
-        for s in range(n_sims):
-            boot_means[s] = rng.choice(pnls, size=n, replace=True).mean()
+        idx = rng.integers(0, n, size=(n_sims, n))
+        boot_means = pnls[idx].mean(axis=1)
         return float((boot_means <= 0).mean())
 
     def _confidence_intervals(
@@ -428,59 +464,66 @@ class PerformanceEngine:
         data: "MarketData" = None,
         equity: np.ndarray = None,
     ) -> ConfidenceIntervals:
-        """95% bootstrap CIs for key metrics."""
+        """95% bootstrap CIs for key metrics — fully vectorised."""
         rng = np.random.default_rng(42)
         n   = len(pnls)
 
-        sharpes, win_rates, expectancies, pfs, dd_pcts = [], [], [], [], []
+        # Resample trades: (n_sims, n)
+        idx      = rng.integers(0, n, size=(n_sims, n))
+        samples  = pnls[idx]                                 # (n_sims, n)
 
-        # Bootstrap Sharpe CI: resample daily returns (not individual trades).
-        # This avoids within-day trade-correlation problems and matches _sharpe().
-        daily_returns = self._daily_equity_returns(equity, data) if equity is not None and len(equity) > 1 else np.array([])
-        n_daily = len(daily_returns)
+        # Win rate
+        win_rates = (samples > 0).mean(axis=1)
 
-        for _ in range(n_sims):
-            s = rng.choice(pnls, size=n, replace=True)
-            winners = s[s > 0]
-            losers  = s[s < 0]
+        # Expectancy
+        expectancies = samples.mean(axis=1)
 
-            # Sharpe: bootstrap over daily returns
-            if n_daily >= 2:
-                d = rng.choice(daily_returns, size=n_daily, replace=True)
-                if d.std() > 0:
-                    sharpes.append(float((d.mean() / d.std()) * np.sqrt(252)))
+        # Profit factor
+        wins_sum  = np.where(samples > 0, samples, 0).sum(axis=1)
+        loss_sum  = np.abs(np.where(samples < 0, samples, 0).sum(axis=1))
+        valid_pf  = loss_sum > 0
+        pfs       = np.where(valid_pf, wins_sum / np.where(valid_pf, loss_sum, 1), np.nan)
 
-            # Win rate
-            win_rates.append((s > 0).mean())
+        # Max DD — float32 to halve memory (200MB→100MB for 12k trades / 2k sims)
+        curves_f32       = np.empty((n_sims, n + 1), dtype=np.float32)
+        curves_f32[:, 0] = capital
+        np.cumsum(samples.astype(np.float32), axis=1, out=curves_f32[:, 1:])
+        curves_f32[:, 1:] += capital
+        c64      = curves_f32.astype(np.float64)
+        peak     = np.maximum.accumulate(c64, axis=1)
+        safe     = np.where(peak == 0, 1.0, peak)
+        dd_pcts  = ((c64 - peak) / safe).min(axis=1)
+        del curves_f32, c64, peak, safe
 
-            # Expectancy
-            expectancies.append(s.mean())
-
-            # Profit factor
-            if len(losers) and losers.sum() != 0:
-                pfs.append(winners.sum() / abs(losers.sum()))
-
-            # Max DD %
-            eq   = np.empty(n + 1)
-            eq[0] = capital
-            np.cumsum(s, out=eq[1:])
-            eq[1:] += capital
-            peak = np.maximum.accumulate(eq)
-            dd   = (eq - peak) / np.where(peak == 0, 1, peak)
-            dd_pcts.append(dd.min())
+        # Sharpe CI: bootstrap over daily returns
+        daily_returns = (
+            self._daily_equity_returns(equity, data)
+            if equity is not None and len(equity) > 1
+            else np.array([])
+        )
+        if len(daily_returns) >= 2:
+            nd   = len(daily_returns)
+            didx = rng.integers(0, nd, size=(n_sims, nd))
+            d    = daily_returns[didx]                       # (n_sims, nd)
+            std  = d.std(axis=1)
+            valid = std > 0
+            sharpes = np.where(valid, (d.mean(axis=1) / np.where(valid, std, 1)) * np.sqrt(252), np.nan)
+        else:
+            sharpes = np.array([np.nan])
 
         def ci(arr):
-            a = np.array(arr)
+            a = arr[~np.isnan(arr)] if hasattr(arr, '__len__') else arr
             if len(a) < 2:
                 v = float(a[0]) if len(a) == 1 else 0.0
                 return (v, v)
             return (float(np.percentile(a, 2.5)), float(np.percentile(a, 97.5)))
 
+        pf_vals = pfs[~np.isnan(pfs)]
         return ConfidenceIntervals(
             sharpe        = ci(sharpes),
             win_rate      = ci(win_rates),
             expectancy    = ci(expectancies),
-            profit_factor = ci(pfs) if pfs else (0.0, 0.0),
+            profit_factor = ci(pf_vals) if len(pf_vals) >= 2 else (0.0, 0.0),
             max_dd_pct    = ci(dd_pcts),
         )
 
@@ -506,6 +549,7 @@ class PerformanceEngine:
         return Results(
             strategy_name=name, starting_capital=capital, n_trading_days=n_days,
             total_net_pnl=0.0, cagr=0.0, final_equity=capital,
+            total_commission=0.0, total_slippage=0.0,
             n_trades=0, win_rate=0.0, avg_win_dollars=0.0, avg_loss_dollars=0.0,
             avg_trade_pnl_dollars=0.0, payoff_ratio=0.0, profit_factor=0.0,
             expectancy_r=0.0, largest_win=0.0, largest_loss=0.0,
@@ -514,6 +558,7 @@ class PerformanceEngine:
             avg_mae_pct=0.0, avg_mfe_pct=0.0,
             mae_per_trade=np.array([]), mfe_per_trade=np.array([]),
             equity_curve=equity, drawdown_curve_pct=np.zeros(len(equity)),
+            equity_timestamps=data.df_1m.index,
             exit_breakdown=[], hourly_breakdown=[],
             trade_durations_bars=np.array([]), trade_pnls=np.array([]),
             monte_carlo=zero_mc, bootstrap_pvalue=1.0,

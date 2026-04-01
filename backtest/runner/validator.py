@@ -55,11 +55,11 @@ class ValidationReport:
             ("Signals outside hours",     self._check_result("hours")),
         ]
         for label, status in checks:
-            print(f"  {'✓' if status else '✗'} {label}")
+            print(f"  {'[OK]' if status else '[FAIL]'} {label}")
 
         if self.warnings:
             for w in self.warnings:
-                print(f"  ⚠ {w}")
+                print(f"  [WARN] {w}")
 
         if self.passed:
             print("  Validation passed.\n")
