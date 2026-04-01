@@ -743,8 +743,8 @@ class ICTSMCStrategy(BaseStrategy):
         self.cisd_min_series_candles:     int   = p.get('cisd_min_series_candles', 2)
         self.cisd_min_body_ratio:         float = p.get('cisd_min_body_ratio', 0.5)
         self.rb_min_wick_ratio:           float = p.get('rb_min_wick_ratio', 0.3)
-        self.confluence_tolerance_pts:    float = p.get('confluence_tolerance_pts', 2.5)
-        self.tp_confluence_tolerance_pts: float = p.get('tp_confluence_tolerance_pts', 2.5)
+        self.confluence_tolerance_atr_mult:    float = p.get('confluence_tolerance_atr_mult', 0.18)
+        self.tp_confluence_tolerance_atr_mult: float = p.get('tp_confluence_tolerance_atr_mult', 0.18)
         self.level_penetration_atr_mult:  float = p.get('level_penetration_atr_mult', 0.5)
         self.min_rr:                      float = p.get('min_rr', 5.0)
         self.tick_offset:                 float = p.get('tick_offset', 0.5)
@@ -769,7 +769,7 @@ class ICTSMCStrategy(BaseStrategy):
         self.po3_min_dir_changes:        int   = p.get('po3_min_dir_changes', 2)
         self.po3_min_candles:            int   = p.get('po3_min_candles', 3)
         self.po3_max_accum_gap_bars:     int   = p.get('po3_max_accum_gap_bars', 10)
-        self.po3_min_manipulation_size:  float = p.get('po3_min_manipulation_size_pts', 0.0)
+        self.po3_min_manipulation_size_atr_mult: float = p.get('po3_min_manipulation_size_atr_mult', 0.0)
 
         # POI detection lookback limit (5m bars).  500 ≈ 2 weeks; keeps daily
         # POI recomputation O(constant) instead of O(growing history).
@@ -855,6 +855,7 @@ class ICTSMCStrategy(BaseStrategy):
         self._phase1_date_ord:    int  = -1
         self._validated_levels:   List[ValidLevel] = []
         self._session_ote_groups: List[SessionOTEGroup] = []
+        self._session_atr:        float = 14.0   # fallback; overwritten by Phase 1
 
         # Daily trade limit tracking
         self._daily_trade_count: int  = 0
@@ -1073,7 +1074,7 @@ class ICTSMCStrategy(BaseStrategy):
         if n_1m <= overnight_start_1m:
             return [], []
 
-        tol     = self.confluence_tolerance_pts
+        tol     = self.confluence_tolerance_atr_mult * phase1_atr
         groups:    List[SessionOTEGroup] = []
         validated: List[ValidLevel]      = []
         seen_prices: set                 = set()
@@ -1344,6 +1345,7 @@ class ICTSMCStrategy(BaseStrategy):
                             overnight_start: int,
                             ndog: float,
                             bar_map: Optional[np.ndarray] = None,
+                            min_size: float = 0.0,
                             ) -> List[ManipLeg]:
         """
         For each accumulation zone, search for a swing followed by CISD.
@@ -1395,7 +1397,7 @@ class ICTSMCStrategy(BaseStrategy):
                     continue
 
                 leg_size = float(sh_[sh_idx]) - sl_price_a
-                if leg_size < self.po3_min_manipulation_size:
+                if leg_size < min_size:
                     continue
 
                 cisd_bar = _cisd_scan(
@@ -1447,7 +1449,7 @@ class ICTSMCStrategy(BaseStrategy):
                     continue
 
                 leg_size = sh_price_b - float(sl_[sl_idx_b])
-                if leg_size < self.po3_min_manipulation_size:
+                if leg_size < min_size:
                     continue
 
                 cisd_bar = _cisd_scan(
@@ -1536,8 +1538,9 @@ class ICTSMCStrategy(BaseStrategy):
         if completed_5m < 0:
             return
 
-        # ATR at phase-1 bar — used for OTE size filter
+        # ATR at phase-1 bar — used for OTE size filter and tolerance scaling
         _phase1_atr = _wilder_atr_scalar(data.high_1m, data.low_1m, data.close_1m, 14, bar_i)
+        self._session_atr = _phase1_atr
 
         # Identify overnight 5m bar index range (prev-day 16:00 to today 09:30)
         prev_d = tod - 1
@@ -1622,11 +1625,13 @@ class ICTSMCStrategy(BaseStrategy):
                 data.open_1m[:n_1m], data.high_1m[:n_1m],
                 data.low_1m[:n_1m],  data.close_1m[:n_1m],
                 abs_zones_1m, overnight_start_1m, ndog,
-                bar_map=bm)
+                bar_map=bm,
+                min_size=self.po3_min_manipulation_size_atr_mult * _phase1_atr)
         else:
             legs = self._detect_manip_legs(
                 o5f, h5f, l5f, c5f,
-                abs_zones, overnight_start_5m, ndog)
+                abs_zones, overnight_start_5m, ndog,
+                min_size=self.po3_min_manipulation_size_atr_mult * _phase1_atr)
 
         # Detect POIs on all timeframes — use a bounded lookback window so
         # cost stays O(poi_lookback_5m_bars) per day rather than O(total_history).
@@ -1728,7 +1733,7 @@ class ICTSMCStrategy(BaseStrategy):
 
         poi_by_fib: dict = {ft: _build_poi_list(ft) for ft in ('OTE', 'STDV', 'SESSION_OTE')}
 
-        tol = self.confluence_tolerance_pts
+        tol = self.confluence_tolerance_atr_mult * _phase1_atr
         seen: set = set()
         validated: List[ValidLevel] = []
 
@@ -1915,7 +1920,7 @@ class ICTSMCStrategy(BaseStrategy):
         if risk < 1e-9:
             return None
 
-        tol = self.tp_confluence_tolerance_pts
+        tol = self.tp_confluence_tolerance_atr_mult * self._session_atr
 
         if trade_dir == 1:
             # Bullish: fib_range = zone_top - lowestLow; extensions above zone_top
