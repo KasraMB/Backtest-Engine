@@ -12,7 +12,7 @@ from backtest.runner.config import RunConfig
 from backtest.strategy.base import BaseStrategy
 from backtest.strategy.enums import ExitReason, OrderType
 from backtest.strategy.order import Order
-from backtest.strategy.update import OpenPosition, Trade
+from backtest.strategy.update import OpenPosition, Trade, round_to_tick
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,11 @@ class RunResult:
     @property
     def n_trades(self) -> int:
         return len(self.trades)
+
+    @property
+    def uses_trailing_stop(self) -> bool:
+        """True if any trade had an active trailing stop during its lifetime."""
+        return any(t.had_trailing for t in self.trades)
 
     @property
     def total_net_pnl(self) -> float:
@@ -79,6 +84,61 @@ class RunResult:
         if len(self.trades) > max_trades:
             print(f"  ... and {len(self.trades) - max_trades} more trades")
         print(f"{'─'*90}")
+
+
+def reverse_trades(result: "RunResult") -> "RunResult":
+    """
+    Derive a reversed RunResult from an existing one — no re-run needed.
+
+    Each trade keeps identical entry/exit prices, timestamps, and costs.
+    Only direction and exit_reason flip:
+      - direction:    1 → -1, -1 → 1
+      - SL  ↔ TP  (what was a stop-loss hit is now a take-profit, and vice versa)
+      - SAME_BAR_SL ↔ SAME_BAR_TP
+      - EOD / SIGNAL / FORCED_EXIT — unchanged (direction-agnostic)
+
+    Because entry/exit prices are the same but direction is flipped, every
+    winning trade becomes a loser and every loser becomes a winner.
+    PnL is recomputed automatically via Trade.net_pnl_dollars (direction-aware).
+    """
+    from backtest.strategy.enums import ExitReason
+    from copy import copy
+
+    flip_reason = {
+        ExitReason.SL:           ExitReason.TP,
+        ExitReason.TP:           ExitReason.SL,
+        ExitReason.SAME_BAR_SL:  ExitReason.SAME_BAR_TP,
+        ExitReason.SAME_BAR_TP:  ExitReason.SAME_BAR_SL,
+    }
+
+    rev_trades = []
+    for t in result.trades:
+        rt = copy(t)
+        rt.direction        = -t.direction
+        rt.exit_reason      = flip_reason.get(t.exit_reason, t.exit_reason)
+        # Swap SL ↔ TP prices: what was the long's SL becomes the short's TP and vice versa
+        rt.sl_price         = t.tp_price
+        rt.tp_price         = t.sl_price
+        rt.initial_sl_price = t.initial_tp_price
+        rt.initial_tp_price = t.initial_sl_price
+        rev_trades.append(rt)
+
+    # Rebuild equity curve from reversed trade PnLs
+    capital = result.config.starting_capital
+    rev_equity = [capital]
+    balance = capital
+    for t in rev_trades:
+        balance += t.net_pnl_dollars
+        rev_equity.append(balance)
+    # Pad to same length as original bar-resolution curve
+    # (performance engine only uses the trade-resolution curve now)
+
+    return RunResult(
+        trades        = rev_trades,
+        equity_curve  = rev_equity,
+        config        = result.config,
+        strategy_name = result.strategy_name,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -121,33 +181,103 @@ def build_active_bar_set(
 # EOD bar detection
 # ---------------------------------------------------------------------------
 
+def build_required_bar_set(data: MarketData, strategy_class) -> set[int]:
+    """
+    Pre-compute the set of bars that must be processed when flat.
+    For strategies with trading_hours=None but that only care about specific
+    sessions (e.g. DoubleSessionSweep), this avoids iterating dead bars.
+
+    A bar is required if it falls within ANY of these windows:
+      - The strategy's declared trading_hours (if not None)
+      - 20:00-00:00 ET (Asia)
+      - 02:00-05:00 ET (London)
+      - 09:30-16:00 ET (NY)
+
+    If trading_hours is not None, we use that directly (already restricted).
+    If trading_hours is None, we use the union of all three session windows
+    as a safe superset — this covers any overnight strategy.
+    """
+    # Get the trading_hours from a temporary strategy instance
+    try:
+        tmp = strategy_class.__new__(strategy_class)
+        trading_hours = getattr(tmp, 'trading_hours', None)
+    except Exception:
+        trading_hours = None
+
+    if trading_hours is not None:
+        # Strategy already declares its hours — use active_bars directly
+        return None   # signal to caller: use active_bars as required_bars
+
+    # trading_hours=None: strategy processes all bars itself but we can still
+    # skip bars that fall entirely outside all known session windows.
+    session_windows = [
+        (time(20, 0),  time(0, 0)),    # Asia (overnight)
+        (time(2, 0),   time(5, 0)),    # London
+        (time(9, 30),  time(16, 0)),   # NY RTH
+    ]
+
+    required = set()
+    timestamps = data.df_1m.index
+
+    for i, ts in enumerate(timestamps):
+        t = ts.time()
+        for start, end in session_windows:
+            if start < end:
+                if start <= t < end:
+                    required.add(i)
+                    break
+            else:
+                # Overnight: e.g. 20:00 to 00:00
+                if t >= start or t < end:
+                    required.add(i)
+                    break
+
+    return required
+
+
+# ---------------------------------------------------------------------------
+# EOD bar detection
+# ---------------------------------------------------------------------------
+
 def build_eod_bar_set(data: MarketData, eod_exit_time: time) -> set[int]:
     """
-    Pre-compute bar indices that are the last bar of each session at or after
-    eod_exit_time. These trigger forced EOD exits.
+    Pre-compute bar indices that trigger EOD exits.
 
-    Strategy: for each trading date, find the last bar whose time >= eod_exit_time.
+    NQ futures trade nearly 24 hours, so calendar-date grouping would put the
+    23:59 globex bar and the 17:00 ET close bar on the same date — and picking
+    the *last* bar at or after eod_exit_time would yield 23:59 instead of 17:00.
+
+    Correct approach: for each RTH session date, find the *first* bar whose
+    time is at or after eod_exit_time.  That is the bar where we close out.
+
+    RTH is defined as 09:30–17:00 ET (futures daily close is 16:00 CT = 17:00 ET).
+    For early-close sessions (holiday) where no bar reaches eod_exit_time,
+    fall back to the last RTH bar of that session.
     """
     eod_bars = set()
     timestamps = data.df_1m.index
 
     from collections import defaultdict
+    # Group by calendar date
     date_bars: dict = defaultdict(list)
-
     for i, ts in enumerate(timestamps):
         date_bars[ts.date()].append((i, ts.time()))
 
     for bars in date_bars.values():
-        # Find bars at or after eod_exit_time
-        eod_candidates = [(i, t) for i, t in bars if t >= eod_exit_time]
+        # Only consider RTH bars (09:30–17:00 ET) so late-night globex bars are excluded
+        rth_bars = [(i, t) for i, t in bars
+                    if time(9, 30) <= t <= time(16, 0)]
+
+        if not rth_bars:
+            continue
+
+        # First RTH bar at or after eod_exit_time
+        eod_candidates = [(i, t) for i, t in rth_bars if t >= eod_exit_time]
         if eod_candidates:
-            # The last bar on the day that is at or after eod time
-            last_idx = eod_candidates[-1][0]
-            eod_bars.add(last_idx)
+            eod_bars.add(eod_candidates[0][0])   # FIRST, not last
         else:
-            # Session ended before eod_exit_time (e.g. holiday early close)
-            # treat the last bar of the session as EOD
-            eod_bars.add(bars[-1][0])
+            # Early-close: use the last RTH bar of the session
+            eod_bars.add(rth_bars[-1][0])
 
     return eod_bars
 
@@ -170,15 +300,17 @@ def _run_single(
            if same-bar exit: record trade, clear position -> step 4
            else: create OpenPosition -> step 2
       2. If position open:
-           manage_position() -> apply PositionUpdate -> update trail
+           manage_position() -> apply PositionUpdate
            check exits (SL -> TP -> EOD -> signal-based)
            if exit: record trade, clear position -> step 4
+           else: tick_trail() (advances trail SL for next bar)
       3. If no position AND i in active_bars AND i >= min_lookback:
            generate_signals() -> if Order: validate, resolve size, register pending
       4. Advance
     """
     # --- Setup ---
     strategy = strategy_class(config.params)
+    strategy._reverse_mode = config.reverse_signals
     engine = ExecutionEngine(
         slippage_points=config.slippage_points,
         commission_per_contract=config.commission_per_contract,
@@ -190,12 +322,23 @@ def _run_single(
     active_bars = build_active_bar_set(data, strategy.trading_hours)
     eod_bars = build_eod_bar_set(data, config.eod_exit_time)
 
+    # For strategies with trading_hours=None we compute a required_bars mask
+    # covering all session windows. Bars outside this are skipped when flat.
+    _req_set = build_required_bar_set(data, strategy_class)
+    n_bars   = len(data.open_1m)
+    if _req_set is not None:
+        # Convert to boolean numpy array for fast O(1) indexing
+        required_mask = np.zeros(n_bars, dtype=bool)
+        for idx in _req_set:
+            required_mask[idx] = True
+    else:
+        required_mask = None   # all bars required
+
     # Pre-extract numpy arrays for the hot path
     opens  = data.open_1m
     highs  = data.high_1m
     lows   = data.low_1m
     closes = data.close_1m
-    n_bars = len(opens)
 
     trades: list[Trade] = []
     equity_curve: list[float] = [account.balance]
@@ -205,6 +348,13 @@ def _run_single(
 
     # --- Main loop ---
     for i in range(n_bars):
+        # ── Fast skip: when flat and no pending order, skip bars outside
+        # session windows. Positions need every bar for SL/TP checks.
+        if (position is None and pending is None
+                and required_mask is not None
+                and not required_mask[i]):
+            equity_curve.append(account.balance)
+            continue
         bar = Bar(
             index=i,
             open=opens[i],
@@ -218,18 +368,37 @@ def _run_single(
         # ── Step 1: Pending order ──────────────────────────────────────────
         if pending is not None:
 
+            # Cancel any pending order at or after session end (11:00 ET)
+            if bar.bar_time >= config.order_cancel_time:
+                logger.debug(f"Bar {i}: pending order cancelled — session end")
+                pending = None
+
             # Check expiry first
-            if engine.tick_expiry(pending):
+            elif engine.tick_expiry(pending):
                 logger.debug(f"Bar {i}: pending order expired, cancelled")
                 pending = None
 
             else:
-                # Market orders are handled at signal time (step 3), not here.
-                # Non-market orders: attempt fill
-                if pending.order.order_type != OrderType.MARKET:
-                    fill = engine.attempt_fill(pending, bar)
+                fill = None  # initialise; set below if fill attempt succeeds
+                # §9.3 TP-before-fill cancellation (limit orders only)
+                _ord = pending.order
+                if (
+                    (_ord.cancel_above is not None and
+                     bar.high >= _ord.cancel_above and
+                     _ord.limit_price is not None and bar.low > _ord.limit_price) or
+                    (_ord.cancel_below is not None and
+                     bar.low <= _ord.cancel_below and
+                     _ord.limit_price is not None and bar.high < _ord.limit_price)
+                ):
+                    logger.debug(f"Bar {i}: pending order cancelled — TP reached before fill (§9.3)")
+                    pending = None
                 else:
-                    fill = None  # shouldn't reach here for MARKET
+                    # Market orders are handled at signal time (step 3), not here.
+                    # Non-market orders: attempt fill
+                    if pending.order.order_type != OrderType.MARKET:
+                        fill = engine.attempt_fill(pending, bar)
+                    else:
+                        fill = None  # shouldn't reach here for MARKET
 
                 if fill is not None:
                     fill.contracts = risk_manager.resolve_contracts(
@@ -248,7 +417,13 @@ def _run_single(
                         position = trade_or_position  # None if fully closed
                     else:
                         # New position from scratch
-                        position = _open_position(pending.order, fill, i)
+                        position = _open_position(pending.order, fill, i, order_placed_bar=pending.registered_bar)
+
+                        # Strategy sets SL/TP; wrapper handles reversal if needed
+                        strategy._on_fill(position, data, i)
+
+                        # Capture fill-bar excursion before same-bar exit check
+                        _update_mae_mfe(position, bar)
 
                         # Check same-bar exit
                         same_bar = engine.check_same_bar_exit(position, bar, fill.fill_price)
@@ -259,8 +434,14 @@ def _run_single(
 
                     pending = None  # order consumed regardless
 
+        # ── Expose closed trades to strategy (read-only view, no copy overhead) ──
+        strategy.closed_trades = trades
+
         # ── Step 2: Position management ────────────────────────────────────
         if position is not None:
+
+            # Update MAE/MFE with this bar's range (max() is idempotent on fill bar)
+            _update_mae_mfe(position, bar)
 
             # manage_position hook
             update = strategy.manage_position(data, i, position)
@@ -272,34 +453,34 @@ def _run_single(
                     position = None
 
         if position is not None:
-            # Normal exit checks (trail update happens inside check_exits)
             exit_result = engine.check_exits(position, bar, is_last_bar_of_session=is_eod)
             if exit_result is not None:
                 trade = engine.build_trade(position, i, exit_result.exit_price, exit_result.exit_reason)
                 _record_trade(trade, trades, account, equity_curve)
                 position = None
+            else:
+                # Advance trail SL after exit checks so this bar's own price
+                # action doesn't influence the SL used for this bar's exits.
+                engine.tick_trail(position, bar)
 
         # ── Step 3: Signal generation ──────────────────────────────────────
         if position is None and pending is None:
             if i >= strategy.min_lookback and i in active_bars:
-                order = strategy.generate_signals(data, i)
+                order = strategy._generate_signals(data, i)
                 if order is not None:
                     if order.order_type == OrderType.MARKET:
-                        # Market orders fill immediately at bar close
+                        # Market orders fill at bar close — no remaining bar
+                        # range exists, so same-bar SL/TP cannot be hit.
                         fill_price = bar.close
                         contracts = risk_manager.resolve_contracts(order, account, fill_price)
                         _validate_sl_tp_at_fill(order, fill_price)
 
                         from backtest.engine.execution import FillResult
                         fill = FillResult(fill_price=fill_price, contracts=contracts)
-                        position = _open_position(order, fill, i)
+                        position = _open_position(order, fill, i, order_placed_bar=i)
 
-                        # Check same-bar exit for market orders too
-                        same_bar = engine.check_same_bar_exit(position, bar, fill_price)
-                        if same_bar is not None:
-                            trade = engine.build_trade(position, i, same_bar.exit_price, same_bar.exit_reason)
-                            _record_trade(trade, trades, account, equity_curve)
-                            position = None
+                        # Strategy sets SL/TP; wrapper handles reversal if needed
+                        strategy._on_fill(position, data, i)
                     else:
                         # Limit/Stop/StopLimit: register as pending
                         bars_remaining = order.expiry_bars  # None = GTC
@@ -388,17 +569,19 @@ def run_backtest(
 # Private helpers
 # ---------------------------------------------------------------------------
 
-def _open_position(order: Order, fill, entry_bar: int) -> OpenPosition:
-    """Create an OpenPosition from a filled order."""
+def _open_position(order: Order, fill, entry_bar: int, order_placed_bar: int = None) -> OpenPosition:
+    """Create an OpenPosition from a filled order. All prices rounded to tick grid."""
     return OpenPosition(
         direction=order.direction,
-        entry_price=fill.fill_price,
+        entry_price=round_to_tick(fill.fill_price),
         entry_bar=entry_bar,
         contracts=fill.contracts,
-        sl_price=order.sl_price,
-        tp_price=order.tp_price,
+        sl_price=round_to_tick(order.sl_price) if order.sl_price is not None else None,
+        tp_price=round_to_tick(order.tp_price) if order.tp_price is not None else None,
         trail_points=order.trail_points,
         trail_activation_points=order.trail_activation_points,
+        trade_reason=order.trade_reason,
+        order_placed_bar=order_placed_bar,
     )
 
 
@@ -417,6 +600,18 @@ def _record_trade(
     """
     trades.append(trade)
     account.balance += trade.net_pnl_dollars
+
+
+def _update_mae_mfe(position: OpenPosition, bar: Bar) -> None:
+    """Update MAE/MFE on the position using the current bar's high/low."""
+    if position.direction == 1:
+        adverse   = position.entry_price - bar.low
+        favorable = bar.high - position.entry_price
+    else:
+        adverse   = bar.high - position.entry_price
+        favorable = position.entry_price - bar.low
+    position.mae_points = max(position.mae_points, max(0.0, adverse))
+    position.mfe_points = max(position.mfe_points, max(0.0, favorable))
 
 
 def _unrealized_pnl(position: OpenPosition, current_price: float) -> float:
@@ -496,6 +691,7 @@ def _apply_delta(
                 trail_activation_points=position.trail_activation_points,
                 trail_sl_price=position.trail_sl_price,
                 trail_watermark=position.trail_watermark,
+                order_placed_bar=position.order_placed_bar,
             )
             trade = engine.build_trade(partial, bar_idx, fill.fill_price, ExitReason.SIGNAL)
             trades.append(trade)

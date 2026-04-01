@@ -128,6 +128,8 @@ class Results:
     total_net_pnl: float
     cagr: float
     final_equity: float
+    total_commission: float        # total commission paid across all trades ($)
+    total_slippage: float          # total slippage paid across all trades ($)
 
     # ── Trade stats ─────────────────────────────────────────────────────────
     n_trades: int
@@ -161,6 +163,7 @@ class Results:
     # ── Curves ───────────────────────────────────────────────────────────────
     equity_curve: np.ndarray
     drawdown_curve_pct: np.ndarray
+    equity_timestamps: object          # pd.DatetimeIndex — same length as equity_curve
 
     # ── Breakdowns ───────────────────────────────────────────────────────────
     exit_breakdown: list[ExitBreakdown]

@@ -111,9 +111,11 @@ class DataLoader:
         arrays_1m = self._extract_arrays(df_1m)
         arrays_5m = self._extract_arrays(df_5m)
 
-        # Get unique trading dates from 1m data
-        trading_dates = sorted(df_1m.index.normalize().unique().tolist())
-        trading_dates = [ts.date() for ts in trading_dates]
+        # Get unique RTH trading dates (09:30–17:00 ET only) so overnight
+        # globex sessions don't inflate the trading day count.
+        from datetime import time as _time
+        rth_mask      = (df_1m.index.time >= _time(9, 30)) & (df_1m.index.time <= _time(17, 0))
+        trading_dates = sorted(set(df_1m[rth_mask].index.date))
 
         if self.verbose:
             print(f"\nLoaded {len(df_1m):,} 1m bars and {len(df_5m):,} 5m bars")
@@ -239,8 +241,9 @@ class DataLoader:
         bar_map = self._build_bar_map(df_1m, df_5m)
         arrays_1m = self._extract_arrays(df_1m)
         arrays_5m = self._extract_arrays(df_5m)
-        trading_dates = sorted(df_1m.index.normalize().unique().tolist())
-        trading_dates = [ts.date() for ts in trading_dates]
+        from datetime import time as _time
+        rth_mask      = (df_1m.index.time >= _time(9, 30)) & (df_1m.index.time <= _time(17, 0))
+        trading_dates = sorted(set(df_1m[rth_mask].index.date))
 
         return MarketData(
             df_1m=df_1m,

@@ -16,7 +16,7 @@ class RunConfig:
                                  both entry and exit. e.g. 0.25 = 1 tick each way.
         commission_per_contract: Flat dollar commission per contract per side.
                                  e.g. 4.50 = $4.50 entry + $4.50 exit per contract.
-        eod_exit_time:           Force-flat time each session. Default 15:30 ET.
+        eod_exit_time:           Force-flat time each session. Default 17:00 ET (= 16:00 CT, NQ futures daily close).
         params:                  Strategy parameters dict, passed to strategy __init__.
                                  Use this for any strategy-specific tuning values.
 
@@ -32,7 +32,9 @@ class RunConfig:
     starting_capital: float
     slippage_points: float = 0.0
     commission_per_contract: float = 0.0
-    eod_exit_time: time = field(default_factory=lambda: time(15, 30))
+    eod_exit_time: time = field(default_factory=lambda: time(17, 0))
+    order_cancel_time: time = field(default_factory=lambda: time(11, 0))  # cancel pending orders at this time
+    reverse_signals: bool = False   # flip every signal: long→short, short→long (SL/TP offsets preserved)
     params: dict = field(default_factory=dict)
 
     def __post_init__(self):

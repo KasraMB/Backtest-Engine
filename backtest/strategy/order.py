@@ -21,6 +21,14 @@ class Order:
     trail_points: Optional[float] = None
     trail_activation_points: Optional[float] = None
 
+    trade_reason: str = ''  # human-readable entry rationale set by the strategy
+
+    # §9.3: cancel pending limit order if TP is reached before fill.
+    # cancel_above: long order cancelled when bar.high >= cancel_above AND bar.low > limit_price
+    # cancel_below: short order cancelled when bar.low <= cancel_below AND bar.high < limit_price
+    cancel_above: Optional[float] = None
+    cancel_below: Optional[float] = None
+
     def __post_init__(self) -> None:
         self._validate()
 

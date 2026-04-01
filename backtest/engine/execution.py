@@ -6,7 +6,7 @@ from typing import Optional
 
 from backtest.strategy.enums import ExitReason, OrderType
 from backtest.strategy.order import Order
-from backtest.strategy.update import OpenPosition, PositionUpdate, Trade, POINT_VALUE
+from backtest.strategy.update import OpenPosition, PositionUpdate, Trade, POINT_VALUE, round_to_tick
 from backtest.engine.trail import update_trail
 
 logger = logging.getLogger(__name__)
@@ -117,40 +117,34 @@ class ExecutionEngine:
         return FillResult(fill_price=bar.close, contracts=0)
 
     def _try_limit_fill(self, order: Order, bar: Bar) -> Optional[FillResult]:
-        lp = order.limit_price
+        lp = round_to_tick(order.limit_price)
         if order.is_long():
-            # Long limit: fill if bar.low <= limit_price
             if bar.low <= lp:
                 return FillResult(fill_price=lp, contracts=0)
         else:
-            # Short limit: fill if bar.high >= limit_price
             if bar.high >= lp:
                 return FillResult(fill_price=lp, contracts=0)
         return None
 
     def _try_stop_fill(self, order: Order, bar: Bar) -> Optional[FillResult]:
-        sp = order.stop_price
+        sp = round_to_tick(order.stop_price)
         if order.is_long():
-            # Long stop: fill if bar.high >= stop_price
             if bar.high >= sp:
-                # Gap through stop: fill at open if open is already above stop
-                fill_price = max(bar.open, sp)
+                fill_price = round_to_tick(max(bar.open, sp))
                 return FillResult(fill_price=fill_price, contracts=0)
         else:
-            # Short stop: fill if bar.low <= stop_price
             if bar.low <= sp:
-                fill_price = min(bar.open, sp)
+                fill_price = round_to_tick(min(bar.open, sp))
                 return FillResult(fill_price=fill_price, contracts=0)
         return None
 
     def _try_stop_limit_fill(self, order: Order, bar: Bar) -> Optional[FillResult]:
         """Stop triggers first, then limit fills using limit rules."""
-        sp = order.stop_price
-        lp = order.limit_price
+        sp = round_to_tick(order.stop_price)
+        lp = round_to_tick(order.limit_price)
 
         if order.is_long():
             if bar.high >= sp:
-                # Stop triggered — now check limit
                 if bar.low <= lp:
                     return FillResult(fill_price=lp, contracts=0)
         else:
@@ -205,6 +199,16 @@ class ExecutionEngine:
     # Exit checking (normal bar)
     # ------------------------------------------------------------------
 
+    def tick_trail(self, position: OpenPosition, bar: Bar) -> None:
+        """
+        Advance the trail SL for one bar.
+
+        Called by the runner AFTER check_exits returns no exit, so the trail
+        SL used for this bar's exit checks is always the state from the END of
+        the previous bar — not derived from this bar's own price action.
+        """
+        update_trail(position, bar.high, bar.low)
+
     def check_exits(
         self,
         position: OpenPosition,
@@ -214,10 +218,11 @@ class ExecutionEngine:
         """
         Check all exit conditions for an open position on a normal bar.
         Priority: SL -> TP -> EOD -> (SIGNAL handled by runner)
-        """
-        # --- Trail SL update ---
-        update_trail(position, bar.high, bar.low)
 
+        Trail SL is NOT updated here.  The runner calls tick_trail() after this
+        method returns None, ensuring exit checks always see the trail SL that
+        was set at the end of the previous bar.
+        """
         sl = position.effective_sl()
         tp = position.tp_price
 
@@ -295,8 +300,8 @@ class ExecutionEngine:
 
         Returns ExitResult if the update triggers a forced exit, None otherwise.
         """
-        new_sl = update.new_sl_price
-        new_tp = update.new_tp_price
+        new_sl = round_to_tick(update.new_sl_price) if update.new_sl_price is not None else None
+        new_tp = round_to_tick(update.new_tp_price) if update.new_tp_price is not None else None
 
         # Cross-validation: SL and TP must not cross
         if new_sl is not None and new_tp is not None:
@@ -449,6 +454,16 @@ class ExecutionEngine:
             slippage_points=self.slippage_points,
             commission_per_contract=self.commission_per_contract,
             exit_reason=exit_reason,
+            sl_price=position.sl_price,
+            tp_price=position.tp_price,
+            initial_sl_price=position.initial_sl_price,
+            initial_tp_price=position.initial_tp_price,
+            had_trailing=position.trail_sl_price is not None,
+            mae_points=position.mae_points,
+            mfe_points=position.mfe_points,
+            trade_reason=position.trade_reason,
+            order_placed_bar=position.order_placed_bar,
+            fib_levels=list(position.fib_levels),
         )
 
     # ------------------------------------------------------------------

@@ -59,7 +59,7 @@ class DummyLongStrategy(BaseStrategy):
     def manage_position(
         self,
         data: MarketData,
-        i: int,
+        i: int, # current bar index
         position: OpenPosition,
     ) -> Optional[PositionUpdate]:
         # Let the engine handle everything via SL/TP

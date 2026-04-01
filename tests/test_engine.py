@@ -345,6 +345,21 @@ class TestSameBarExit:
         result = self.engine.check_same_bar_exit(pos, bar, fill_price=19000.0)
         assert result.exit_reason == ExitReason.SAME_BAR_SL
 
+    def test_same_bar_tp_short(self):
+        pos = make_short_position(entry=19000, tp=18900.0)
+        bar = make_bar(open_=19000, high=19050, low=18850)
+        result = self.engine.check_same_bar_exit(pos, bar, fill_price=19000.0)
+        assert result is not None
+        assert result.exit_reason == ExitReason.SAME_BAR_TP
+        assert result.exit_price == 18900.0
+
+    def test_same_bar_sl_beats_tp_short(self):
+        # Both in range for short — SL wins
+        pos = make_short_position(entry=19000, sl=19050.0, tp=18900.0)
+        bar = make_bar(open_=19000, high=19100, low=18850)
+        result = self.engine.check_same_bar_exit(pos, bar, fill_price=19000.0)
+        assert result.exit_reason == ExitReason.SAME_BAR_SL
+
 
 # ===========================================================================
 # Normal bar exit checking
@@ -422,6 +437,84 @@ class TestCheckExits:
         result = self.engine.check_exits(pos, bar, is_last_bar_of_session=False)
         assert result.exit_reason == ExitReason.SL
 
+    def test_gap_open_above_tp_long(self):
+        # Bar opens above TP — TP exit at bar.open, not TP level
+        pos = make_long_position(entry=19000, sl=18900.0, tp=19100.0)
+        bar = make_bar(open_=19200.0, high=19250, low=19150)
+        result = self.engine.check_exits(pos, bar, is_last_bar_of_session=False)
+        assert result is not None
+        assert result.exit_reason == ExitReason.TP
+        assert result.exit_price == 19200.0  # fills at open, not TP level
+
+    def test_gap_open_below_tp_short(self):
+        # Bar opens below TP — TP exit at bar.open
+        pos = make_short_position(entry=19000, sl=19100.0, tp=18900.0)
+        bar = make_bar(open_=18800.0, high=18850, low=18750)
+        result = self.engine.check_exits(pos, bar, is_last_bar_of_session=False)
+        assert result is not None
+        assert result.exit_reason == ExitReason.TP
+        assert result.exit_price == 18800.0
+
+    def test_gap_open_sl_beats_tp_long(self):
+        # Bar gaps so far that it's simultaneously through both — SL wins
+        pos = make_long_position(entry=19000, sl=18900.0, tp=18800.0)
+        # This shouldn't happen in practice but the code guards it:
+        # open <= sl AND open >= tp on a long → SL wins
+        bar = make_bar(open_=18850.0, high=18900, low=18800)
+        result = self.engine.check_exits(pos, bar, is_last_bar_of_session=False)
+        assert result.exit_reason == ExitReason.SL
+
+    def test_effective_sl_prefers_trail_over_fixed_long(self):
+        # Trail SL (18950) is closer to current price than fixed SL (18900).
+        # A bar whose low crosses trail SL but NOT fixed SL must trigger an exit,
+        # proving effective_sl() returns the more protective (higher) value.
+        pos = make_long_position(entry=19000, sl=18900.0)
+        pos.trail_sl_price = 18950.0
+
+        # Bar low = 18910: below trail SL (18950) but above fixed SL (18900)
+        bar = make_bar(open_=18960, high=18970, low=18910)
+        result = self.engine.check_exits(pos, bar, is_last_bar_of_session=False)
+        assert result is not None, "Should exit — trail SL (18950) was crossed"
+        assert result.exit_reason == ExitReason.SL
+        assert result.exit_price == pytest.approx(18950.0)  # filled at trail SL
+
+    def test_trail_sl_timing_uses_previous_bar_state(self):
+        """
+        Regression test for the trail SL timing fix.
+
+        Before the fix, update_trail ran inside check_exits — the current bar's
+        low would drag the trail SL down, and then the gap-open check would
+        fire against the newly-lowered SL, producing a false SL exit on a bar
+        that should have hit TP.
+
+        After the fix, the runner calls tick_trail() AFTER check_exits returns
+        None, so check_exits always uses the trail SL set at the END of the
+        previous bar.
+
+        Scenario (short):
+          trail_sl at start of bar = 19772  (from previous bar)
+          bar: open=19736.50, high=19742, low=19632, tp=19632.25
+          Wrong (old) behaviour: trail moves to 19716 from bar.low=19632,
+            gap-open 19736.50 >= 19716 → SL exit.
+          Correct (new) behaviour: trail stays at 19772,
+            gap-open 19736.50 >= 19772 → no,
+            intrabar SL 19742 >= 19772 → no,
+            TP 19632 <= 19632.25 → TP exit.
+        """
+        pos = make_short_position(entry=19842.50, sl=19940.0, tp=19632.25, trail=84.0)
+        pos.trail_sl_price = 19772.0   # set by previous bar's tick_trail
+        pos.trail_watermark = 19726.5  # lowest seen before this bar
+
+        bar = make_bar(open_=19736.50, high=19742.0, low=19632.0, close=19640.0)
+        result = self.engine.check_exits(pos, bar, is_last_bar_of_session=False)
+
+        assert result is not None
+        assert result.exit_reason == ExitReason.TP, (
+            f"Expected TP exit, got {result.exit_reason} at {result.exit_price} — "
+            "trail SL was likely updated from current bar's low before gap-open check ran"
+        )
+        assert result.exit_price == pytest.approx(19632.25)
+
 
 # ===========================================================================
 # PositionUpdate enforcement
@@ -484,6 +577,31 @@ class TestPositionUpdateEnforcement:
         result = self.engine.apply_position_update(pos, update, current_price=18950.0)
         assert result is None
         assert pos.sl_price == 19050.0
+
+    def test_short_sl_unfavorable_move_ignored(self):
+        pos = make_short_position(entry=19000, sl=19100.0)
+        update = PositionUpdate(new_sl_price=19150.0)  # moving up -> unfavorable
+        result = self.engine.apply_position_update(pos, update, current_price=18950.0)
+        assert result is None
+        assert pos.sl_price == 19100.0  # unchanged
+
+    def test_short_sl_beyond_current_price_forces_exit(self):
+        pos = make_short_position(entry=19000, sl=19100.0)
+        # new_sl below current price — moves SL into profit zone past current price
+        update = PositionUpdate(new_sl_price=18900.0)
+        result = self.engine.apply_position_update(pos, update, current_price=18950.0)
+        assert result is not None
+        assert result.exit_reason == ExitReason.FORCED_EXIT
+        assert result.exit_price == 18950.0
+
+    def test_tp_only_update_long(self):
+        # PositionUpdate with only new_tp (no sl) is valid and should apply
+        pos = make_long_position(entry=19000, sl=18900.0, tp=19100.0)
+        update = PositionUpdate(new_tp_price=19300.0)
+        result = self.engine.apply_position_update(pos, update, current_price=19050.0)
+        assert result is None
+        assert pos.tp_price == 19300.0
+        assert pos.sl_price == 18900.0  # unchanged
 
 
 # ===========================================================================

@@ -230,7 +230,7 @@ class TestRunConfig:
     def test_valid_config(self):
         cfg = RunConfig(starting_capital=100_000, slippage_points=0.25,
                         commission_per_contract=4.50)
-        assert cfg.eod_exit_time == time(15, 30)
+        assert cfg.eod_exit_time == time(17, 0)
         assert cfg.params == {}
 
     def test_custom_eod_time(self):
