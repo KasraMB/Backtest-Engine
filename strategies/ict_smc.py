@@ -1753,6 +1753,14 @@ class ICTSMCStrategy(BaseStrategy):
                 key = (round(price, 2), fdir)
                 if key in seen:
                     continue
+                # Pre-session touch check: if price reached this level during overnight/pre-market,
+                # the level is already consumed and should not be traded at session open.
+                _h1 = data.high_1m[overnight_start_1m:n_1m]
+                _l1 = data.low_1m[overnight_start_1m:n_1m]
+                if fdir == 1 and bool(np.any(_l1 <= price)):
+                    continue
+                if fdir == -1 and bool(np.any(_h1 >= price)):
+                    continue
                 poi_list = poi_by_fib.get(fib_type, [])
                 for (tf, poi) in poi_list:
                     if poi.invalidated:
