@@ -60,7 +60,7 @@ CONFIG = RunConfig(
         "confluence_tolerance_atr_mult": 0.18,
         "level_penetration_atr_mult":    0.5,
         "min_rr":                        5.0,
-        "tick_offset":                   0.5,
+        "tick_offset_atr_mult":          0.035,
         "order_expiry_bars":             10,
         "session_level_validity_days":   2,
         "po3_lookback":                  6,
