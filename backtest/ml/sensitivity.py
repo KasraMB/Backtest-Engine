@@ -1,6 +1,12 @@
 """
 Parameter sensitivity checking for the ICT/SMC ML pipeline.
 
+Caching
+-------
+`_hash_params(params)` produces a short deterministic key for any params dict.
+The caller (e.g. run_ml_collect.py) is responsible for maintaining the cache
+so that results can be reused across runs without re-running backtests.
+
 A parameter config is considered stable if perturbing each continuous parameter
 by ±perturbation_pct does not degrade the evaluation metric by more than
 max_degradation_pct relative to the base result.
@@ -10,10 +16,18 @@ For large grids, pre-compute results offline and cache them.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from typing import Callable, Optional
 
 import numpy as np
+
+
+def _hash_params(params: dict) -> str:
+    """Return a 16-char hex key that uniquely identifies a params dict."""
+    key = json.dumps(dict(sorted(params.items())), sort_keys=True, default=str)
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
 @dataclass
@@ -59,6 +73,10 @@ def check_sensitivity(
             'tp_confluence_tolerance_atr_mult',
             'level_penetration_atr_mult',
             'min_rr',
+            'tick_offset_atr_mult',
+            'po3_atr_mult',
+            'po3_band_pct',
+            'po3_vol_sens',
             'po3_min_manipulation_size_atr_mult',
             'min_ote_size_atr_mult',
             'cancel_pct_to_tp',
