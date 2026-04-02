@@ -3,9 +3,14 @@ Feature definitions for the ICT/SMC ML pipeline.
 
 Signal features are captured inside the strategy at signal time and stored on
 Trade.signal_features.  Context features are derived offline by build_dataset()
-using the full trade history and market data.
+using the full trade history and market data.  Config features are the
+normalised parameter values of the config that generated each trade — added
+during multi-config collection so the joint model can learn param × signal
+interactions.
 """
 from __future__ import annotations
+
+from backtest.ml.configs import CONFIG_FEATURE_NAMES
 
 # ---------------------------------------------------------------------------
 # Feature name lists — must stay in sync with extraction logic
@@ -60,7 +65,7 @@ CONTEXT_FEATURE_NAMES: list[str] = [
     'drawdown_pct',          # equity drawdown from peak at signal time (0.0 if unknown)
 ]
 
-ALL_FEATURE_NAMES: list[str] = SIGNAL_FEATURE_NAMES + CONTEXT_FEATURE_NAMES
+ALL_FEATURE_NAMES: list[str] = SIGNAL_FEATURE_NAMES + CONTEXT_FEATURE_NAMES + CONFIG_FEATURE_NAMES
 
 # ---------------------------------------------------------------------------
 # Confluence kind → one-hot column mapping

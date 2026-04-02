@@ -2202,13 +2202,16 @@ class ICTSMCStrategy(BaseStrategy):
 
         # ML decision — queried BEFORE zone is consumed so a skip leaves it available
         tp_idx: Optional[int] = None
+        _best_phase2: dict = {}
         if self.ml_model is not None:
-            # Compute default TP for feature extraction (first confluent / fallback)
-            _default_tp = next((p for p, c in tp_candidates if c), tp_candidates[0][0])
+            from backtest.ml.configs import get_phase2_candidates
+            _default_tp  = next((p for p, c in tp_candidates if c), tp_candidates[0][0])
             signal_feats = self._extract_signal_features(
                 chosen, entry, sl, zone_top, zone_bot,
                 tp_candidates, _default_tp, data, i)
-            skip, tp_idx = self.ml_model.decide(signal_feats, len(tp_candidates))
+            phase2_cands = get_phase2_candidates()
+            skip, tp_idx, _best_phase2 = self.ml_model.decide(
+                signal_feats, phase2_cands, len(tp_candidates))
             if skip:
                 return None  # zone NOT consumed; can fire again next bar
         else:
@@ -2260,6 +2263,10 @@ class ICTSMCStrategy(BaseStrategy):
             conf_str = ""
         trade_reason = f"{fib_str} | {conf_str}" if conf_str else fib_str
 
+        # Apply Phase 2 params from model if available, else use strategy defaults
+        _expiry      = int(_best_phase2.get('order_expiry_bars',   self.order_expiry_bars))
+        _cancel_pct  = float(_best_phase2.get('cancel_pct_to_tp',  self.cancel_pct_to_tp))
+
         return Order(
             direction=chosen.direction,
             order_type=OrderType.LIMIT,
@@ -2268,10 +2275,10 @@ class ICTSMCStrategy(BaseStrategy):
             limit_price=entry,
             sl_price=sl,
             tp_price=tp,
-            expiry_bars=self.order_expiry_bars,
-            cancel_above=(entry + self.cancel_pct_to_tp * (tp - entry)
+            expiry_bars=_expiry,
+            cancel_above=(entry + _cancel_pct * (tp - entry)
                           if chosen.direction == 1 else None),
-            cancel_below=(entry + self.cancel_pct_to_tp * (tp - entry)
+            cancel_below=(entry + _cancel_pct * (tp - entry)
                           if chosen.direction == -1 else None),
             trade_reason=trade_reason,
         )
