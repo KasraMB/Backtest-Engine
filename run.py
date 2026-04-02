@@ -31,6 +31,7 @@ from backtest.performance.tearsheet import TearsheetRenderer
 from backtest.regime.hmm      import fit_regimes
 from backtest.regime.analysis import run_regime_analysis
 from datetime import time as dtime
+from backtest.ml.model import MLModel
 
 # ── Strategies — import all, pick one below ────────────────────────────────
 from strategies.dummy                            import DummyLongStrategy
@@ -68,7 +69,7 @@ if __name__ == "__main__":
 
     # ── Date range filter ──────────────────────────────────────────────────────
     # Set to None to use all available data, or "YYYY-MM-DD" to restrict the range.
-    DATE_FROM = "2025-06-01"   # e.g. "2020-01-01"
+    DATE_FROM = "2019-01-07"   # e.g. "2020-01-01"
     DATE_TO   = None   # e.g. "2023-12-31"
 
     # ── Regime / HMM config ────────────────────────────────────────────────────
@@ -280,6 +281,7 @@ if __name__ == "__main__":
             # stdv_reverse: True  = reversal at extension (original behaviour)
             #               False = continuation with distribution leg
             "stdv_reverse":           False,
+            "ml_model": MLModel.load("models/ict_smc.pkl")
         },
     )
 
