@@ -176,8 +176,8 @@ class PosCtx:
     #   for breakeven Condition A.  -1 = not yet initialised.
     be_next_pivot:      int   = -1
     # trail_best_sl: running best swing value for the trailing section.
-    #   long:  running max of (swing_low - tick_offset) candidates; init -inf
-    #   short: running min of (swing_high + tick_offset) candidates; init +inf
+    #   long:  running max of (swing_low - tick_offset_atr_mult*atr) candidates; init -inf
+    #   short: running min of (swing_high + tick_offset_atr_mult*atr) candidates; init +inf
     trail_best_sl:      float = float('-inf')
     trail_next_pivot:   int   = -1   # next absolute pivot index to check
     trail_window_start: int   = -1   # sw_s value when trail state was last reset
@@ -747,7 +747,7 @@ class ICTSMCStrategy(BaseStrategy):
         self.tp_confluence_tolerance_atr_mult: float = p.get('tp_confluence_tolerance_atr_mult', 0.18)
         self.level_penetration_atr_mult:  float = p.get('level_penetration_atr_mult', 0.5)
         self.min_rr:                      float = p.get('min_rr', 5.0)
-        self.tick_offset:                 float = p.get('tick_offset', 0.5)
+        self.tick_offset_atr_mult:        float = p.get('tick_offset_atr_mult', 0.035)
         self.order_expiry_bars:           int   = p.get('order_expiry_bars', 10)
         self.session_level_validity_days: int   = p.get('session_level_validity_days', 2)
         self.contracts:                   int   = p.get('contracts', 1)
@@ -1899,7 +1899,7 @@ class ICTSMCStrategy(BaseStrategy):
             zone_bot  = float(np.minimum(o[furthest:bar_i + 1], c[furthest:bar_i + 1]).min())
             lowest_lo = float(l[furthest:bar_i + 1].min())
             entry = _round_up((zone_top + zone_bot) / 2.0)
-            sl    = _round_down(zone_bot - (zone_bot - lowest_lo) / 2.0) - self.tick_offset
+            sl    = _round_down(zone_bot - (zone_bot - lowest_lo) / 2.0) - self.tick_offset_atr_mult * self._session_atr
             return (entry, sl, zone_top, zone_bot, lowest_lo, furthest)
 
         else:
@@ -1930,7 +1930,7 @@ class ICTSMCStrategy(BaseStrategy):
             zone_top   = float(np.maximum(o[furthest:bar_i + 1], c[furthest:bar_i + 1]).max())
             highest_hi = float(h[furthest:bar_i + 1].max())
             entry = _round_down((zone_top + zone_bot) / 2.0)
-            sl    = _round_up(zone_top + (highest_hi - zone_top) / 2.0) + self.tick_offset
+            sl    = _round_up(zone_top + (highest_hi - zone_top) / 2.0) + self.tick_offset_atr_mult * self._session_atr
             return (entry, sl, zone_top, zone_bot, highest_hi, furthest)
 
     # ------------------------------------------------------------------
@@ -2417,7 +2417,7 @@ class ICTSMCStrategy(BaseStrategy):
                         while p <= new_last:
                             if (np.all(l[p] < l[p - sn:p]) and
                                     np.all(l[p] < l[p + 1:p + sn + 1])):
-                                cand = float(l[p]) - self.tick_offset
+                                cand = float(l[p]) - self.tick_offset_atr_mult * self._session_atr
                                 if cand > ctx.trail_best_sl:
                                     ctx.trail_best_sl = cand
                             p += 1
@@ -2430,7 +2430,7 @@ class ICTSMCStrategy(BaseStrategy):
                         while p <= new_last:
                             if (np.all(h[p] > h[p - sn:p]) and
                                     np.all(h[p] > h[p + 1:p + sn + 1])):
-                                cand = float(h[p]) + self.tick_offset
+                                cand = float(h[p]) + self.tick_offset_atr_mult * self._session_atr
                                 if cand < ctx.trail_best_sl:
                                     ctx.trail_best_sl = cand
                             p += 1
