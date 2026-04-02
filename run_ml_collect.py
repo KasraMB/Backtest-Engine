@@ -3,36 +3,28 @@ Multi-config data collection for the ICT/SMC ML pipeline.
 
 Steps
 -----
-1. Build a parameter grid.
-2. For each candidate config, run a sensitivity check (parallelised across CPU cores).
-   Results are cached so re-runs skip already-checked configs.
-3. For every config that passes sensitivity, run a clean data-collection backtest
-   (also parallelised + cached).
-4. Merge all trade rows into a single dataset and save to data/ml_dataset.parquet.
+1. Sample N configs via Latin Hypercube Sampling (LHS) from the param space.
+2. For each candidate, run a sensitivity check (parallelised, cached).
+3. For every config that passes sensitivity, run a clean data-collection
+   backtest (also parallelised, cached).
+4. Attach config features to each trade row.
+5. Merge into data/ml_dataset.parquet (appends on Round 2+).
 
-After this script finishes, run  run_ml_train.py  to train the model.
+Rounds
+------
+Set ROUND = 1 for the initial broad exploration.
+After reviewing Round 1 feature importance/partial-dependence plots, tighten
+PARAM_RANGES_V2 in backtest/ml/configs.py and re-run with ROUND = 2.
+Each round appends to the existing dataset — the model trains on all rounds.
 
-Workers
--------
-Uses ProcessPoolExecutor with one worker per logical CPU (minus one for the OS).
-Each worker loads the training-split market data ONCE via the initializer, so
-data is not re-read for every backtest.  On Windows, ensure you run this script
-under the  if __name__ == '__main__':  guard (already done at the bottom).
-
-Caching
--------
-cache/sensitivity_cache.json  — sensitivity check results keyed by config hash
-cache/trades_cache.json       — set of config hashes already collected
-
-Both caches survive between runs; delete them to force a full re-run.
+Set ROUND = 1 and delete cache files to start completely fresh.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
-import hashlib
-import itertools
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import time as dtime
 from pathlib import Path
@@ -43,89 +35,47 @@ sys.path.insert(0, str(ROOT))
 import numpy as np
 import pandas as pd
 
+from backtest.ml.configs import (
+    sample_configs, normalize_config, ROUND_RANGES,
+    PHASE1_PARAMS, PHASE2_PARAMS, CONFIG_FEATURE_NAMES,
+)
+from backtest.ml.features import ALL_FEATURE_NAMES
+
+# ---------------------------------------------------------------------------
+# Configuration — edit before each run
+# ---------------------------------------------------------------------------
+ROUND         = 1          # 1 = fresh broad LHS; 2+ = append tighter ranges
+N_CONFIGS     = 150        # configs to sample per round
+LHS_SEED      = 42         # reproducibility
+
+SENSITIVITY_CFG = dict(
+    perturbation_pct    = 0.15,
+    max_degradation_pct = 30.0,
+    min_base_metric     = 0.05,
+    min_trades          = 10,
+)
+
+BASE_EXEC = dict(
+    starting_capital         = 100_000,
+    slippage_points          = 0.25,
+    commission_per_contract  = 4.50,
+    eod_exit_time            = dtime(17, 0),
+    order_cancel_time        = dtime(11, 0),
+)
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-CACHE_1M      = ROOT / "data" / "NQ_1m.parquet"
-CACHE_5M      = ROOT / "data" / "NQ_5m.parquet"
-CACHE_BAR_MAP = ROOT / "data" / "NQ_bar_map.npy"
+CACHE_1M          = ROOT / "data" / "NQ_1m.parquet"
+CACHE_5M          = ROOT / "data" / "NQ_5m.parquet"
+CACHE_BAR_MAP     = ROOT / "data" / "NQ_bar_map.npy"
 SENSITIVITY_CACHE = ROOT / "cache" / "sensitivity_cache.json"
 TRADES_CACHE      = ROOT / "cache" / "trades_cache.json"
 DATASET_OUT       = ROOT / "data" / "ml_dataset.parquet"
 VALID_CONFIGS_OUT = ROOT / "data" / "validated_configs.json"
 
 # ---------------------------------------------------------------------------
-# Base execution config (strategy params are overridden per run)
-# ---------------------------------------------------------------------------
-BASE_EXEC = dict(
-    starting_capital=100_000,
-    slippage_points=0.25,
-    commission_per_contract=4.50,
-    eod_exit_time=dtime(17, 0),
-    order_cancel_time=dtime(11, 0),
-)
-
-# Base strategy params — grid values override these
-BASE_PARAMS = dict(
-    contracts=1,
-    swing_n=1,
-    cisd_min_series_candles=2,
-    cisd_min_body_ratio=0.5,
-    rb_min_wick_ratio=0.3,
-    confluence_tolerance_atr_mult=0.18,
-    tp_confluence_tolerance_atr_mult=0.18,
-    level_penetration_atr_mult=0.5,
-    min_rr=5.0,
-    tick_offset_atr_mult=0.035,
-    order_expiry_bars=10,
-    session_level_validity_days=2,
-    cancel_pct_to_tp=0.75,
-    min_ote_size_atr_mult=0.0,
-    max_ote_per_session=1,
-    max_stdv_per_session=1,
-    max_session_ote_per_session=1,
-    po3_lookback=6,
-    po3_atr_mult=0.95,
-    po3_atr_len=14,
-    po3_band_pct=0.3,
-    po3_vol_sens=1.0,
-    po3_max_r2=0.4,
-    po3_min_dir_changes=2,
-    po3_min_candles=3,
-    po3_max_accum_gap_bars=10,
-    po3_min_manipulation_size_atr_mult=0.0,
-    manip_leg_timeframe="5m",
-    manip_leg_swing_depth=1,
-    max_trades_per_day=2,
-    allowed_setup_types=["OTE", "STDV", "SESSION_OTE"],
-    ml_model=None,
-)
-
-# ---------------------------------------------------------------------------
-# Parameter grid — values that override BASE_PARAMS
-# Tier 1 (high impact) and Tier 2 (medium impact).
-# Add more tiers carefully — grid size grows multiplicatively.
-# ---------------------------------------------------------------------------
-PARAM_GRID: dict = {
-    # Tier 1
-    "confluence_tolerance_atr_mult": [0.12, 0.18, 0.25],
-    "min_rr":                        [3.0, 5.0, 7.0],
-    # Tier 2
-    "cancel_pct_to_tp":              [0.60, 0.75, 1.0],
-    "swing_n":                       [1, 2],
-    "manip_leg_timeframe":           ["1m", "5m"],
-}
-
-# Sensitivity check settings
-SENSITIVITY_CFG = dict(
-    perturbation_pct=0.15,
-    max_degradation_pct=30.0,
-    min_base_metric=0.05,   # minimum sortino to even consider a config
-    min_trades=10,          # skip configs with too few trades
-)
-
-# ---------------------------------------------------------------------------
-# Worker globals — set once per process by _init_worker
+# Worker globals — initialised once per worker process
 # ---------------------------------------------------------------------------
 _g_data        = None
 _g_exec_kwargs = None
@@ -135,12 +85,7 @@ def _init_worker(
     cache_1m: str, cache_5m: str, cache_bar_map: str,
     exec_kwargs: dict,
 ) -> None:
-    """
-    Runs once per worker process.  Loads market data (train split only) into
-    a module-level global so it is not re-read for every task.
-    """
     global _g_data, _g_exec_kwargs
-
     from backtest.data.loader import DataLoader
     from backtest.data.market_data import MarketData
     from backtest.ml.splits import filter_market_data
@@ -149,11 +94,11 @@ def _init_worker(
     df_5m   = pd.read_parquet(cache_5m)
     bar_map = np.load(cache_bar_map)
 
-    rth  = (df_1m.index.time >= dtime(9, 30)) & (df_1m.index.time <= dtime(16, 0))
-    a1   = {c: df_1m[c].to_numpy(dtype="float64") for c in ["open","high","low","close","volume"]}
-    a5   = {c: df_5m[c].to_numpy(dtype="float64") for c in ["open","high","low","close","volume"]}
+    rth = (df_1m.index.time >= dtime(9, 30)) & (df_1m.index.time <= dtime(16, 0))
+    a1  = {c: df_1m[c].to_numpy(dtype="float64") for c in ["open","high","low","close","volume"]}
+    a5  = {c: df_5m[c].to_numpy(dtype="float64") for c in ["open","high","low","close","volume"]}
 
-    loader   = DataLoader()
+    loader    = DataLoader()
     full_data = MarketData(
         df_1m=df_1m, df_5m=df_5m,
         open_1m=a1["open"],  high_1m=a1["high"],  low_1m=a1["low"],
@@ -168,19 +113,18 @@ def _init_worker(
 
 
 def _run_metric(params: dict) -> float:
-    """Run a single backtest and return sortino of R-multiples."""
     from backtest.runner.runner import run_backtest
     from backtest.runner.config import RunConfig
     from backtest.ml.evaluate import sortino_r
     from strategies.ict_smc import ICTSMCStrategy
 
     config = RunConfig(
-        starting_capital=_g_exec_kwargs["starting_capital"],
-        slippage_points=_g_exec_kwargs["slippage_points"],
-        commission_per_contract=_g_exec_kwargs["commission_per_contract"],
-        eod_exit_time=_g_exec_kwargs["eod_exit_time"],
-        order_cancel_time=_g_exec_kwargs["order_cancel_time"],
-        params={**params, "ml_model": None},
+        starting_capital        = _g_exec_kwargs["starting_capital"],
+        slippage_points         = _g_exec_kwargs["slippage_points"],
+        commission_per_contract = _g_exec_kwargs["commission_per_contract"],
+        eod_exit_time           = _g_exec_kwargs["eod_exit_time"],
+        order_cancel_time       = _g_exec_kwargs["order_cancel_time"],
+        params                  = {**params, "ml_model": None},
     )
     result = run_backtest(ICTSMCStrategy, config, _g_data)
     r_arr  = np.array(
@@ -193,40 +137,49 @@ def _run_metric(params: dict) -> float:
 
 
 def _task_sensitivity(args: tuple) -> tuple:
-    """
-    Worker task: run sensitivity check for one config.
-
-    Returns (config_hash, base_metric, is_stable)
-    """
-    params, sensitivity_cfg = args
+    """Worker: sensitivity check for one config. Returns (is_valid, base_metric, degrad_pct, worst_param)."""
+    params, sens_cfg, lhs_axes = args
     from backtest.ml.sensitivity import check_sensitivity
 
-    result = check_sensitivity(
-        params,
-        _run_metric,
-        perturbation_pct=sensitivity_cfg["perturbation_pct"],
-        max_degradation_pct=sensitivity_cfg["max_degradation_pct"],
+    # Only perturb params that are NOT LHS axes (those are already sampled)
+    perturb = [
+        p for p in [
+            'tp_confluence_tolerance_atr_mult',
+            'level_penetration_atr_mult',
+            'po3_atr_mult',
+            'po3_band_pct',
+            'po3_vol_sens',
+            'po3_min_manipulation_size_atr_mult',
+            'min_ote_size_atr_mult',
+            'tick_offset_atr_mult',
+            'cancel_pct_to_tp',
+        ]
+        if p not in lhs_axes
+    ]
+
+    result   = check_sensitivity(
+        params, _run_metric,
+        perturbation_pct    = sens_cfg["perturbation_pct"],
+        max_degradation_pct = sens_cfg["max_degradation_pct"],
+        params_to_perturb   = perturb if perturb else None,
     )
-    is_valid = result.is_stable and result.base_metric >= sensitivity_cfg["min_base_metric"]
+    is_valid = result.is_stable and result.base_metric >= sens_cfg["min_base_metric"]
     return is_valid, result.base_metric, result.degradation_pct, result.worst_param
 
 
 def _task_collect(params: dict) -> list:
-    """
-    Worker task: run a clean feature-collection backtest for validated params.
-    Returns a list of serialisable trade dicts.
-    """
+    """Worker: clean data-collection backtest. Returns list of trade dicts."""
     from backtest.runner.runner import run_backtest
     from backtest.runner.config import RunConfig
     from strategies.ict_smc import ICTSMCStrategy
 
     config = RunConfig(
-        starting_capital=_g_exec_kwargs["starting_capital"],
-        slippage_points=_g_exec_kwargs["slippage_points"],
-        commission_per_contract=_g_exec_kwargs["commission_per_contract"],
-        eod_exit_time=_g_exec_kwargs["eod_exit_time"],
-        order_cancel_time=_g_exec_kwargs["order_cancel_time"],
-        params={**params, "ml_model": None},
+        starting_capital        = _g_exec_kwargs["starting_capital"],
+        slippage_points         = _g_exec_kwargs["slippage_points"],
+        commission_per_contract = _g_exec_kwargs["commission_per_contract"],
+        eod_exit_time           = _g_exec_kwargs["eod_exit_time"],
+        order_cancel_time       = _g_exec_kwargs["order_cancel_time"],
+        params                  = {**params, "ml_model": None},
     )
     result = run_backtest(ICTSMCStrategy, config, _g_data)
 
@@ -273,38 +226,39 @@ def _hash_params(params: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    print("=== ICT/SMC ML Data Collection ===\n")
+    print(f"=== ICT/SMC ML Data Collection  [Round {ROUND}] ===\n")
 
     if not CACHE_1M.exists():
         print(f"ERROR: {CACHE_1M} not found. Run run.py once to build the cache.")
         return
 
-    # How many workers to use
+    ranges  = ROUND_RANGES.get(ROUND, ROUND_RANGES[1])
+    lhs_axes = set(ranges.keys())
+
     n_cpu     = os.cpu_count() or 1
     n_workers = max(1, n_cpu - 1)
-    print(f"CPU cores: {n_cpu}  →  using {n_workers} worker(s)\n")
+    print(f"CPU cores: {n_cpu}  →  using {n_workers} worker(s)")
+    print(f"Sampling {N_CONFIGS} configs via LHS (Round {ROUND} ranges)\n")
 
-    # Build full config list from grid
-    keys   = list(PARAM_GRID.keys())
-    values = list(PARAM_GRID.values())
-    all_combos = [
-        {**BASE_PARAMS, **dict(zip(keys, combo))}
-        for combo in itertools.product(*values)
-    ]
-    print(f"Grid size: {len(all_combos)} config(s)\n")
+    all_configs = sample_configs(N_CONFIGS, ranges, seed=LHS_SEED + ROUND - 1)
 
     # Load caches
-    sens_cache   = _load_json(SENSITIVITY_CACHE)   # hash → {base_metric, is_stable, ...}
-    trades_cache = _load_json(TRADES_CACHE)         # hash → True (already collected)
+    sens_cache   = _load_json(SENSITIVITY_CACHE)
+    trades_cache = _load_json(TRADES_CACHE)
+
+    init_args = (
+        str(CACHE_1M), str(CACHE_5M), str(CACHE_BAR_MAP),
+        {k: v for k, v in BASE_EXEC.items()},
+    )
 
     # -----------------------------------------------------------------------
-    # Phase 1: Sensitivity check (parallel)
+    # Phase 1: Sensitivity check
     # -----------------------------------------------------------------------
     print("--- Phase 1: Sensitivity check ---")
-    validated_configs = []
-    to_check = []
+    validated_configs: list[dict] = []
+    to_check: list[tuple] = []
 
-    for params in all_combos:
+    for params in all_configs:
         h = _hash_params(params)
         if h in sens_cache:
             cached = sens_cache[h]
@@ -315,21 +269,14 @@ def main() -> None:
             to_check.append((h, params))
 
     if to_check:
-        print(f"  Running sensitivity for {len(to_check)} new config(s) "
-              f"(~{len(to_check) * 23} backtests)...")
-
-        init_args = (
-            str(CACHE_1M), str(CACHE_5M), str(CACHE_BAR_MAP),
-            {k: v for k, v in BASE_EXEC.items()},
-        )
-
+        print(f"  Running sensitivity for {len(to_check)} new config(s)...")
         with ProcessPoolExecutor(
-            max_workers=n_workers,
-            initializer=_init_worker,
-            initargs=init_args,
+            max_workers  = n_workers,
+            initializer  = _init_worker,
+            initargs     = init_args,
         ) as pool:
             future_map = {
-                pool.submit(_task_sensitivity, (params, SENSITIVITY_CFG)): (h, params)
+                pool.submit(_task_sensitivity, (params, SENSITIVITY_CFG, lhs_axes)): (h, params)
                 for h, params in to_check
             }
             for fut in as_completed(future_map):
@@ -341,34 +288,40 @@ def main() -> None:
                     is_valid, base_metric, degrad_pct, worst_param = False, -999.0, 0.0, ""
 
                 sens_cache[h] = {
-                    "is_stable":      is_valid,
-                    "base_metric":    base_metric,
+                    "is_stable":       is_valid,
+                    "base_metric":     base_metric,
                     "degradation_pct": degrad_pct,
-                    "worst_param":    worst_param,
+                    "worst_param":     worst_param,
+                    "round":           ROUND,
                 }
                 _save_json(SENSITIVITY_CACHE, sens_cache)
 
                 tag = "PASS" if is_valid else "FAIL"
-                print(f"  [{tag}] {h}  metric={base_metric:.3f}  degrad={degrad_pct:.1f}%"
-                      f"  worst={worst_param}")
+                print(f"  [{tag}] {h}  metric={base_metric:.3f}"
+                      f"  degrad={degrad_pct:.1f}%  worst={worst_param}")
                 if is_valid:
                     validated_configs.append(params)
 
-    print(f"\n  {len(validated_configs)} / {len(all_combos)} configs passed sensitivity.\n")
+    print(f"\n  {len(validated_configs)} / {len(all_configs)} configs passed sensitivity.\n")
 
     if not validated_configs:
-        print("No configs passed sensitivity. Widen the grid or lower min_base_metric.")
+        print("No configs passed. Widen ranges or lower min_base_metric.")
         return
 
-    # Save validated config list
-    _save_json(VALID_CONFIGS_OUT, [
+    # Save validated config list (append across rounds)
+    existing_valid = _load_json(VALID_CONFIGS_OUT) if VALID_CONFIGS_OUT.exists() else []
+    existing_hashes = {_hash_params(c) for c in existing_valid}
+    new_valid = [
         {k: v for k, v in p.items() if k != "ml_model" and not callable(v)}
         for p in validated_configs
-    ])
-    print(f"  Validated configs saved → {VALID_CONFIGS_OUT}\n")
+        if _hash_params(p) not in existing_hashes
+    ]
+    _save_json(VALID_CONFIGS_OUT, existing_valid + new_valid)
+    print(f"  Validated configs saved → {VALID_CONFIGS_OUT}  "
+          f"(+{len(new_valid)} new, {len(existing_valid)} existing)\n")
 
     # -----------------------------------------------------------------------
-    # Phase 2: Data collection for validated configs (parallel)
+    # Phase 2: Trade collection
     # -----------------------------------------------------------------------
     print("--- Phase 2: Trade collection ---")
     to_collect = [
@@ -377,30 +330,16 @@ def main() -> None:
         if _hash_params(p) not in trades_cache
     ]
 
-    all_trade_rows: list[dict] = []
+    new_trade_rows: list[dict] = []
 
-    # Load already-collected trades from disk if dataset exists
-    if DATASET_OUT.exists() and not to_collect:
-        print("  All configs already collected. Loading existing dataset.")
-        df_existing = pd.read_parquet(DATASET_OUT)
-        all_trade_rows = df_existing.to_dict("records")
-    elif DATASET_OUT.exists() and to_collect:
-        df_existing = pd.read_parquet(DATASET_OUT)
-        all_trade_rows = df_existing.to_dict("records")
-        print(f"  {len(validated_configs) - len(to_collect)} already cached, "
-              f"{len(to_collect)} new to collect.")
+    if not to_collect:
+        print("  All validated configs already collected.")
     else:
         print(f"  Collecting {len(to_collect)} config(s)...")
-
-    if to_collect:
-        init_args = (
-            str(CACHE_1M), str(CACHE_5M), str(CACHE_BAR_MAP),
-            {k: v for k, v in BASE_EXEC.items()},
-        )
         with ProcessPoolExecutor(
-            max_workers=n_workers,
-            initializer=_init_worker,
-            initargs=init_args,
+            max_workers  = n_workers,
+            initializer  = _init_worker,
+            initargs     = init_args,
         ) as pool:
             future_map = {
                 pool.submit(_task_collect, params): (h, params)
@@ -414,52 +353,59 @@ def main() -> None:
                     print(f"  [error] {h}: {exc}")
                     trades = []
 
-                all_trade_rows.extend(trades)
-                trades_cache[h] = True
+                cfg_feat = normalize_config(params, ranges)
+                idx      = next(
+                    (i for i, c in enumerate(validated_configs)
+                     if _hash_params(c) == h), -1
+                )
+                for t in trades:
+                    t["config_hash"] = h
+                    t["config_idx"]  = idx
+                    t["round"]       = ROUND
+                    t["config_features"] = cfg_feat
+
+                new_trade_rows.extend(trades)
+                trades_cache[h] = {"round": ROUND, "n_trades": len(trades)}
                 _save_json(TRADES_CACHE, trades_cache)
                 print(f"  [done] {h}  trades={len(trades)}")
 
     # -----------------------------------------------------------------------
-    # Phase 3: Build and save dataset
+    # Phase 3: Build dataset and save (append to existing on Round 2+)
     # -----------------------------------------------------------------------
     print("\n--- Phase 3: Building dataset ---")
 
-    if not all_trade_rows:
-        print("ERROR: No trades collected. Check strategy is recording signal_features.")
+    if not new_trade_rows and ROUND > 1 and DATASET_OUT.exists():
+        print("  No new trades. Existing dataset unchanged.")
+        df = pd.read_parquet(DATASET_OUT)
+        print(f"  Existing rows: {len(df)}")
         return
 
-    from backtest.data.market_data import MarketData
-    from backtest.data.loader import DataLoader
-    from backtest.ml.splits import filter_market_data
-    from backtest.ml.dataset import build_dataset
-    from backtest.runner.runner import RunResult
+    if not new_trade_rows:
+        print("ERROR: No trades collected.")
+        return
 
-    # We need to reconstruct a RunResult-like object to pass to build_dataset.
-    # Instead, build the DataFrame directly from the collected trade dicts.
+    # Load existing dataset if appending
+    existing_df = pd.read_parquet(DATASET_OUT) if DATASET_OUT.exists() and ROUND > 1 else None
+
+    # Build context features from new rows
     from collections import deque
-    from backtest.ml.features import ALL_FEATURE_NAMES
-
-    # Load data for context features (entry_bar → equity curve)
-    # For multi-config collection we don't have a single equity curve, so
-    # context features are approximated from per-trade order (sorted by entry_bar).
-    rows = []
-    history: deque = deque(maxlen=10)
+    rows: list[dict]  = []
+    history: deque    = deque(maxlen=10)
     consecutive_losses = 0
-    day_counts: dict = {}
+    day_counts: dict  = {}
 
-    # Sort by entry_bar so rolling context is chronologically consistent
-    sorted_trades = sorted(all_trade_rows, key=lambda t: t["entry_bar"])
-
-    # Load 1m data to get dates (train split only)
     df_1m = pd.read_parquet(CACHE_1M)
     from backtest.ml.splits import split_bounds
     s_ts, e_ts = split_bounds("train")
     df_1m = df_1m[(df_1m.index >= s_ts) & (df_1m.index <= e_ts)]
 
+    sorted_trades = sorted(new_trade_rows, key=lambda t: t["entry_bar"])
+
     for trade in sorted_trades:
         sf         = trade["signal_features"]
         entry_bar  = trade["entry_bar"]
         r_multiple = float(trade["r_multiple"])
+        cfg_feat   = trade.get("config_features", {})
 
         try:
             ts         = df_1m.index[entry_bar] if entry_bar < len(df_1m) else None
@@ -467,7 +413,7 @@ def main() -> None:
         except (IndexError, AttributeError):
             trade_date = None
 
-        daily_idx          = day_counts.get(trade_date, 0)
+        daily_idx              = day_counts.get(trade_date, 0)
         day_counts[trade_date] = daily_idx + 1
 
         if len(history) >= 1:
@@ -477,37 +423,58 @@ def main() -> None:
         else:
             rwr, rex = 0.5, 0.0
 
-        row = {**sf,
-               "daily_trade_idx":        daily_idx,
-               "recent_win_rate_10":     rwr,
-               "recent_expectancy_r_10": rex,
-               "consecutive_losses":     consecutive_losses,
-               "drawdown_pct":           0.0,   # not available in multi-config mode
-               "r_multiple":             r_multiple,
-               "is_winner":              int(r_multiple > 0),
-               "date":                   trade_date,
-               "entry_bar":              entry_bar}
+        row = {
+            **sf,
+            **cfg_feat,
+            "daily_trade_idx":        daily_idx,
+            "recent_win_rate_10":     rwr,
+            "recent_expectancy_r_10": rex,
+            "consecutive_losses":     consecutive_losses,
+            "drawdown_pct":           0.0,
+            "r_multiple":             r_multiple,
+            "is_winner":              int(r_multiple > 0),
+            "date":                   trade_date,
+            "entry_bar":              entry_bar,
+            "config_hash":            trade.get("config_hash", ""),
+            "config_idx":             trade.get("config_idx", -1),
+            "round":                  trade.get("round", ROUND),
+        }
 
         for col in ALL_FEATURE_NAMES:
             row.setdefault(col, 0)
 
         rows.append(row)
-
         history.append(r_multiple)
         consecutive_losses = consecutive_losses + 1 if r_multiple <= 0 else 0
 
-    cols = ALL_FEATURE_NAMES + ["date", "entry_bar", "r_multiple", "is_winner"]
-    df   = pd.DataFrame(rows)
+    meta_cols = ["date", "entry_bar", "r_multiple", "is_winner",
+                 "config_hash", "config_idx", "round"]
+    cols      = ALL_FEATURE_NAMES + meta_cols
+    df_new    = pd.DataFrame(rows)
     for c in cols:
-        df.setdefault(c, 0)
-    df = df[cols].reset_index(drop=True)
+        df_new.setdefault(c, 0)
+    df_new = df_new[cols].reset_index(drop=True)
+
+    if existing_df is not None:
+        # Align columns before concat
+        for c in df_new.columns:
+            if c not in existing_df.columns:
+                existing_df[c] = 0
+        for c in existing_df.columns:
+            if c not in df_new.columns:
+                df_new[c] = 0
+        df = pd.concat([existing_df, df_new], ignore_index=True)
+    else:
+        df = df_new
 
     DATASET_OUT.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(DATASET_OUT, index=False)
 
-    print(f"  Total trades: {len(df)}")
-    print(f"  Win rate:     {df['is_winner'].mean():.1%}")
-    print(f"  Mean R:       {df['r_multiple'].mean():.3f}")
+    print(f"  New rows this round: {len(df_new)}")
+    print(f"  Total dataset rows:  {len(df)}")
+    print(f"  Win rate:            {df['is_winner'].mean():.1%}")
+    print(f"  Mean R:              {df['r_multiple'].mean():.3f}")
+    print(f"  Rounds in dataset:   {sorted(df['round'].unique())}")
     print(f"  Dataset saved → {DATASET_OUT}")
 
 

@@ -93,46 +93,70 @@ class MLModel:
     def decide(
         self,
         signal_features: dict,
+        phase2_candidates: Optional[list] = None,
         n_tp_candidates: int = 1,
-    ) -> Tuple[bool, int]:
+    ) -> Tuple[bool, int, dict]:
         """
-        Make a take/skip decision and choose the TP candidate index.
+        Make a take/skip decision, choose the TP candidate index, and select
+        the best Phase 2 execution config for this trade.
 
         Parameters
         ----------
         signal_features : dict
-            Feature dict from encode_signal_features().
+            Feature dict from encode_signal_features() — signal + context features.
+            Should NOT include config features; those are added here per candidate.
+        phase2_candidates : list of dicts, optional
+            Each dict contains Phase 2 params (cancel_pct_to_tp, tick_offset_atr_mult,
+            order_expiry_bars).  The model is queried for each candidate and the
+            one with the highest predicted R is selected.
+            If None or empty, falls back to the signal features as-is (single query).
         n_tp_candidates : int
             How many TP candidates are available.
 
         Returns
         -------
-        (skip, tp_idx)
-            skip   : True → skip this trade; zone stays unconsumed.
-            tp_idx : Index into the ordered TP candidate list (0 = nearest/default).
+        (skip, tp_idx, best_phase2_config)
+            skip             : True → skip this trade; zone stays unconsumed.
+            tp_idx           : Index into the ordered TP candidate list (0 = nearest).
+            best_phase2_config : dict of Phase 2 params to apply to this trade's order.
+                                 Empty dict if no candidates were provided.
         """
         if self._model is None:
-            return False, 0
+            return False, 0, {}
 
-        row = {k: signal_features.get(k, 0) for k in self._feature_names}
-        X = pd.DataFrame([row])
-        pred_r = float(self.predict_r(X)[0])
+        from backtest.ml.configs import normalize_config, CONFIG_FEATURE_NAMES
 
-        skip = pred_r < self.threshold
+        # Build candidate list — each entry is (phase2_params, feature_row)
+        if phase2_candidates:
+            rows = []
+            for p2 in phase2_candidates:
+                cfg_feat = normalize_config(p2)
+                row      = {k: signal_features.get(k, 0) for k in self._feature_names}
+                for k, v in cfg_feat.items():
+                    if k in self._feature_names:
+                        row[k] = v
+                rows.append(row)
+            X       = pd.DataFrame(rows)
+            preds   = self.predict_r(X)
+            best_i  = int(np.argmax(preds))
+            pred_r  = float(preds[best_i])
+            best_p2 = phase2_candidates[best_i]
+            best_sf = {**signal_features, **normalize_config(best_p2)}
+        else:
+            row    = {k: signal_features.get(k, 0) for k in self._feature_names}
+            X      = pd.DataFrame([row])
+            pred_r = float(self.predict_r(X)[0])
+            best_p2 = {}
+            best_sf = signal_features
 
-        # TP selection: if n_tp_candidates > 1 use predicted R to decide
-        # whether the higher target is reachable.  Simple heuristic:
-        # choose the farthest TP that still has expected value (pred_r > 0).
-        # Currently the model predicts a single R — pick TP index based on
-        # how high pred_r is relative to tp_r values in the features.
-        tp_idx = self._select_tp_idx(signal_features, n_tp_candidates, pred_r)
+        skip   = pred_r < self.threshold
+        tp_idx = self._select_tp_idx(best_sf, n_tp_candidates, pred_r)
 
-        return skip, tp_idx
+        return skip, tp_idx, best_p2
 
     def _select_tp_idx(self, sf: dict, n_candidates: int, pred_r: float) -> int:
         """
-        Choose which TP candidate index to use.
-        If pred_r is well above the nearest TP's R, consider a higher target.
+        Choose which TP candidate index to use based on predicted R vs. TP levels.
         Falls back to 0 (nearest) if information is unavailable.
         """
         if n_candidates <= 1 or pred_r <= 0:
@@ -141,8 +165,6 @@ class MLModel:
         tp_next_r = sf.get('tp_next_r', -1.0)
         if tp_r <= 0 or tp_next_r <= 0:
             return 0
-        # Go for the next TP if predicted R is at least 50% of the way there
-        # (simple geometric scaling rule — can be replaced by a second model)
         midpoint = tp_r + 0.5 * (tp_next_r - tp_r)
         return 1 if pred_r >= midpoint and n_candidates >= 2 else 0
 

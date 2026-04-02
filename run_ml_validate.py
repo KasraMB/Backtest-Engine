@@ -2,20 +2,37 @@
 Evaluate the trained ML model on the validation split.
 
 Safe to run as many times as you like — validation data is not a held-out
-test set, it is used for threshold tuning and model comparison.
+test set; it is used for threshold tuning and model comparison.
+
+Modes
+-----
+  baseline   Print metrics for all trades with no ML filter.
+  single     Filter using the ML model (single joint model, any config).
+  ensemble   Simulate running K configs simultaneously; only take trades
+             where a majority (or chosen vote method) agree.
 
 Usage
 -----
+  # single-model filter
   python run_ml_validate.py
 
-Prints a full metric table comparing all-trades vs. ML-filtered trades
-on the validation period (2023-01-01 → 2023-12-31 by default).
+  # baseline (no ML)
+  python run_ml_validate.py --mode baseline
+
+  # ensemble: auto-select top 3 configs by validation sortino
+  python run_ml_validate.py --mode ensemble --n_ensemble 3
+
+  # ensemble: specify exact config indices, unanimous vote
+  python run_ml_validate.py --mode ensemble --configs 0,5,12 --vote unanimous
+
+  # single mode for a specific config only
+  python run_ml_validate.py --mode single --configs 7
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
-from datetime import time as dtime
 
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
@@ -26,22 +43,183 @@ import pandas as pd
 from backtest.ml.model import MLModel
 from backtest.ml.splits import filter_df, SPLITS
 from backtest.ml.features import ALL_FEATURE_NAMES
-from backtest.ml.evaluate import sortino_r, profit_factor_r, win_rate, expectancy_r
+from backtest.ml.evaluate import sortino_r, profit_factor_r, win_rate, expectancy_r, search_threshold
+from backtest.ml.ensemble import evaluate_ensemble, per_config_metrics
 
 DATASET_PATH = ROOT / "data" / "ml_dataset.parquet"
 MODEL_PATH   = ROOT / "models" / "ict_smc.pkl"
 
 
-def main() -> None:
-    print("=== ML Validation Evaluation ===\n")
+# ---------------------------------------------------------------------------
+# Formatting helpers
+# ---------------------------------------------------------------------------
 
-    # Load model
-    if not MODEL_PATH.exists():
-        print(f"ERROR: Model not found at {MODEL_PATH}. Run run_ml_train.py first.")
+def _fmt_row(label: str, n: int, wr: float, sr: float, pf: float, er: float,
+             take_n: int | None = None, take_total: int | None = None) -> str:
+    take_str = ""
+    if take_n is not None and take_total is not None:
+        take_str = f"  take={take_n}/{take_total} ({take_n/max(take_total,1):.0%})"
+    return (
+        f"  {label:<30} {n:>6}  {wr:>8.1%}  {sr:>8.3f}  {pf:>10.3f}  {er:>7.3f}R"
+        f"{take_str}"
+    )
+
+
+def _fmt_header() -> tuple[str, str]:
+    h = f"  {'':30} {'N':>6}  {'WinRate':>8}  {'Sortino':>8}  {'ProfitFactor':>10}  {'ExpR':>7}"
+    s = "  " + "-" * 80
+    return h, s
+
+
+def _print_metrics_block(label: str, r: np.ndarray, r_all: np.ndarray) -> None:
+    h, s = _fmt_header()
+    print(h)
+    print(s)
+    n_all = len(r_all)
+    print(_fmt_row("All trades (baseline)", n_all,
+                   win_rate(r_all), sortino_r(r_all),
+                   profit_factor_r(r_all), expectancy_r(r_all)))
+    n = len(r)
+    print(_fmt_row(label, n,
+                   win_rate(r), sortino_r(r),
+                   profit_factor_r(r), expectancy_r(r),
+                   take_n=n, take_total=n_all))
+    print()
+
+
+# ---------------------------------------------------------------------------
+# Mode handlers
+# ---------------------------------------------------------------------------
+
+def run_baseline(df_val: pd.DataFrame) -> None:
+    y = df_val['r_multiple'].values
+    print(f"Trades: {len(y)}\n")
+    h, s = _fmt_header()
+    print(h)
+    print(s)
+    print(_fmt_row("All trades (baseline)", len(y),
+                   win_rate(y), sortino_r(y), profit_factor_r(y), expectancy_r(y)))
+    print()
+
+
+def run_single(df_val: pd.DataFrame, model: MLModel,
+               config_indices: list[int] | None) -> None:
+    if config_indices:
+        if 'config_idx' not in df_val.columns:
+            print("WARNING: 'config_idx' column not found — ignoring --configs filter.")
+        else:
+            df_val = df_val[df_val['config_idx'].isin(config_indices)]
+            print(f"Filtered to config indices: {config_indices}  ({len(df_val)} trades)\n")
+
+    y     = df_val['r_multiple'].values
+    X     = df_val[ALL_FEATURE_NAMES]
+    pred  = model.predict_r(X)
+    mask  = pred >= model.threshold
+    r_all = y
+    r_ml  = y[mask]
+
+    print(f"Trades: {len(y)}  |  threshold: {model.threshold:.4f}\n")
+    _print_metrics_block(f"ML filtered (th={model.threshold:.3f})", r_ml, r_all)
+
+    best_t, _ = search_threshold(pred, y, metric="sortino", min_take_rate=0.15)
+    print(f"  Best sortino threshold on this split: {best_t:.4f}")
+    print("  (reference only — do not feed back into training)\n")
+
+
+def run_ensemble(df_val: pd.DataFrame, model: MLModel,
+                 config_indices: list[int] | None,
+                 vote_method: str,
+                 n_ensemble: int) -> None:
+    if 'config_idx' not in df_val.columns:
+        print("ERROR: Dataset does not have a 'config_idx' column.")
+        print("       Run run_ml_collect.py (multi-config) first.")
         return
-    model = MLModel.load(MODEL_PATH)
-    print(f"Model loaded from {MODEL_PATH}")
-    print(f"Skip threshold: {model.threshold:.4f}\n")
+
+    available = sorted(df_val['config_idx'].unique().tolist())
+    print(f"Available config indices: {available[:20]}"
+          f"{'...' if len(available) > 20 else ''} ({len(available)} total)")
+
+    # Resolve which configs to use
+    if config_indices:
+        missing = [c for c in config_indices if c not in available]
+        if missing:
+            print(f"WARNING: config indices {missing} not found in dataset — skipping them.")
+        indices = [c for c in config_indices if c in available]
+    else:
+        # Auto-select top N by per-config validation sortino
+        print(f"\nAuto-selecting top {n_ensemble} configs by validation sortino...")
+        cfg_stats = per_config_metrics(df_val, model)
+        cfg_stats_sorted = sorted(cfg_stats, key=lambda r: r['sortino'], reverse=True)
+        indices = [r['config_idx'] for r in cfg_stats_sorted[:n_ensemble]]
+        print(f"Selected: {indices}")
+
+    if not indices:
+        print("No valid config indices. Aborting.")
+        return
+
+    print(f"\nEnsemble: {len(indices)} config(s), vote={vote_method}")
+    print(f"Configs: {indices}\n")
+
+    # Per-config metrics table
+    cfg_stats = per_config_metrics(df_val[df_val['config_idx'].isin(indices)], model)
+    print("Per-config metrics (before ensemble vote):")
+    h, s = _fmt_header()
+    print(h)
+    print(s)
+    for row in sorted(cfg_stats, key=lambda r: r['sortino'], reverse=True):
+        label = f"  Config {row['config_idx']}"
+        print(_fmt_row(label, row['n_taken'],
+                       row['win_rate'], row['sortino'],
+                       row['profit_factor'], row['expectancy_r'],
+                       take_n=row['n_taken'], take_total=row['n_all']))
+    print()
+
+    # Ensemble result
+    result = evaluate_ensemble(df_val, model, indices, vote_method=vote_method)
+    y_all  = df_val['r_multiple'].values
+    r_ens  = result['r_multiples']
+
+    print("Ensemble result:")
+    print(h)
+    print(s)
+    print(_fmt_row("All trades (baseline)", len(y_all),
+                   win_rate(y_all), sortino_r(y_all),
+                   profit_factor_r(y_all), expectancy_r(y_all)))
+    label = f"Ensemble ({vote_method}, {len(indices)}cfg)"
+    print(_fmt_row(label, result['n_taken'],
+                   result['win_rate'], result['sortino'],
+                   result['profit_factor'], result['expectancy_r'],
+                   take_n=result['n_taken'], take_total=result['n_signals']))
+    print()
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Validate ML model on validation split.")
+    parser.add_argument('--mode', default='single',
+                        choices=['baseline', 'single', 'ensemble'],
+                        help="Evaluation mode (default: single)")
+    parser.add_argument('--configs', default=None,
+                        help="Comma-separated config indices, e.g. '0,5,12'")
+    parser.add_argument('--vote', default='majority',
+                        choices=['majority', 'unanimous', 'weighted'],
+                        help="Ensemble vote method (default: majority)")
+    parser.add_argument('--n_ensemble', type=int, default=3,
+                        help="Number of top configs for auto-selection in ensemble mode (default: 3)")
+    args = parser.parse_args()
+
+    config_indices = None
+    if args.configs:
+        try:
+            config_indices = [int(x.strip()) for x in args.configs.split(',')]
+        except ValueError:
+            print(f"ERROR: --configs must be comma-separated integers, got '{args.configs}'")
+            return
+
+    print(f"=== ML Validation — mode={args.mode} ===\n")
 
     # Load dataset
     if not DATASET_PATH.exists():
@@ -58,43 +236,22 @@ def main() -> None:
         print("No validation trades found. Check your dataset and split boundaries.")
         return
 
-    # Predict
-    X_val   = df_val[ALL_FEATURE_NAMES]
-    y_val   = df_val["r_multiple"].values
-    pred_r  = model.predict_r(X_val)
-    mask    = pred_r >= model.threshold
-    r_taken = y_val[mask]
+    if args.mode == 'baseline':
+        run_baseline(df_val)
+        return
 
-    # Table
-    def _row(label, r):
-        if len(r) == 0:
-            return f"  {label:<22} {'—':>6}  {'—':>8}  {'—':>8}  {'—':>10}  {'—':>6}"
-        return (
-            f"  {label:<22} {len(r):>6}  "
-            f"{win_rate(r):>8.1%}  "
-            f"{sortino_r(r):>8.3f}  "
-            f"{profit_factor_r(r):>10.3f}  "
-            f"{expectancy_r(r):>6.3f}R"
-        )
+    # Load model for single / ensemble modes
+    if not MODEL_PATH.exists():
+        print(f"ERROR: Model not found at {MODEL_PATH}. Run run_ml_train.py first.")
+        return
+    model = MLModel.load(MODEL_PATH)
+    print(f"Model:     {MODEL_PATH}")
+    print(f"Threshold: {model.threshold:.4f}\n")
 
-    header = (f"  {'':22} {'N':>6}  {'WinRate':>8}  {'Sortino':>8}  "
-              f"{'ProfitFactor':>10}  {'ExpR':>6}")
-    sep    = "  " + "-" * 65
-    print(header)
-    print(sep)
-    print(_row("All trades (baseline)", y_val))
-    print(_row(f"ML filtered (th={model.threshold:.3f})", r_taken))
-    print()
-    print(f"  Take rate: {mask.mean():.1%}  ({mask.sum()} / {len(y_val)} trades taken)")
-    print()
-
-    # Threshold sensitivity: show a few alternative thresholds
-    from backtest.ml.evaluate import search_threshold
-    best_thresh, _ = search_threshold(pred_r, y_val, metric="sortino", min_take_rate=0.15)
-    print(f"  Best sortino threshold on this split: {best_thresh:.4f}")
-    print()
-    print("NOTE: The threshold above is computed ON validation data.")
-    print("      Use it for reference only — do not feed it back into training.")
+    if args.mode == 'single':
+        run_single(df_val, model, config_indices)
+    elif args.mode == 'ensemble':
+        run_ensemble(df_val, model, config_indices, args.vote, args.n_ensemble)
 
 
 if __name__ == "__main__":

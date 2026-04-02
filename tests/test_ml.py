@@ -317,8 +317,9 @@ class TestFeatureNameLists:
     def test_all_names_unique(self):
         assert len(ALL_FEATURE_NAMES) == len(set(ALL_FEATURE_NAMES))
 
-    def test_all_names_is_signal_plus_context(self):
-        assert ALL_FEATURE_NAMES == SIGNAL_FEATURE_NAMES + CONTEXT_FEATURE_NAMES
+    def test_all_names_is_signal_plus_context_plus_config(self):
+        from backtest.ml.configs import CONFIG_FEATURE_NAMES
+        assert ALL_FEATURE_NAMES == SIGNAL_FEATURE_NAMES + CONTEXT_FEATURE_NAMES + CONFIG_FEATURE_NAMES
 
 
 # ===========================================================================
@@ -529,10 +530,11 @@ class TestMLModel:
         X, y  = self._make_xy()
         model.fit(X, y)
         feat = {k: 0.0 for k in ALL_FEATURE_NAMES}
-        skip, tp_idx = model.decide(feat)
+        skip, tp_idx, best_p2 = model.decide(feat)
         assert isinstance(skip, bool)
         assert isinstance(tp_idx, int)
         assert tp_idx >= 0
+        assert isinstance(best_p2, dict)
 
     def test_decide_skips_below_threshold(self):
         from backtest.ml.model import MLModel
@@ -540,16 +542,17 @@ class TestMLModel:
         X, y  = self._make_xy()
         model.fit(X, y)
         feat = {k: 0.0 for k in ALL_FEATURE_NAMES}
-        skip, _ = model.decide(feat)
+        skip, _, _p2 = model.decide(feat)
         assert skip
 
     def test_decide_unfitted_never_skips(self):
         from backtest.ml.model import MLModel
         model = MLModel()  # not fitted
         feat  = {k: 0.0 for k in ALL_FEATURE_NAMES}
-        skip, tp_idx = model.decide(feat)
+        skip, tp_idx, best_p2 = model.decide(feat)
         assert skip is False
         assert tp_idx == 0
+        assert best_p2 == {}
 
     def test_feature_importance_returns_series(self):
         from backtest.ml.model import MLModel
