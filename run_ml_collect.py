@@ -55,7 +55,7 @@ from backtest.ml.features import ALL_FEATURE_NAMES
 # ---------------------------------------------------------------------------
 # Configuration — edit before each run
 # ---------------------------------------------------------------------------
-ROUND         = 1          # 1 = fresh broad LHS; 2+ = append tighter ranges
+ROUND         = 2          # 1 = fresh broad LHS; 2+ = append tighter ranges
 N_CONFIGS     = 150        # configs to sample per round
 LHS_SEED      = 42         # reproducibility
 
