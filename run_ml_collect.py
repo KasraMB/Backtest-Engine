@@ -451,11 +451,24 @@ def main() -> None:
     # (shouldn't happen in normal flow, but handles the case where base run
     #  was restored from cache without trade capture)
     # -----------------------------------------------------------------------
+    # Also re-collect if train rows are absent from the existing dataset
+    # (handles the case where the dataset was rebuilt without train data)
+    existing_train_hashes: set = set()
+    if DATASET_OUT.exists():
+        _edf = pd.read_parquet(DATASET_OUT, columns=["config_hash", "split"])
+        if "split" in _edf.columns:
+            existing_train_hashes = set(_edf.loc[_edf["split"] == "train", "config_hash"])
+        else:
+            existing_train_hashes = set(_edf["config_hash"])
+
     missing_trades = [
         (_hash_params(p), p)
         for p in validated_configs
         if _hash_params(p) not in new_trade_rows
-        and _hash_params(p) not in trades_cache
+        and (
+            _hash_params(p) not in trades_cache
+            or _hash_params(p) not in existing_train_hashes
+        )
     ]
 
     if missing_trades:
@@ -627,43 +640,48 @@ def main() -> None:
 
     all_rows = train_rows + val_rows
 
-    if not all_rows and ROUND > 1 and DATASET_OUT.exists():
-        print("  No new trades to add. Existing dataset unchanged.")
-        df = pd.read_parquet(DATASET_OUT)
-        print(f"  Existing rows: {len(df)}")
-        return
-
-    if not all_rows:
-        print("ERROR: No trade data collected.")
-        return
-
     meta_cols = ["date", "entry_bar", "r_multiple", "is_winner",
                  "config_hash", "config_idx", "round", "split"]
-    cols   = ALL_FEATURE_NAMES + meta_cols
-    df_new = pd.DataFrame(all_rows)
-    for c in cols:
-        if c not in df_new.columns:
-            df_new[c] = 0
-    df_new = df_new[cols].reset_index(drop=True)
+    cols = ALL_FEATURE_NAMES + meta_cols
 
-    # Append to existing dataset on Round 2+
-    existing_df = pd.read_parquet(DATASET_OUT) if DATASET_OUT.exists() and ROUND > 1 else None
-    if existing_df is not None:
+    if all_rows:
+        df_new = pd.DataFrame(all_rows)
+        for c in cols:
+            if c not in df_new.columns:
+                df_new[c] = 0
+        df_new = df_new[cols].reset_index(drop=True)
+    else:
+        df_new = pd.DataFrame(columns=cols)
+
+    # Always merge with existing dataset — preserves rows from prior runs/rounds
+    # and deduplicates by (config_hash, entry_bar, split) so re-runs are idempotent.
+    if DATASET_OUT.exists():
+        existing_df = pd.read_parquet(DATASET_OUT)
         for c in df_new.columns:
             if c not in existing_df.columns:
                 existing_df[c] = 0
         for c in existing_df.columns:
             if c not in df_new.columns:
                 df_new[c] = 0
-        df = pd.concat([existing_df, df_new], ignore_index=True)
+        combined = pd.concat([existing_df, df_new], ignore_index=True)
+        df = combined.drop_duplicates(
+            subset=["config_hash", "entry_bar", "split"], keep="last"
+        ).reset_index(drop=True)
     else:
         df = df_new
+
+    if len(df) == 0:
+        print("ERROR: No trade data collected and no existing dataset to preserve.")
+        return
 
     DATASET_OUT.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(DATASET_OUT, index=False)
 
-    print(f"  New rows this round: {len(df_new)}")
+    print(f"  New rows this run:   {len(df_new)}")
     print(f"  Total dataset rows:  {len(df)}")
+    if 'split' in df.columns:
+        for sp, cnt in df['split'].value_counts().items():
+            print(f"    {sp}: {cnt}")
     print(f"  Win rate:            {df['is_winner'].mean():.1%}")
     print(f"  Mean R:              {df['r_multiple'].mean():.3f}")
     print(f"  Rounds in dataset:   {sorted(df['round'].unique())}")
