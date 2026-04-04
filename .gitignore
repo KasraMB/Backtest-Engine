@@ -1,6 +1,8 @@
 # Ignore contents of data folder, but keep the folder
 data/*
 !data/.gitkeep
+!data/ml_dataset.parquet
+!data/validated_configs.json
 
 # Ignore cache directories
 **/__pycache__/
