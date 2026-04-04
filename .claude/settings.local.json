@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.lucidtrading.com)",
+      "WebFetch(domain:lucidtrading.com)",
+      "Bash(python -c \"import sys; print\\(sys.version\\)\")",
+      "Bash(python -m pytest tests/ -v --tb=short -q)",
+      "Bash(python run.py)",
+      "Bash(python -c \"import sys; sys.stdout.reconfigure\\(encoding=''utf-8''\\)\")",
+      "Bash(python -X utf8 run.py)",
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(python -m pytest tests/ -v --tb=short)",
+      "Bash(python run_verify.py)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(tasklist)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python -c \"from backtest.ml.ensemble import evaluate_ensemble, per_config_metrics, majority_vote, unanimous_vote, weighted_vote; print\\('ensemble OK'\\)\")",
+      "Bash(python -c \"import run_ml_validate; print\\('validate OK'\\)\")",
+      "Bash(python -c \"import run_ml_test; print\\('test OK'\\)\")"
+    ]
+  }
+}
