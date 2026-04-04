@@ -149,7 +149,13 @@ PARAM_RANGES_V1: dict[str, Any] = {
 # Param ranges — Round 2 (fill in after reviewing Round 1 results)
 # Edit these after Round 1 feature importance + partial dependence analysis.
 # ---------------------------------------------------------------------------
-PARAM_RANGES_V2: dict[str, Any] = dict(PARAM_RANGES_V1)  # placeholder — copy V1 for now
+PARAM_RANGES_V2: dict[str, Any] = {
+    **PARAM_RANGES_V1,
+    # Tightened based on Round 1: valid configs clustered 0.81-0.90 (12% of R1 range)
+    'po3_atr_mult':                  (0.72, 1.05),
+    # Valid configs never reached 3 in Round 1
+    'max_session_ote_per_session':   (1,    2),
+}
 
 # Integer params (rounded during sampling)
 _INTEGER_PARAMS: set[str] = {
