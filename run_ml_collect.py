@@ -83,6 +83,7 @@ CACHE_BAR_MAP     = ROOT / "data" / "NQ_bar_map.npy"
 SENS_RUNS_CACHE   = ROOT / "cache" / "sens_runs_cache.json"   # per-run results
 SENSITIVITY_CACHE = ROOT / "cache" / "sensitivity_cache.json" # per-config aggregated
 TRADES_CACHE      = ROOT / "cache" / "trades_cache.json"
+VAL_TRADES_CACHE  = ROOT / "cache" / "val_trades_cache.json"
 DATASET_OUT       = ROOT / "data" / "ml_dataset.parquet"
 VALID_CONFIGS_OUT = ROOT / "data" / "validated_configs.json"
 
@@ -96,6 +97,7 @@ _g_exec_kwargs = None
 def _init_worker(
     cache_1m: str, cache_5m: str, cache_bar_map: str,
     exec_kwargs: dict,
+    split: str = "train",
 ) -> None:
     global _g_data, _g_exec_kwargs
     from backtest.data.loader import DataLoader
@@ -120,7 +122,7 @@ def _init_worker(
         bar_map=bar_map,
         trading_dates=sorted(set(df_1m[rth].index.date)),
     )
-    _g_data        = filter_market_data(full_data, "train", loader)
+    _g_data        = filter_market_data(full_data, split, loader)
     _g_exec_kwargs = exec_kwargs
 
 
@@ -486,96 +488,159 @@ def main() -> None:
     _save_json(TRADES_CACHE, trades_cache)
 
     # -----------------------------------------------------------------------
+    # Collect validation split trades for all validated configs
+    # -----------------------------------------------------------------------
+    print("\n--- Collecting validation split trades ---")
+    val_trades_cache = _load_json(VAL_TRADES_CACHE)
+
+    val_missing = [
+        (_hash_params(p), p)
+        for p in validated_configs
+        if _hash_params(p) not in val_trades_cache
+    ]
+
+    val_trade_rows: dict[str, list] = {}
+
+    if val_missing:
+        print(f"  Running {len(val_missing)} config(s) on validation split...")
+        val_init_args = (
+            str(CACHE_1M), str(CACHE_5M), str(CACHE_BAR_MAP),
+            {k: v for k, v in BASE_EXEC.items()},
+            "validation",
+        )
+        with ProcessPoolExecutor(
+            max_workers=n_workers,
+            initializer=_init_worker,
+            initargs=val_init_args,
+        ) as pool:
+            future_map = {
+                pool.submit(_task_run_config, (h, 'base', params, True)): (h, params)
+                for h, params in val_missing
+            }
+            for fut in as_completed(future_map):
+                h, params = future_map[fut]
+                try:
+                    _, _, metric, trades = fut.result()
+                except Exception as exc:
+                    print(f"  [error] {h}: {exc}")
+                    trades = []
+                val_trade_rows[h] = trades or []
+                val_trades_cache[h] = {"round": ROUND, "n_trades": len(val_trade_rows[h])}
+                print(f"  [done] {h}  val_trades={len(val_trade_rows[h])}  metric={metric:.3f}")
+        _save_json(VAL_TRADES_CACHE, val_trades_cache)
+    else:
+        print("  All configs already in validation cache.\n")
+
+    # -----------------------------------------------------------------------
     # Build dataset rows (with context features and config features)
     # -----------------------------------------------------------------------
     print("\n--- Building dataset ---")
 
-    all_new_trades = []
-    for params in validated_configs:
-        h        = _hash_params(params)
-        cfg_feat = normalize_config(params, ranges)
-        idx      = next(
-            (i for i, c in enumerate(validated_configs) if _hash_params(c) == h), -1)
-        for t in new_trade_rows.get(h, []):
-            all_new_trades.append({**t,
-                                    "config_hash":     h,
-                                    "config_idx":      idx,
-                                    "round":           ROUND,
-                                    "config_features": cfg_feat})
+    from collections import deque
+    from backtest.ml.splits import split_bounds
 
-    if not all_new_trades and ROUND > 1 and DATASET_OUT.exists():
+    def _build_trade_list(trade_rows: dict, split_name: str) -> list:
+        result = []
+        for params in validated_configs:
+            h        = _hash_params(params)
+            cfg_feat = normalize_config(params, ranges)
+            idx      = next(
+                (i for i, c in enumerate(validated_configs) if _hash_params(c) == h), -1)
+            for t in trade_rows.get(h, []):
+                result.append({**t,
+                                "config_hash":     h,
+                                "config_idx":      idx,
+                                "round":           ROUND,
+                                "split":           split_name,
+                                "config_features": cfg_feat})
+        return result
+
+    def _build_rows(trade_list: list, df_1m_slice: "pd.DataFrame") -> list:
+        rows: list[dict]   = []
+        history: deque     = deque(maxlen=10)
+        consecutive_losses = 0
+        day_counts: dict   = {}
+
+        for trade in sorted(trade_list, key=lambda t: t["entry_bar"]):
+            sf         = trade["signal_features"]
+            entry_bar  = trade["entry_bar"]
+            r_multiple = float(trade["r_multiple"])
+            cfg_feat   = trade.get("config_features", {})
+
+            try:
+                ts         = df_1m_slice.index[entry_bar] if entry_bar < len(df_1m_slice) else None
+                trade_date = ts.date() if ts is not None else None
+            except (IndexError, AttributeError):
+                trade_date = None
+
+            daily_idx              = day_counts.get(trade_date, 0)
+            day_counts[trade_date] = daily_idx + 1
+
+            if len(history) >= 1:
+                recent_r = list(history)
+                rwr      = float(sum(r > 0 for r in recent_r) / len(recent_r))
+                rex      = float(sum(recent_r) / len(recent_r))
+            else:
+                rwr, rex = 0.5, 0.0
+
+            row = {
+                **sf,
+                **cfg_feat,
+                "daily_trade_idx":        daily_idx,
+                "recent_win_rate_10":     rwr,
+                "recent_expectancy_r_10": rex,
+                "consecutive_losses":     consecutive_losses,
+                "drawdown_pct":           0.0,
+                "r_multiple":             r_multiple,
+                "is_winner":              int(r_multiple > 0),
+                "date":                   trade_date,
+                "entry_bar":              entry_bar,
+                "config_hash":            trade.get("config_hash", ""),
+                "config_idx":             trade.get("config_idx", -1),
+                "round":                  trade.get("round", ROUND),
+                "split":                  trade.get("split", "train"),
+            }
+
+            for col in ALL_FEATURE_NAMES:
+                if col not in row:
+                    row[col] = 0
+
+            rows.append(row)
+            history.append(r_multiple)
+            consecutive_losses = consecutive_losses + 1 if r_multiple <= 0 else 0
+
+        return rows
+
+    df_1m_full = pd.read_parquet(CACHE_1M)
+
+    # Train rows
+    all_train_trades = _build_trade_list(new_trade_rows, "train")
+    s_ts, e_ts = split_bounds("train")
+    df_1m_train = df_1m_full[(df_1m_full.index >= s_ts) & (df_1m_full.index <= e_ts)]
+    train_rows = _build_rows(all_train_trades, df_1m_train)
+
+    # Validation rows
+    all_val_trades = _build_trade_list(val_trade_rows, "validation")
+    s_ts, e_ts = split_bounds("validation")
+    df_1m_val = df_1m_full[(df_1m_full.index >= s_ts) & (df_1m_full.index <= e_ts)]
+    val_rows = _build_rows(all_val_trades, df_1m_val)
+
+    all_rows = train_rows + val_rows
+
+    if not all_rows and ROUND > 1 and DATASET_OUT.exists():
         print("  No new trades to add. Existing dataset unchanged.")
         df = pd.read_parquet(DATASET_OUT)
         print(f"  Existing rows: {len(df)}")
         return
 
-    if not all_new_trades:
+    if not all_rows:
         print("ERROR: No trade data collected.")
         return
 
-    # Load 1m index for date lookup
-    df_1m = pd.read_parquet(CACHE_1M)
-    from backtest.ml.splits import split_bounds
-    s_ts, e_ts = split_bounds("train")
-    df_1m = df_1m[(df_1m.index >= s_ts) & (df_1m.index <= e_ts)]
-
-    from collections import deque
-    rows: list[dict]   = []
-    history: deque     = deque(maxlen=10)
-    consecutive_losses = 0
-    day_counts: dict   = {}
-
-    for trade in sorted(all_new_trades, key=lambda t: t["entry_bar"]):
-        sf         = trade["signal_features"]
-        entry_bar  = trade["entry_bar"]
-        r_multiple = float(trade["r_multiple"])
-        cfg_feat   = trade.get("config_features", {})
-
-        try:
-            ts         = df_1m.index[entry_bar] if entry_bar < len(df_1m) else None
-            trade_date = ts.date() if ts is not None else None
-        except (IndexError, AttributeError):
-            trade_date = None
-
-        daily_idx              = day_counts.get(trade_date, 0)
-        day_counts[trade_date] = daily_idx + 1
-
-        if len(history) >= 1:
-            recent_r = list(history)
-            rwr      = float(sum(r > 0 for r in recent_r) / len(recent_r))
-            rex      = float(sum(recent_r) / len(recent_r))
-        else:
-            rwr, rex = 0.5, 0.0
-
-        row = {
-            **sf,
-            **cfg_feat,
-            "daily_trade_idx":        daily_idx,
-            "recent_win_rate_10":     rwr,
-            "recent_expectancy_r_10": rex,
-            "consecutive_losses":     consecutive_losses,
-            "drawdown_pct":           0.0,
-            "r_multiple":             r_multiple,
-            "is_winner":              int(r_multiple > 0),
-            "date":                   trade_date,
-            "entry_bar":              entry_bar,
-            "config_hash":            trade.get("config_hash", ""),
-            "config_idx":             trade.get("config_idx", -1),
-            "round":                  trade.get("round", ROUND),
-        }
-
-        for col in ALL_FEATURE_NAMES:
-            if col not in row:
-                row[col] = 0
-
-        rows.append(row)
-        history.append(r_multiple)
-        consecutive_losses = consecutive_losses + 1 if r_multiple <= 0 else 0
-
     meta_cols = ["date", "entry_bar", "r_multiple", "is_winner",
-                 "config_hash", "config_idx", "round"]
+                 "config_hash", "config_idx", "round", "split"]
     cols   = ALL_FEATURE_NAMES + meta_cols
-    df_new = pd.DataFrame(rows)
+    df_new = pd.DataFrame(all_rows)
     for c in cols:
         if c not in df_new.columns:
             df_new[c] = 0
