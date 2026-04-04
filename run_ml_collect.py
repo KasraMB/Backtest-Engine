@@ -288,7 +288,7 @@ def main() -> None:
 
     n_cpu     = os.cpu_count() or 1
     n_workers = max(1, n_cpu - 1)
-    print(f"CPU cores: {n_cpu}  →  using {n_workers} worker(s)")
+    print(f"CPU cores: {n_cpu}  ->  using {n_workers} worker(s)")
     print(f"Sampling {N_CONFIGS} configs via LHS (Round {ROUND} ranges)\n")
 
     all_configs = sample_configs(N_CONFIGS, ranges, seed=LHS_SEED + ROUND - 1)
@@ -344,7 +344,7 @@ def main() -> None:
     # -----------------------------------------------------------------------
     # Run all tasks in one pool
     # -----------------------------------------------------------------------
-    new_trade_rows: dict[str, list] = {}   # h → list of trade dicts (from base runs)
+    new_trade_rows: dict[str, list] = {}   # h -> list of trade dicts (from base runs)
 
     if pending_tasks:
         with ProcessPoolExecutor(
@@ -441,7 +441,7 @@ def main() -> None:
         if _hash_params(p) not in existing_hashes
     ]
     _save_json(VALID_CONFIGS_OUT, existing_valid + new_valid)
-    print(f"  Validated configs saved → {VALID_CONFIGS_OUT}  "
+    print(f"  Validated configs saved -> {VALID_CONFIGS_OUT}  "
           f"(+{len(new_valid)} new, {len(existing_valid)} existing)\n")
 
     # -----------------------------------------------------------------------
@@ -602,7 +602,7 @@ def main() -> None:
     print(f"  Win rate:            {df['is_winner'].mean():.1%}")
     print(f"  Mean R:              {df['r_multiple'].mean():.3f}")
     print(f"  Rounds in dataset:   {sorted(df['round'].unique())}")
-    print(f"  Dataset saved → {DATASET_OUT}")
+    print(f"  Dataset saved -> {DATASET_OUT}")
 
 
 if __name__ == "__main__":
