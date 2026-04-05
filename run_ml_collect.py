@@ -616,60 +616,86 @@ def main() -> None:
         return result
 
     def _build_rows(trade_list: list, df_1m_slice: "pd.DataFrame") -> list:
-        rows: list[dict]   = []
-        history: deque     = deque(maxlen=10)
-        consecutive_losses = 0
-        day_counts: dict   = {}
+        from collections import defaultdict
+        from backtest.ml.evaluate import sortino_r as _sortino_r
 
-        for trade in sorted(trade_list, key=lambda t: t["entry_bar"]):
-            sf         = trade["signal_features"]
-            entry_bar  = trade["entry_bar"]
-            r_multiple = float(trade["r_multiple"])
-            cfg_feat   = trade.get("config_features", {})
+        # Group by config so rolling features never cross config boundaries.
+        # Within one config trades are sequential (one position at a time), so
+        # each trade's context only uses already-resolved outcomes — no look-ahead.
+        by_config: dict[str, list] = defaultdict(list)
+        for trade in trade_list:
+            by_config[trade.get("config_hash", "")].append(trade)
 
-            try:
-                ts         = df_1m_slice.index[entry_bar] if entry_bar < len(df_1m_slice) else None
-                trade_date = ts.date() if ts is not None else None
-            except (IndexError, AttributeError):
-                trade_date = None
+        all_rows: list[dict] = []
 
-            daily_idx              = day_counts.get(trade_date, 0)
-            day_counts[trade_date] = daily_idx + 1
+        for config_trades in by_config.values():
+            history            = deque(maxlen=10)
+            consecutive_losses = 0
+            day_counts: dict   = {}
+            running_r: list    = []   # all prior R-multiples for this config
 
-            if len(history) >= 1:
-                recent_r = list(history)
-                rwr      = float(sum(r > 0 for r in recent_r) / len(recent_r))
-                rex      = float(sum(recent_r) / len(recent_r))
-            else:
-                rwr, rex = 0.5, 0.0
+            for trade in sorted(config_trades, key=lambda t: t["entry_bar"]):
+                sf         = trade["signal_features"]
+                entry_bar  = trade["entry_bar"]
+                r_multiple = float(trade["r_multiple"])
+                # copy so we can override cfg_base_metric without mutating the source
+                cfg_feat   = dict(trade.get("config_features", {}))
 
-            row = {
-                **sf,
-                **cfg_feat,
-                "daily_trade_idx":        daily_idx,
-                "recent_win_rate_10":     rwr,
-                "recent_expectancy_r_10": rex,
-                "consecutive_losses":     consecutive_losses,
-                "drawdown_pct":           0.0,
-                "r_multiple":             r_multiple,
-                "is_winner":              int(r_multiple > 0),
-                "date":                   trade_date,
-                "entry_bar":              entry_bar,
-                "config_hash":            trade.get("config_hash", ""),
-                "config_idx":             trade.get("config_idx", -1),
-                "round":                  trade.get("round", ROUND),
-                "split":                  trade.get("split", "train"),
-            }
+                try:
+                    ts         = df_1m_slice.index[entry_bar] if entry_bar < len(df_1m_slice) else None
+                    trade_date = ts.date() if ts is not None else None
+                except (IndexError, AttributeError):
+                    trade_date = None
 
-            for col in ALL_FEATURE_NAMES:
-                if col not in row:
-                    row[col] = 0
+                daily_idx              = day_counts.get(trade_date, 0)
+                day_counts[trade_date] = daily_idx + 1
 
-            rows.append(row)
-            history.append(r_multiple)
-            consecutive_losses = consecutive_losses + 1 if r_multiple <= 0 else 0
+                if len(history) >= 1:
+                    recent_r = list(history)
+                    rwr      = float(sum(r > 0 for r in recent_r) / len(recent_r))
+                    rex      = float(sum(recent_r) / len(recent_r))
+                else:
+                    rwr, rex = 0.5, 0.0
 
-        return rows
+                # Replace static cfg_base_metric with rolling Sortino of prior trades
+                # for this config only — eliminates full-train-period look-ahead.
+                # Default 0.5 (neutral) until 5 trades have resolved.
+                if len(running_r) >= 5:
+                    roll_m = float(_sortino_r(np.array(running_r, dtype=float)))
+                    cfg_feat['cfg_base_metric'] = float(
+                        np.clip(roll_m, -2.0, 2.0) / 4.0 + 0.5
+                    )
+                else:
+                    cfg_feat['cfg_base_metric'] = 0.5
+
+                row = {
+                    **sf,
+                    **cfg_feat,
+                    "daily_trade_idx":        daily_idx,
+                    "recent_win_rate_10":     rwr,
+                    "recent_expectancy_r_10": rex,
+                    "consecutive_losses":     consecutive_losses,
+                    "drawdown_pct":           0.0,
+                    "r_multiple":             r_multiple,
+                    "is_winner":              int(r_multiple > 0),
+                    "date":                   trade_date,
+                    "entry_bar":              entry_bar,
+                    "config_hash":            trade.get("config_hash", ""),
+                    "config_idx":             trade.get("config_idx", -1),
+                    "round":                  trade.get("round", ROUND),
+                    "split":                  trade.get("split", "train"),
+                }
+
+                for col in ALL_FEATURE_NAMES:
+                    if col not in row:
+                        row[col] = 0
+
+                all_rows.append(row)
+                history.append(r_multiple)
+                running_r.append(r_multiple)
+                consecutive_losses = consecutive_losses + 1 if r_multiple <= 0 else 0
+
+        return all_rows
 
     df_1m_full = pd.read_parquet(CACHE_1M)
 

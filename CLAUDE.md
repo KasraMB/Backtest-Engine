@@ -1,7 +1,5 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Commands
 
 ```bash
@@ -10,9 +8,14 @@ python -m pytest tests/ -v
 
 # Run the full backtest pipeline (outputs tearsheet.html + trade_logs/ICTSMCStrategy.csv)
 python run.py
+
+# ML pipeline (run in order)
+python run_ml_collect.py   # multi-config data collection → data/ml_dataset.parquet
+python run_ml_train.py     # walk-forward training → models/ict_smc.pkl
+python run_ml_validate.py  # evaluate on validation split
 ```
 
-No build step, no setup.py. Dependencies: `pandas numpy pytest plotly hmmlearn pyarrow fastparquet`
+No build step, no setup.py. Dependencies: `pandas numpy pytest plotly hmmlearn pyarrow fastparquet scipy`
 
 ## Architecture
 
@@ -78,6 +81,29 @@ Vectorized Monte Carlo simulation of LucidFlex eval and funded phases. `run_prop
 ### Regime analysis (`backtest/regime/`)
 
 `fit_regimes()` trains a Gaussian HMM on daily log-returns. States sorted by mean return. `mode="rolling"` is forward-safe. `run_regime_analysis()` computes per-regime trade stats and a permutation p-value.
+
+---
+
+## ML Pipeline (`backtest/ml/`, `run_ml_*.py`)
+
+### Data splits
+train 2019–2022 (walk-forward) · validation 2023 (threshold tuning only) · test1/test2 **never touch**
+
+### Collection (`run_ml_collect.py`)
+LHS samples `N_CONFIGS` configs per round; appends to `ml_dataset.parquet`.
+
+- Collects from **all configs**, not just sensitivity-passing ones — survivorship bias. `cfg_is_valid` / `cfg_base_metric` encode filter result as features.
+- Sensitivity filter (`min_base_metric=0.05`, `max_degradation_pct=30%`) gates `validated_configs` for deployment only, not dataset inclusion.
+- Perturbation runs (±15% on non-LHS params) are **currently inert** — all params are LHS axes in Round 1/2. Activate when a future round holds some params fixed outside LHS.
+
+### Caches (`cache/`)
+`sens_runs_cache.json` / `sensitivity_cache.json` — survive schema changes (backtests don't re-run, only dataset rebuild)
+`trades_cache.json` / `val_trades_cache.json` — delete on schema change or full re-run
+
+### Deferred — implement before perturbations activate
+- **Round 2+ sample weights**: `weight = volume(round_N_space) / volume(round_1_space)`
+- **Perturbation stability features**: `cfg_perturb_mean/worst/std_metric` on parent config (from `sens_runs_cache`)
+- **Perturbation sample downweight**: `1 / (2 × n_non_lhs_params)` per perturb row
 
 ---
 
