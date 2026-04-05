@@ -6,8 +6,8 @@ WARNING
 Running this script consumes your test set.  Once you have seen the results
 and made decisions based on them, the test period is no longer blind.
 
-  test1  2024-01-01 → 2024-12-31   (first test window — use this first)
-  test2  2025-01-01 → present       (reserve for a second opinion)
+  test1  2024-01-01 -> 2024-12-31   (first test window — use this first)
+  test2  2025-01-01 -> present       (reserve for a second opinion)
 
 Rule of thumb
 -------------
@@ -250,7 +250,7 @@ def main() -> None:
 
     split     = args.split
     start_str, end_str = SPLITS[split]
-    period    = f"{start_str} → {end_str or 'present'}"
+    period    = f"{start_str} -> {end_str or 'present'}"
 
     print("=" * 60)
     print(f"  ML TEST EVALUATION — {split.upper()}  [{args.mode.upper()}]")

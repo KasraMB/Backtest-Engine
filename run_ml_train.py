@@ -17,8 +17,8 @@ Steps
 
 Data splits (defined in backtest/ml/splits.py)
 -----------------------------------------------
-  train       2019-01-01 → 2022-12-31   walk-forward lives here
-  validation  2023-01-01 → 2023-12-31   threshold tuning only
+  train       2019-01-01 -> 2022-12-31   walk-forward lives here
+  validation  2023-01-01 -> 2023-12-31   threshold tuning only
   test1/test2                            NEVER touched here
 """
 from __future__ import annotations
@@ -153,9 +153,9 @@ def main() -> None:
     df_val   = filter_df(df_full, "validation")
 
     print(f"Train split:      {len(df_train):,} trades "
-          f"({SPLITS['train'][0]} → {SPLITS['train'][1]})")
+          f"({SPLITS['train'][0]} -> {SPLITS['train'][1]})")
     print(f"Validation split: {len(df_val):,} trades "
-          f"({SPLITS['validation'][0]} → {SPLITS['validation'][1]})")
+          f"({SPLITS['validation'][0]} -> {SPLITS['validation'][1]})")
     print()
 
     if len(df_train) < 20:
@@ -243,7 +243,7 @@ def main() -> None:
     # 5. Save model
     MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     wf_result.final_model.save(MODEL_PATH)
-    print(f"Model saved → {MODEL_PATH}")
+    print(f"Model saved -> {MODEL_PATH}")
     print(f"Skip threshold: {wf_result.final_model.threshold:.4f}")
 
 

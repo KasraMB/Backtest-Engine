@@ -229,7 +229,7 @@ def main() -> None:
     df_full = pd.read_parquet(DATASET_PATH)
     df_val  = filter_df(df_full, "validation")
 
-    print(f"Validation split: {SPLITS['validation'][0]} → {SPLITS['validation'][1]}")
+    print(f"Validation split: {SPLITS['validation'][0]} -> {SPLITS['validation'][1]}")
     print(f"Trades:           {len(df_val)}\n")
 
     if len(df_val) == 0:

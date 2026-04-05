@@ -16,7 +16,8 @@
       "Bash(python -m pytest tests/ -v)",
       "Bash(python -c \"from backtest.ml.ensemble import evaluate_ensemble, per_config_metrics, majority_vote, unanimous_vote, weighted_vote; print\\('ensemble OK'\\)\")",
       "Bash(python -c \"import run_ml_validate; print\\('validate OK'\\)\")",
-      "Bash(python -c \"import run_ml_test; print\\('test OK'\\)\")"
+      "Bash(python -c \"import run_ml_test; print\\('test OK'\\)\")",
+      "Bash(python -c ':*)"
     ]
   }
 }
