@@ -55,7 +55,7 @@ from backtest.ml.features import ALL_FEATURE_NAMES
 # ---------------------------------------------------------------------------
 # Configuration — edit before each run
 # ---------------------------------------------------------------------------
-ROUND         = 2          # 1 = fresh broad LHS; 2+ = append tighter ranges
+ROUND         = 1          # 1 = fresh broad LHS; 2+ = append tighter ranges
 N_CONFIGS     = 150        # configs to sample per round
 LHS_SEED      = 42         # reproducibility
 
@@ -305,9 +305,25 @@ def main() -> None:
         {k: v for k, v in BASE_EXEC.items()},
     )
 
+    # Pre-build perturb config maps so we can check trades_cache before submitting.
+    # Keyed by the perturbed params hash (not the base config hash).
+    # Skips any perturb that coincidentally hashes to an LHS config (avoid duplicates).
+    lhs_hash_set = {_hash_params(p) for p in all_configs}
+    perturb_config_map: dict[str, dict]          = {}  # h_perturb -> perturbed params
+    perturb_run_map: dict[str, tuple[str, str]]  = {}  # h_perturb -> (h_base, key)
+    for params in all_configs:
+        h = _hash_params(params)
+        for key, p_params in _build_perturb_list(params, lhs_axes,
+                                                  SENSITIVITY_CFG['perturbation_pct']):
+            h_p = _hash_params(p_params)
+            if h_p not in lhs_hash_set:
+                perturb_config_map.setdefault(h_p, p_params)
+                perturb_run_map.setdefault(h_p, (h, key))
+
     # -----------------------------------------------------------------------
     # Build task list — one task per (config, perturbation) pair
-    # base runs also capture trade data (capture_trades=True)
+    # Both base and perturbation runs capture trade data (free data from runs
+    # we're doing anyway; perturb configs get cfg_is_valid=0 in the dataset).
     # -----------------------------------------------------------------------
     # Tasks to submit: (config_hash, perturb_key, params, capture_trades)
     pending_tasks: list[tuple] = []
@@ -331,7 +347,9 @@ def main() -> None:
                                                       SENSITIVITY_CFG['perturbation_pct']):
                 run_key = f"{h}:{key}"
                 if run_key not in sens_runs_cache:
-                    pending_tasks.append((h, key, p_params, False))
+                    h_p = _hash_params(p_params)
+                    capture_p = h_p not in lhs_hash_set and h_p not in trades_cache
+                    pending_tasks.append((h, key, p_params, capture_p))
 
     n_base   = sum(1 for t in pending_tasks if t[1] == 'base')
     n_perturb = len(pending_tasks) - n_base
@@ -373,9 +391,13 @@ def main() -> None:
                 sens_runs_cache[run_key] = metric
                 _save_json(SENS_RUNS_CACHE, sens_runs_cache)
 
-                # Store trade data from base runs
+                # Store trade data — base runs under h, perturb runs under their own hash
                 if key == 'base' and trades is not None:
                     new_trade_rows[h] = trades
+                elif key != 'base' and trades is not None:
+                    h_p = _hash_params(params)  # params IS the perturbed params
+                    if h_p not in lhs_hash_set:
+                        new_trade_rows[h_p] = trades
 
                 done += 1
                 tag = 'base' if key == 'base' else 'perturb'
@@ -426,9 +448,29 @@ def main() -> None:
 
     print(f"\n  {len(validated_configs)} / {len(all_configs)} configs passed.\n")
 
+    # Build validity map for ALL configs (LHS + perturb) — used to populate
+    # cfg_is_valid / cfg_base_metric features so the model sees trades from
+    # bad configs too (avoids survivorship bias).
+    validity_map: dict[str, tuple[bool, float]] = {}
+    for params in all_configs:
+        h = _hash_params(params)
+        agg = sens_agg_cache.get(h, {})
+        validity_map[h] = (bool(agg.get("is_valid", False)), float(agg.get("base_metric", -999.0)))
+    # Perturb configs are never independently validated — cfg_is_valid=False,
+    # cfg_base_metric = their own backtest metric.
+    for h_p, (h_base, p_key) in perturb_run_map.items():
+        metric_p = sens_runs_cache.get(f"{h_base}:{p_key}", -999.0)
+        validity_map[h_p] = (False, float(metric_p))
+
+    # Combined list of all configs whose trades we collect (LHS + perturb).
+    # Used for missing-trades checks, val collection, cache updates, and dataset build.
+    all_config_entries: list[dict] = all_configs + [
+        perturb_config_map[h] for h in perturb_config_map
+    ]
+
     if not validated_configs:
         print("No configs passed. Widen ranges or lower min_base_metric.")
-        return
+        print("Trade data will still be collected for all configs.\n")
 
     # Save validated config list (append new across rounds)
     existing_valid = _load_json(VALID_CONFIGS_OUT) if VALID_CONFIGS_OUT.exists() else []
@@ -447,12 +489,12 @@ def main() -> None:
           f"(+{len(new_valid)} new, {len(existing_valid)} existing)\n")
 
     # -----------------------------------------------------------------------
-    # Collect any validated configs whose trade data wasn't captured
-    # (shouldn't happen in normal flow, but handles the case where base run
-    #  was restored from cache without trade capture)
+    # Collect trade data for ALL configs whose trades weren't captured this run.
+    # We collect from all configs (not just validated) to avoid survivorship
+    # bias: the ML model needs to see trades from "bad" configs to learn the
+    # contrast.  cfg_is_valid / cfg_base_metric are passed as features so
+    # the model knows which configs the sensitivity filter accepted.
     # -----------------------------------------------------------------------
-    # Also re-collect if train rows are absent from the existing dataset
-    # (handles the case where the dataset was rebuilt without train data)
     existing_train_hashes: set = set()
     if DATASET_OUT.exists():
         _edf = pd.read_parquet(DATASET_OUT, columns=["config_hash", "split"])
@@ -463,7 +505,7 @@ def main() -> None:
 
     missing_trades = [
         (_hash_params(p), p)
-        for p in validated_configs
+        for p in all_config_entries
         if _hash_params(p) not in new_trade_rows
         and (
             _hash_params(p) not in trades_cache
@@ -493,8 +535,8 @@ def main() -> None:
                 new_trade_rows[h] = trades or []
                 print(f"  [done] {h}  trades={len(new_trade_rows[h])}")
 
-    # Mark all valid configs as collected
-    for params in validated_configs:
+    # Mark all configs (LHS + perturb, valid and invalid) as collected
+    for params in all_config_entries:
         h = _hash_params(params)
         if h in new_trade_rows:
             trades_cache[h] = {"round": ROUND, "n_trades": len(new_trade_rows[h])}
@@ -508,7 +550,7 @@ def main() -> None:
 
     val_missing = [
         (_hash_params(p), p)
-        for p in validated_configs
+        for p in all_config_entries
         if _hash_params(p) not in val_trades_cache
     ]
 
@@ -552,13 +594,18 @@ def main() -> None:
     from collections import deque
     from backtest.ml.splits import split_bounds
 
-    def _build_trade_list(trade_rows: dict, split_name: str) -> list:
+    def _build_trade_list(
+        trade_rows: dict,
+        split_name: str,
+        configs_list: list,
+        val_map: dict,   # hash -> (is_valid, base_metric)
+    ) -> list:
         result = []
-        for params in validated_configs:
-            h        = _hash_params(params)
-            cfg_feat = normalize_config(params, ranges)
-            idx      = next(
-                (i for i, c in enumerate(validated_configs) if _hash_params(c) == h), -1)
+        for idx, params in enumerate(configs_list):
+            h                = _hash_params(params)
+            is_v, base_m     = val_map.get(h, (False, -999.0))
+            cfg_feat         = normalize_config(params, ranges,
+                                                is_valid=is_v, base_metric=base_m)
             for t in trade_rows.get(h, []):
                 result.append({**t,
                                 "config_hash":     h,
@@ -627,13 +674,13 @@ def main() -> None:
     df_1m_full = pd.read_parquet(CACHE_1M)
 
     # Train rows
-    all_train_trades = _build_trade_list(new_trade_rows, "train")
+    all_train_trades = _build_trade_list(new_trade_rows, "train", all_config_entries, validity_map)
     s_ts, e_ts = split_bounds("train")
     df_1m_train = df_1m_full[(df_1m_full.index >= s_ts) & (df_1m_full.index <= e_ts)]
     train_rows = _build_rows(all_train_trades, df_1m_train)
 
     # Validation rows
-    all_val_trades = _build_trade_list(val_trade_rows, "validation")
+    all_val_trades = _build_trade_list(val_trade_rows, "validation", all_config_entries, validity_map)
     s_ts, e_ts = split_bounds("validation")
     df_1m_val = df_1m_full[(df_1m_full.index >= s_ts) & (df_1m_full.index <= e_ts)]
     val_rows = _build_rows(all_val_trades, df_1m_val)
