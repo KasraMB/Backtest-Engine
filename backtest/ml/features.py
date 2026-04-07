@@ -58,11 +58,12 @@ SIGNAL_FEATURE_NAMES: list[str] = [
 
 # Computed offline by build_dataset() from the surrounding trade history
 CONTEXT_FEATURE_NAMES: list[str] = [
-    'daily_trade_idx',       # index of this trade within the day (0=first, 1=second, …)
-    'recent_win_rate_10',    # win rate of the 10 trades before this one (0.5 default)
-    'recent_expectancy_r_10',  # mean R-multiple of the 10 trades before this one
-    'consecutive_losses',    # how many consecutive losing trades preceded this one
-    'drawdown_pct',          # equity drawdown from peak at signal time (0.0 if unknown)
+    'daily_trade_idx',        # index of this trade within the day (0=first, 1=second, …)
+    'recent_win_rate_10',     # win rate of the 10 trades before this one (0.5 default)
+    'recent_expectancy_r_10', # mean R-multiple of the 10 trades before this one
+    'consecutive_losses',     # how many consecutive losing trades preceded this one
+    'drawdown_pct',           # equity drawdown from peak at signal time (0.0 if unknown)
+    'vol_regime_p_high',      # P(today = high-vol regime) via lag-1 Markov HMM on daily range
 ]
 
 ALL_FEATURE_NAMES: list[str] = SIGNAL_FEATURE_NAMES + CONTEXT_FEATURE_NAMES + CONFIG_FEATURE_NAMES
