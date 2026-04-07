@@ -40,6 +40,15 @@ try:
 except ImportError:
     _njit = lambda fn: fn                             # plain Python fallback
 
+# ---------------------------------------------------------------------------
+# Phase 1A cache — persists across config runs in the same worker process.
+# Key: date ordinal (int). Stores POI lists + session levels computed from
+# BASE_PARAMS only (rb_min_wick_ratio, session_level_validity_days — both
+# fixed across all LHS-sampled configs). Safe to share because POI objects
+# are never mutated after _run_phase1 returns.
+# ---------------------------------------------------------------------------
+_PHASE1A_CACHE: dict = {}
+
 from backtest.data.market_data import MarketData
 from backtest.strategy.base import BaseStrategy
 from backtest.strategy.enums import OrderType, SizeType
@@ -669,6 +678,58 @@ def _cisd_check_at_bar(
     return False
 
 
+@_njit
+def _cisd_scan_nb(o: np.ndarray, c: np.ndarray, direction: int,
+                  min_series: int, min_body_ratio: float,
+                  start: int, end: int) -> int:
+    """
+    Numba-compiled inner loop for CISD detection. Returns bar index or -1.
+
+    Replaces the Python list `series` with a counter + prev_body scalar.
+    Invariant: after the while loop, j is the first FAILING bar (not appended),
+    so the last successfully appended bar = j + 1 = first_bar (earliest in series).
+    """
+    if end - start < min_series:
+        return -1
+    for i in range(start + min_series, end + 1):
+        j = i - 1
+        count = 0
+        prev_body = 0.0
+        if direction == 1:
+            # Gather consecutive bearish bars going left from j
+            while j >= start:
+                if c[j] >= o[j]:          # not bearish — stop
+                    break
+                body = o[j] - c[j]
+                if count > 0 and body < min_body_ratio * prev_body:
+                    break
+                count += 1
+                prev_body = body
+                j -= 1
+            if count < min_series:
+                continue
+            cisd_level = o[j + 1]         # open of earliest bar in series
+            if o[i] > cisd_level or c[i] > cisd_level:
+                return i
+        else:
+            # Gather consecutive bullish bars going left from j
+            while j >= start:
+                if c[j] <= o[j]:          # not bullish — stop
+                    break
+                body = c[j] - o[j]
+                if count > 0 and body < min_body_ratio * prev_body:
+                    break
+                count += 1
+                prev_body = body
+                j -= 1
+            if count < min_series:
+                continue
+            cisd_level = o[j + 1]         # open of earliest bar in series
+            if o[i] < cisd_level or c[i] < cisd_level:
+                return i
+    return -1
+
+
 def _cisd_scan(o: np.ndarray, c: np.ndarray, direction: int,
                min_series: int, min_body_ratio: float,
                start: int, end: int) -> Optional[int]:
@@ -678,44 +739,8 @@ def _cisd_scan(o: np.ndarray, c: np.ndarray, direction: int,
     direction=-1  → bearish CISD (look for bullish series, then close below its open)
     Returns absolute bar index of CISD bar, or None.
     """
-    if end - start < min_series:
-        return None
-    for i in range(start + min_series, end + 1):
-        j = i - 1
-        series: List[int] = []
-        if direction == 1:
-            # Gather consecutive bearish bars going left from j
-            while j >= start:
-                body = o[j] - c[j] if c[j] < o[j] else 0.0
-                if c[j] >= o[j]:  # not bearish
-                    break
-                if series and body < min_body_ratio * (o[series[-1]] - c[series[-1]]):
-                    break
-                series.append(j)
-                j -= 1
-            if len(series) < min_series:
-                continue
-            first_bar = series[-1]
-            cisd_level = o[first_bar]
-            if max(o[i], c[i]) > cisd_level:
-                return i
-        else:
-            # Gather consecutive bullish bars going left from j
-            while j >= start:
-                body = c[j] - o[j] if c[j] > o[j] else 0.0
-                if c[j] <= o[j]:  # not bullish
-                    break
-                if series and body < min_body_ratio * (c[series[-1]] - o[series[-1]]):
-                    break
-                series.append(j)
-                j -= 1
-            if len(series) < min_series:
-                continue
-            first_bar = series[-1]
-            cisd_level = o[first_bar]
-            if min(o[i], c[i]) < cisd_level:
-                return i
-    return None
+    result = _cisd_scan_nb(o, c, direction, min_series, min_body_ratio, start, end)
+    return result if result >= 0 else None
 
 
 # ---------------------------------------------------------------------------
@@ -1606,29 +1631,44 @@ class ICTSMCStrategy(BaseStrategy):
             high=z.high, low=z.low)
             for z in zones_rel]
 
+        # ── Phase 1A cache lookup ─────────────────────────────────────────────
+        # session_pois, overnight window scalars, and POI lists depend only on
+        # BASE_PARAMS (rb_min_wick_ratio, session_level_validity_days — fixed).
+        # Safe to share across all LHS-sampled configs in the same worker process.
+        _ph1a = _PHASE1A_CACHE.get(tod_ord)
+
         # Session levels + NDOG
-        session_pois, ndog, nwog = self._compute_session_levels(data, bar_i)
-        if ndog is None:
-            ndog = 0.0
-
-        # Overnight 1m window — computed always (needed for SESSION_OTE even without manip legs)
-        n_1m = bar_i + 1
-        dates1 = self._bar_dates_ord
-        times1 = self._bar_times_min
-        ov_mask_1m = (
-            ((dates1[:n_1m] == prev_d) & (times1[:n_1m] >= NYPM_END_MIN)) |
-            ((dates1[:n_1m] == tod)    & (times1[:n_1m] < SESSION_START_MIN))
-        )
-        ov_idx_1m          = np.where(ov_mask_1m)[0]
-        overnight_start_1m = int(ov_idx_1m[0]) if len(ov_idx_1m) > 0 else 0
-
-        # Overnight range — used as an ML feature
-        if overnight_start_1m < n_1m:
-            _ov_h = data.high_1m[overnight_start_1m:n_1m].max()
-            _ov_l = data.low_1m[overnight_start_1m:n_1m].min()
-            self._overnight_range_atr = float((_ov_h - _ov_l) / max(_phase1_atr, 1e-9))
+        if _ph1a is not None:
+            session_pois = _ph1a['session_pois']
+            ndog         = _ph1a['ndog']
+            nwog         = _ph1a['nwog']
         else:
-            self._overnight_range_atr = 0.0
+            session_pois, ndog, nwog = self._compute_session_levels(data, bar_i)
+            if ndog is None:
+                ndog = 0.0
+
+        # Overnight 1m window — needed for manip legs (ndog) and SESSION_OTE below
+        n_1m = bar_i + 1
+        if _ph1a is not None:
+            overnight_start_1m        = _ph1a['overnight_start_1m']
+            self._overnight_range_atr = _ph1a['overnight_range_atr']
+        else:
+            dates1 = self._bar_dates_ord
+            times1 = self._bar_times_min
+            ov_mask_1m = (
+                ((dates1[:n_1m] == prev_d) & (times1[:n_1m] >= NYPM_END_MIN)) |
+                ((dates1[:n_1m] == tod)    & (times1[:n_1m] < SESSION_START_MIN))
+            )
+            ov_idx_1m          = np.where(ov_mask_1m)[0]
+            overnight_start_1m = int(ov_idx_1m[0]) if len(ov_idx_1m) > 0 else 0
+
+            # Overnight range — used as an ML feature
+            if overnight_start_1m < n_1m:
+                _ov_h = data.high_1m[overnight_start_1m:n_1m].max()
+                _ov_l = data.low_1m[overnight_start_1m:n_1m].min()
+                self._overnight_range_atr = float((_ov_h - _ov_l) / max(_phase1_atr, 1e-9))
+            else:
+                self._overnight_range_atr = 0.0
 
         # Detect manipulation legs — timeframe determined by manip_leg_timeframe
         if self.manip_leg_timeframe == '1m':
@@ -1659,40 +1699,67 @@ class ICTSMCStrategy(BaseStrategy):
 
         # Detect POIs on all timeframes — use a bounded lookback window so
         # cost stays O(poi_lookback_5m_bars) per day rather than O(total_history).
-        n_1m = bar_i + 1
-        poi5_start = max(0, completed_5m + 1 - self.poi_lookback_5m_bars)
-        poi1_start = max(0, n_1m - self.poi_lookback_5m_bars * 5)
+        # Phase 1A cache: POI detection depends only on BASE_PARAMS (rb_min_wick_ratio,
+        # poi_lookback_5m_bars) which are fixed across all LHS configs, so results are
+        # identical for every config run on the same day within the same worker process.
+        if _ph1a is not None:
+            self._poi_1m  = _ph1a['poi_1m']
+            self._poi_5m  = _ph1a['poi_5m']
+            self._poi_15m = _ph1a['poi_15m']
+            self._poi_30m = _ph1a['poi_30m']
+            h15 = _ph1a['h15']
+            l15 = _ph1a['l15']
+            h30 = _ph1a['h30']
+            l30 = _ph1a['l30']
+        else:
+            n_1m = bar_i + 1
+            poi5_start = max(0, completed_5m + 1 - self.poi_lookback_5m_bars)
+            poi1_start = max(0, n_1m - self.poi_lookback_5m_bars * 5)
 
-        o1r = data.open_1m[poi1_start:n_1m]
-        h1r = data.high_1m[poi1_start:n_1m]
-        l1r = data.low_1m[poi1_start:n_1m]
-        c1r = data.close_1m[poi1_start:n_1m]
-        self._poi_1m = _detect_all_pois(o1r, h1r, l1r, c1r, self.rb_min_wick_ratio,
-                                         bar_offset=poi1_start)
-        # Convert 1m created_bar indices to 5m indices so temporal comparisons
-        # use the same scale as leg.swing_lo_idx / swing_hi_idx (both in 5m).
-        for _p in self._poi_1m:
-            if _p.created_bar >= 0:
-                _cb = min(_p.created_bar, len(data.bar_map) - 1)
-                _p.created_bar = data.bar_map[_cb]
+            o1r = data.open_1m[poi1_start:n_1m]
+            h1r = data.high_1m[poi1_start:n_1m]
+            l1r = data.low_1m[poi1_start:n_1m]
+            c1r = data.close_1m[poi1_start:n_1m]
+            self._poi_1m = _detect_all_pois(o1r, h1r, l1r, c1r, self.rb_min_wick_ratio,
+                                             bar_offset=poi1_start)
+            # Convert 1m created_bar indices to 5m indices so temporal comparisons
+            # use the same scale as leg.swing_lo_idx / swing_hi_idx (both in 5m).
+            for _p in self._poi_1m:
+                if _p.created_bar >= 0:
+                    _cb = min(_p.created_bar, len(data.bar_map) - 1)
+                    _p.created_bar = data.bar_map[_cb]
 
-        o5r = data.open_5m[poi5_start:completed_5m + 1]
-        h5r = data.high_5m[poi5_start:completed_5m + 1]
-        l5r = data.low_5m[poi5_start:completed_5m + 1]
-        c5r = data.close_5m[poi5_start:completed_5m + 1]
-        self._poi_5m = _detect_all_pois(o5r, h5r, l5r, c5r, self.rb_min_wick_ratio,
-                                         bar_offset=poi5_start)
+            o5r = data.open_5m[poi5_start:completed_5m + 1]
+            h5r = data.high_5m[poi5_start:completed_5m + 1]
+            l5r = data.low_5m[poi5_start:completed_5m + 1]
+            c5r = data.close_5m[poi5_start:completed_5m + 1]
+            self._poi_5m = _detect_all_pois(o5r, h5r, l5r, c5r, self.rb_min_wick_ratio,
+                                             bar_offset=poi5_start)
 
-        # 15m and 30m via numpy resample — trim leading bars so groups align to
-        # real clock boundaries (:00/:15/:30/:45 for 15m; :00/:30 for 30m).
-        start_min_5m = int(self._bar_times_5m_min[poi5_start])
-        trim15 = (15 - (start_min_5m % 15)) % 15 // 5
-        trim30 = (30 - (start_min_5m % 30)) % 30 // 5
-        o15, h15, l15, c15 = _resample_5m_to_Nm(o5r[trim15:], h5r[trim15:], l5r[trim15:], c5r[trim15:], 3)
-        o30, h30, l30, c30 = _resample_5m_to_Nm(o5r[trim30:], h5r[trim30:], l5r[trim30:], c5r[trim30:], 6)
+            # 15m and 30m via numpy resample — trim leading bars so groups align to
+            # real clock boundaries (:00/:15/:30/:45 for 15m; :00/:30 for 30m).
+            start_min_5m = int(self._bar_times_5m_min[poi5_start])
+            trim15 = (15 - (start_min_5m % 15)) % 15 // 5
+            trim30 = (30 - (start_min_5m % 30)) % 30 // 5
+            o15, h15, l15, c15 = _resample_5m_to_Nm(o5r[trim15:], h5r[trim15:], l5r[trim15:], c5r[trim15:], 3)
+            o30, h30, l30, c30 = _resample_5m_to_Nm(o5r[trim30:], h5r[trim30:], l5r[trim30:], c5r[trim30:], 6)
 
-        self._poi_15m = _detect_all_pois(o15, h15, l15, c15, self.rb_min_wick_ratio) if len(c15) else []
-        self._poi_30m = _detect_all_pois(o30, h30, l30, c30, self.rb_min_wick_ratio) if len(c30) else []
+            self._poi_15m = _detect_all_pois(o15, h15, l15, c15, self.rb_min_wick_ratio) if len(c15) else []
+            self._poi_30m = _detect_all_pois(o30, h30, l30, c30, self.rb_min_wick_ratio) if len(c30) else []
+
+            _PHASE1A_CACHE[tod_ord] = {
+                'session_pois':        session_pois,
+                'ndog':                ndog,
+                'nwog':                nwog,
+                'overnight_start_1m':  overnight_start_1m,
+                'overnight_range_atr': self._overnight_range_atr,
+                'poi_1m':              self._poi_1m,
+                'poi_5m':              self._poi_5m,
+                'poi_15m':             self._poi_15m,
+                'poi_30m':             self._poi_30m,
+                'h15': h15, 'l15': l15,
+                'h30': h30, 'l30': l30,
+            }
 
         # Build swing caches
         def _sw_prices(sh: np.ndarray, sl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
