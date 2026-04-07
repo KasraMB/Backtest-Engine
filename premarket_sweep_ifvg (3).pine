@@ -1,0 +1,175 @@
+//@version=5
+strategy("Pre-Market Sweep + IFVG Entry", shorttitle="PM Sweep IFVG", overlay=true, margin_long=100, margin_short=100, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+
+// ─────────────────────────────────────────────
+// INPUTS
+// ─────────────────────────────────────────────
+pm_start_hour  = input.int(8,    "Pre-market start hour (exchange TZ)", minval=0, maxval=23)
+pm_start_min   = input.int(0,    "Pre-market start min",                minval=0, maxval=59)
+pm_end_hour    = input.int(9,    "Pre-market end hour (exchange TZ)",   minval=0, maxval=23)
+pm_end_min     = input.int(30,   "Pre-market end min",                  minval=0, maxval=59)
+sweep_buffer   = input.float(0.0,"Sweep buffer (price units)",          minval=0, step=0.01, tooltip="Extra distance price must exceed the PM level before a sweep is confirmed. 0 = exact touch.")
+show_pm_levels = input.bool(true, "Show pre-market high/low lines")
+show_sweeps    = input.bool(true, "Show sweep labels")
+show_ifvg_box  = input.bool(true, "Show IFVG zone box")
+
+// ─────────────────────────────────────────────
+// SESSION HELPERS
+// ─────────────────────────────────────────────
+in_premarket = (hour == pm_start_hour and minute >= pm_start_min) or (hour > pm_start_hour and hour < pm_end_hour) or (hour == pm_end_hour and minute < pm_end_min)
+session_open  = hour == pm_end_hour and minute == pm_end_min
+
+// ─────────────────────────────────────────────
+// CAPTURE PRE-MARKET HIGH / LOW
+// ─────────────────────────────────────────────
+var float pm_high = na
+var float pm_low  = na
+var bool  pm_set  = false
+
+new_pm_day = in_premarket and not in_premarket[1]
+
+if new_pm_day
+    pm_high := high
+    pm_low  := low
+    pm_set  := false
+
+if in_premarket and not na(pm_high)
+    pm_high := math.max(pm_high, high)
+    pm_low  := math.min(pm_low,  low)
+
+if session_open
+    pm_set := true
+
+// ─────────────────────────────────────────────
+// DRAW PM LEVEL LINES
+// ─────────────────────────────────────────────
+var line pm_high_line = na
+var line pm_low_line  = na
+
+if pm_set and show_pm_levels and na(pm_high_line)
+    pm_high_line := line.new(bar_index, pm_high, bar_index + 1, pm_high, color=color.new(color.orange, 0), width=1, style=line.style_dashed, extend=line.extend_right)
+    pm_low_line  := line.new(bar_index, pm_low,  bar_index + 1, pm_low,  color=color.new(color.aqua,   0), width=1, style=line.style_dashed, extend=line.extend_right)
+
+// ─────────────────────────────────────────────
+// DETECT SWEEP OF PM HIGH OR LOW
+// Sweep = wick beyond the PM level, candle CLOSES back the other side (liquidity grab)
+// ─────────────────────────────────────────────
+var bool  swept_high       = false
+var bool  swept_low        = false
+var float sweep_high_price = na
+var float sweep_low_price  = na
+var int   sweep_high_bar   = na
+var int   sweep_low_bar    = na
+
+if new_pm_day
+    swept_high       := false
+    swept_low        := false
+    sweep_high_price := na
+    sweep_low_price  := na
+    sweep_high_bar   := na
+    sweep_low_bar    := na
+
+if pm_set and not in_premarket
+    // Bullish sweep: wick below PM low, close back above → long bias
+    if not swept_low and low < (pm_low - sweep_buffer) and close > pm_low
+        swept_low       := true
+        sweep_low_price := low
+        sweep_low_bar   := bar_index
+        if show_sweeps
+            label.new(bar_index, low, "⚡ PM Low Swept", color=color.new(color.aqua, 75), textcolor=color.aqua, style=label.style_label_up, size=size.small)
+
+    // Bearish sweep: wick above PM high, close back below → short bias
+    if not swept_high and high > (pm_high + sweep_buffer) and close < pm_high
+        swept_high       := true
+        sweep_high_price := high
+        sweep_high_bar   := bar_index
+        if show_sweeps
+            label.new(bar_index, high, "⚡ PM High Swept", color=color.new(color.orange, 75), textcolor=color.orange, style=label.style_label_down, size=size.small)
+
+// ─────────────────────────────────────────────
+// DETECT FIRST IFVG AFTER THE SWEEP
+//
+// Bullish IFVG (after PM low sweep):
+//   Bearish FVG exists: low[2] > high[0]
+//   Current close fills back INTO that gap → absorbed = bullish
+//
+// Bearish IFVG (after PM high sweep):
+//   Bullish FVG exists: high[2] < low[0]
+//   Current close fills back INTO that gap → absorbed = bearish
+// ─────────────────────────────────────────────
+var bool  ifvg_bull_found = false
+var bool  ifvg_bear_found = false
+var float ifvg_top        = na
+var float ifvg_bot        = na
+var int   ifvg_bar        = na
+
+if new_pm_day
+    ifvg_bull_found := false
+    ifvg_bear_found := false
+    ifvg_top        := na
+    ifvg_bot        := na
+    ifvg_bar        := na
+
+if pm_set and not in_premarket and strategy.position_size == 0
+    // Bullish IFVG — only after a PM low sweep
+    if swept_low and not ifvg_bull_found and bar_index > sweep_low_bar + 1
+        bear_gap_top = low[2]
+        bear_gap_bot = high[0]
+        if bear_gap_top > bear_gap_bot and close >= bear_gap_bot and close <= bear_gap_top
+            ifvg_bull_found := true
+            ifvg_top        := bear_gap_top
+            ifvg_bot        := bear_gap_bot
+            ifvg_bar        := bar_index
+
+    // Bearish IFVG — only after a PM high sweep
+    if swept_high and not ifvg_bear_found and bar_index > sweep_high_bar + 1
+        bull_gap_bot = high[2]
+        bull_gap_top = low[0]
+        if bull_gap_bot < bull_gap_top and close <= bull_gap_top and close >= bull_gap_bot
+            ifvg_bear_found := true
+            ifvg_top        := bull_gap_top
+            ifvg_bot        := bull_gap_bot
+            ifvg_bar        := bar_index
+
+// ─────────────────────────────────────────────
+// DRAW IFVG ZONE BOX
+// ─────────────────────────────────────────────
+if show_ifvg_box and bar_index == ifvg_bar
+    if ifvg_bull_found
+        box.new(bar_index - 2, ifvg_top, bar_index + 8, ifvg_bot, border_color=color.new(color.green, 40), bgcolor=color.new(color.green, 85))
+        label.new(bar_index, ifvg_top, "IFVG", color=color.new(color.green, 70), textcolor=color.green, style=label.style_label_down, size=size.tiny)
+    if ifvg_bear_found
+        box.new(bar_index - 2, ifvg_top, bar_index + 8, ifvg_bot, border_color=color.new(color.red, 40), bgcolor=color.new(color.red, 85))
+        label.new(bar_index, ifvg_bot, "IFVG", color=color.new(color.red, 70), textcolor=color.red, style=label.style_label_up, size=size.tiny)
+
+// ─────────────────────────────────────────────
+// ENTRY, STOP, AND TAKE PROFIT
+// Entry  : market order on IFVG bar close (fills next bar open)
+// Stop   : wick extreme from the sweep bar
+// TP     : opposite pre-market level
+// ─────────────────────────────────────────────
+if strategy.position_size == 0
+    // Long
+    if ifvg_bull_found and bar_index == ifvg_bar
+        sl = sweep_low_price
+        tp = pm_high
+        if close > sl and tp > close
+            strategy.entry("Long", strategy.long, comment="IFVG Long")
+            strategy.exit("Long Exit", from_entry="Long", stop=sl, limit=tp, comment_loss="SL Hit", comment_profit="TP Hit")
+
+    // Short
+    if ifvg_bear_found and bar_index == ifvg_bar
+        sl = sweep_high_price
+        tp = pm_low
+        if close < sl and tp < close
+            strategy.entry("Short", strategy.short, comment="IFVG Short")
+            strategy.exit("Short Exit", from_entry="Short", stop=sl, limit=tp, comment_loss="SL Hit", comment_profit="TP Hit")
+
+// ─────────────────────────────────────────────
+// PLOTS
+// ─────────────────────────────────────────────
+plot(pm_set ? pm_high : na, "PM High", color=color.new(color.orange, 20), linewidth=1, style=plot.style_stepline)
+plot(pm_set ? pm_low  : na, "PM Low",  color=color.new(color.aqua,   20), linewidth=1, style=plot.style_stepline)
+
+plotshape(ifvg_bull_found and bar_index == ifvg_bar, title="Long Signal",  location=location.belowbar, style=shape.triangleup,   color=color.green, size=size.normal)
+plotshape(ifvg_bear_found and bar_index == ifvg_bar, title="Short Signal", location=location.abovebar, style=shape.triangledown, color=color.red,   size=size.normal)
