@@ -51,6 +51,7 @@ from backtest.ml.configs import (
     PHASE1_PARAMS, PHASE2_PARAMS, CONFIG_FEATURE_NAMES,
 )
 from backtest.ml.features import ALL_FEATURE_NAMES
+from backtest.regime.vol_regime import compute_vol_regime_map
 
 # ---------------------------------------------------------------------------
 # Configuration — edit before each run
@@ -615,7 +616,7 @@ def main() -> None:
                                 "config_features": cfg_feat})
         return result
 
-    def _build_rows(trade_list: list, df_1m_slice: "pd.DataFrame") -> list:
+    def _build_rows(trade_list: list, df_1m_slice: "pd.DataFrame", regime_map: dict) -> list:
         from collections import defaultdict
         from backtest.ml.evaluate import sortino_r as _sortino_r
 
@@ -668,6 +669,8 @@ def main() -> None:
                 else:
                     cfg_feat['cfg_base_metric'] = 0.5
 
+                vol_p = regime_map.get(trade_date, 1.0 / 3.0) if trade_date is not None else 1.0 / 3.0
+
                 row = {
                     **sf,
                     **cfg_feat,
@@ -676,6 +679,7 @@ def main() -> None:
                     "recent_expectancy_r_10": rex,
                     "consecutive_losses":     consecutive_losses,
                     "drawdown_pct":           0.0,
+                    "vol_regime_p_high":      vol_p,
                     "r_multiple":             r_multiple,
                     "is_winner":              int(r_multiple > 0),
                     "date":                   trade_date,
@@ -699,17 +703,23 @@ def main() -> None:
 
     df_1m_full = pd.read_parquet(CACHE_1M)
 
+    # Compute volatility regime map once — forward-safe, hard-stopped at VALIDATION_END.
+    # Never reads test-period price data.
+    print("\n--- Computing volatility regime map ---")
+    regime_map = compute_vol_regime_map(df_1m_full)
+    print(f"  Regime map computed for {len(regime_map)} trading days.")
+
     # Train rows
     all_train_trades = _build_trade_list(new_trade_rows, "train", all_config_entries, validity_map)
     s_ts, e_ts = split_bounds("train")
     df_1m_train = df_1m_full[(df_1m_full.index >= s_ts) & (df_1m_full.index <= e_ts)]
-    train_rows = _build_rows(all_train_trades, df_1m_train)
+    train_rows = _build_rows(all_train_trades, df_1m_train, regime_map)
 
     # Validation rows
     all_val_trades = _build_trade_list(val_trade_rows, "validation", all_config_entries, validity_map)
     s_ts, e_ts = split_bounds("validation")
     df_1m_val = df_1m_full[(df_1m_full.index >= s_ts) & (df_1m_full.index <= e_ts)]
-    val_rows = _build_rows(all_val_trades, df_1m_val)
+    val_rows = _build_rows(all_val_trades, df_1m_val, regime_map)
 
     all_rows = train_rows + val_rows
 
