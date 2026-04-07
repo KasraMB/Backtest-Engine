@@ -758,6 +758,9 @@ class ICTSMCStrategy(BaseStrategy):
         # Minimum OTE (0%→100%) size expressed as a multiple of ATR.
         # Applies to OTE and SESSION_OTE levels; 0.0 (default) = no filter.
         self.min_ote_size_atr_mult:       float = p.get('min_ote_size_atr_mult', 0.0)
+        # Latest minute-of-day (minutes since midnight ET) at which a new entry signal
+        # can be generated.  Default 660 = 11:00 ET (original behaviour).
+        self._entry_end_min:              int   = p.get('entry_end_min', SESSION_END_MIN)
         # Max validated levels kept per session for each fib type.
         # Priority: biggest manipulation leg range; tiebreak by proximity to 09:30 open.
         # 0 = keep all (no limit).
@@ -2105,8 +2108,8 @@ class ICTSMCStrategy(BaseStrategy):
             self._run_phase1(data, max(0, i - 1), tod)
             self._phase1_done = True
 
-        # Only enter trades 09:30-11:00 ET
-        if t_min < SESSION_START_MIN or t_min >= SESSION_END_MIN:
+        # Only enter trades from 09:30 ET up to entry_end_min (default 11:00 ET)
+        if t_min < SESSION_START_MIN or t_min >= self._entry_end_min:
             return None
 
         if not self._validated_levels:
