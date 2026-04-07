@@ -113,29 +113,38 @@ def make_config(ml_model):
         eod_exit_time=dtime(17, 0),
         params={
             "contracts":                     1,
-            "swing_n":                       1,
             "cisd_min_series_candles":       2,
             "cisd_min_body_ratio":           0.5,
             "rb_min_wick_ratio":             0.3,
-            "confluence_tolerance_atr_mult":  0.18,
-            "level_penetration_atr_mult":    0.5,
-            "min_rr":                        5.0,
+            # Phase 1 params — all set to most permissive end of LHS range so the
+            # ML sees the full universe of signals across all training configs.
+            "confluence_tolerance_atr_mult":     0.28,   # LHS max (0.08–0.28)
+            "tp_confluence_tolerance_atr_mult":  0.28,   # LHS max (0.08–0.28)
+            "level_penetration_atr_mult":        0.75,   # LHS max (0.25–0.75)
+            "min_rr":                            2.0,    # LHS min (2.0–8.0)
+            "po3_atr_mult":                      1.3,    # LHS max (0.6–1.3)
+            "po3_band_pct":                      0.5,    # LHS max (0.15–0.5)
+            "po3_vol_sens":                      0.5,    # LHS min (0.5–2.0)
+            "po3_min_manipulation_size_atr_mult": 0.0,  # LHS min: no minimum leg size filter
+            "min_ote_size_atr_mult":             0.0,    # LHS min: no minimum OTE size filter
+            "swing_n":                           1,      # LHS min (1–3)
+            "manip_leg_timeframe":               '1m',  # more frequent swings → more legs
+            "manip_leg_swing_depth":             1,      # LHS min (1–2)
+            "max_ote_per_session":               3,      # LHS max (1–3)
+            "max_stdv_per_session":              3,      # LHS max (1–3)
+            "max_session_ote_per_session":       3,      # LHS max (1–3)
+            "max_trades_per_day":                10,     # ML is the gate
+            "entry_end_min":                     11 * 60,
+            # Non-LHS params — kept at defaults
             "tick_offset_atr_mult":          0.035,
             "order_expiry_bars":             10,
             "session_level_validity_days":   2,
             "po3_lookback":                  6,
-            "po3_atr_mult":                  0.95,
             "po3_atr_len":                   14,
-            "po3_band_pct":                  0.3,
-            "po3_vol_sens":                  1.0,
             "po3_max_r2":                    0.4,
             "po3_min_dir_changes":           2,
             "po3_min_candles":               3,
             "po3_max_accum_gap_bars":        10,
-            "po3_min_manipulation_size_atr_mult": 0.0,
-            "max_trades_per_day":            10,
-            "manip_leg_timeframe":           '5m',
-            "manip_leg_swing_depth":         1,
             "validation_timeframes": {
                 "OTE":         ['1m', '5m', '15m', '30m'],
                 "STDV":        ['5m', '15m', '30m'],
@@ -167,7 +176,6 @@ def make_config(ml_model):
                 'NYPre_H', 'NYPre_L', 'NYAM_H', 'NYAM_L',
             ],
             "cancel_pct_to_tp":       1.0,
-            "min_ote_size_atr_mult":  0.0,
             "allowed_setup_types":    ['OTE', 'STDV', 'SESSION_OTE'],
             "stdv_reverse":           False,
             "ml_model":               ml_model,
