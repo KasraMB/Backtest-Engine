@@ -23,7 +23,7 @@ class Bar:
     high: float
     low: float
     close: float
-    bar_time: time  # time component of the bar's timestamp
+    bar_time: Optional[time] = None  # time component of the bar's timestamp
 
 
 # ---------------------------------------------------------------------------

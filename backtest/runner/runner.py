@@ -340,6 +340,12 @@ def _run_single(
     lows   = data.low_1m
     closes = data.close_1m
 
+    # Precompute cancel mask — avoids allocating a Timestamp object per bar
+    # (data.df_1m.index[i].time() is called 830K times without this).
+    _cancel_min = config.order_cancel_time.hour * 60 + config.order_cancel_time.minute
+    _times_min  = (data.df_1m.index.hour * 60 + data.df_1m.index.minute).to_numpy()
+    cancel_mask = _times_min >= _cancel_min
+
     trades: list[Trade] = []
     equity_curve: list[float] = [account.balance]
 
@@ -361,7 +367,6 @@ def _run_single(
             high=highs[i],
             low=lows[i],
             close=closes[i],
-            bar_time=data.df_1m.index[i].time(),
         )
         is_eod = i in eod_bars
 
@@ -369,7 +374,7 @@ def _run_single(
         if pending is not None:
 
             # Cancel any pending order at or after session end (11:00 ET)
-            if bar.bar_time >= config.order_cancel_time:
+            if cancel_mask[i]:
                 logger.debug(f"Bar {i}: pending order cancelled — session end")
                 pending = None
 
