@@ -36,9 +36,11 @@ import numpy as np
 
 try:
     from numba import njit as _numba_njit
-    _njit = lambda fn: _numba_njit(fn, cache=True)   # always cache compiled objects
+    _njit       = lambda fn: _numba_njit(fn, cache=True)               # GIL held
+    _njit_nogil = lambda fn: _numba_njit(fn, cache=True, nogil=True)   # GIL released — safe for threading
 except ImportError:
-    _njit = lambda fn: fn                             # plain Python fallback
+    _njit       = lambda fn: fn
+    _njit_nogil = lambda fn: fn
 
 # ---------------------------------------------------------------------------
 # Phase 1A cache — persists across config runs in the same worker process.
@@ -302,82 +304,302 @@ def _resample_5m_to_Nm(o5: np.ndarray, h5: np.ndarray, l5: np.ndarray,
     return o5c[:, 0], h5c.max(axis=1), l5c.min(axis=1), c5c[:, -1]
 
 
-def _detect_ob_vectorized(o: np.ndarray, h: np.ndarray,
-                            l: np.ndarray, c: np.ndarray,
-                            bar_offset: int = 0) -> List[POI]:
+# ---------------------------------------------------------------------------
+# Numba kernels for OB and FVG detection (GIL released — thread-safe).
+# Kind encoding — OB/BB: 0=OB, 1=BB  |  FVG/IFVG/RB: 0=FVG, 1=IFVG, 2=RB
+# ---------------------------------------------------------------------------
+
+@_njit_nogil
+def _detect_ob_nb(o: np.ndarray, h: np.ndarray,
+                   l: np.ndarray, c: np.ndarray):
     """
-    Detect Order Blocks and promote to Breaker Blocks when invalidated.
-    Bullish OB: last bearish bar before bullish impulse closing above its high.
-    Bearish OB: last bullish bar before bearish impulse closing below its low.
-    Processes invalidation inline as bars advance.
+    Order Block / Breaker Block detector.
+    Returns parallel arrays (kind, dir, near, mid, far, created_bar, invalidated).
     """
     n = len(o)
-    pois: List[POI] = []
-    if n < 2:
-        return pois
+    MAX_P = n + 16
+    MAX_A = 128
+
+    r_kind = np.empty(MAX_P, dtype=np.int8)
+    r_dir  = np.empty(MAX_P, dtype=np.int8)
+    r_near = np.empty(MAX_P, dtype=np.float64)
+    r_mid  = np.empty(MAX_P, dtype=np.float64)
+    r_far  = np.empty(MAX_P, dtype=np.float64)
+    r_cb   = np.empty(MAX_P, dtype=np.int64)
+    r_inv  = np.zeros(MAX_P, dtype=np.bool_)
+    n_poi  = 0
+
+    a_idx = np.empty(MAX_A, dtype=np.int64)
+    na    = 0
 
     body_top = np.maximum(o, c)
     body_bot = np.minimum(o, c)
     bull = c > o
     bear = c < o
 
-    # Track active OBs/BBs for inline invalidation
-    active: List[POI] = []
-
     for k in range(1, n):
-        # Update invalidation for active structures
-        still_active: List[POI] = []
-        for ob in active:
-            if ob.invalidated:
+        # Invalidation + compaction
+        new_na = 0
+        for ai in range(na):
+            idx = a_idx[ai]
+            if r_inv[idx]:
                 continue
-            if ob.kind == 'OB':
-                if ob.direction == 1 and c[k] < ob.far:
-                    # Bullish OB invalidated → becomes bearish BB
-                    ob.invalidated = True
-                    bb = POI(kind='BB', direction=-1,
-                             near=ob.near, mid=ob.mid, far=ob.far,
-                             created_bar=k + bar_offset)
-                    pois.append(bb)
-                    still_active.append(bb)
-                elif ob.direction == -1 and c[k] > ob.far:
-                    # Bearish OB invalidated → becomes bullish BB
-                    ob.invalidated = True
-                    bb = POI(kind='BB', direction=1,
-                             near=ob.near, mid=ob.mid, far=ob.far,
-                             created_bar=k + bar_offset)
-                    pois.append(bb)
-                    still_active.append(bb)
+            kd = r_kind[idx]
+            d  = r_dir[idx]
+            if kd == 0:  # OB
+                if d == 1 and c[k] < r_far[idx]:
+                    r_inv[idx]    = True
+                    r_kind[n_poi] = np.int8(1)   # BB
+                    r_dir[n_poi]  = np.int8(-1)
+                    r_near[n_poi] = r_near[idx]
+                    r_mid[n_poi]  = r_mid[idx]
+                    r_far[n_poi]  = r_far[idx]
+                    r_cb[n_poi]   = k
+                    a_idx[new_na] = n_poi
+                    n_poi += 1
+                    new_na += 1
+                elif d == -1 and c[k] > r_far[idx]:
+                    r_inv[idx]    = True
+                    r_kind[n_poi] = np.int8(1)   # BB
+                    r_dir[n_poi]  = np.int8(1)
+                    r_near[n_poi] = r_near[idx]
+                    r_mid[n_poi]  = r_mid[idx]
+                    r_far[n_poi]  = r_far[idx]
+                    r_cb[n_poi]   = k
+                    a_idx[new_na] = n_poi
+                    n_poi += 1
+                    new_na += 1
                 else:
-                    still_active.append(ob)
-            elif ob.kind == 'BB':
-                if ob.direction == 1 and c[k] < ob.near:
-                    ob.invalidated = True   # BB consumed
-                elif ob.direction == -1 and c[k] > ob.near:
-                    ob.invalidated = True
+                    a_idx[new_na] = idx
+                    new_na += 1
+            else:  # BB
+                if d == 1 and c[k] < r_near[idx]:
+                    r_inv[idx] = True
+                elif d == -1 and c[k] > r_near[idx]:
+                    r_inv[idx] = True
                 else:
-                    still_active.append(ob)
-        active = still_active
+                    a_idx[new_na] = idx
+                    new_na += 1
+        na = new_na
 
         prev = k - 1
-        # Bullish OB
         if bear[prev] and bull[k] and c[k] > h[prev]:
-            ob = POI(kind='OB', direction=1,
-                     near=body_top[prev],
-                     mid=(body_top[prev] + body_bot[prev]) / 2.0,
-                     far=body_bot[prev],
-                     created_bar=k + bar_offset)
-            pois.append(ob)
-            active.append(ob)
-        # Bearish OB
+            r_kind[n_poi] = np.int8(0)
+            r_dir[n_poi]  = np.int8(1)
+            r_near[n_poi] = body_top[prev]
+            r_mid[n_poi]  = (body_top[prev] + body_bot[prev]) * 0.5
+            r_far[n_poi]  = body_bot[prev]
+            r_cb[n_poi]   = k
+            a_idx[na]     = n_poi
+            n_poi += 1
+            na    += 1
         if bull[prev] and bear[k] and c[k] < l[prev]:
-            ob = POI(kind='OB', direction=-1,
-                     near=body_bot[prev],
-                     mid=(body_top[prev] + body_bot[prev]) / 2.0,
-                     far=body_top[prev],
-                     created_bar=k + bar_offset)
-            pois.append(ob)
-            active.append(ob)
+            r_kind[n_poi] = np.int8(0)
+            r_dir[n_poi]  = np.int8(-1)
+            r_near[n_poi] = body_bot[prev]
+            r_mid[n_poi]  = (body_top[prev] + body_bot[prev]) * 0.5
+            r_far[n_poi]  = body_top[prev]
+            r_cb[n_poi]   = k
+            a_idx[na]     = n_poi
+            n_poi += 1
+            na    += 1
 
+    return (r_kind[:n_poi], r_dir[:n_poi], r_near[:n_poi],
+            r_mid[:n_poi],  r_far[:n_poi], r_cb[:n_poi], r_inv[:n_poi])
+
+
+@_njit_nogil
+def _detect_fvg_nb(o: np.ndarray, h: np.ndarray,
+                    l: np.ndarray, c: np.ndarray,
+                    rb_min_wick_ratio: float):
+    """
+    FVG / IFVG / Rejection Block detector.
+    Returns parallel arrays (kind, dir, near, mid, far, created_bar, invalidated,
+                             wick_tip, wick_base).
+    """
+    n = len(o)
+    MAX_P = n * 3 + 32
+    MAX_A = 256
+
+    r_kind = np.empty(MAX_P, dtype=np.int8)
+    r_dir  = np.empty(MAX_P, dtype=np.int8)
+    r_near = np.empty(MAX_P, dtype=np.float64)
+    r_mid  = np.empty(MAX_P, dtype=np.float64)
+    r_far  = np.empty(MAX_P, dtype=np.float64)
+    r_cb   = np.empty(MAX_P, dtype=np.int64)
+    r_inv  = np.zeros(MAX_P, dtype=np.bool_)
+    r_wt   = np.zeros(MAX_P, dtype=np.float64)
+    r_wb   = np.zeros(MAX_P, dtype=np.float64)
+    n_poi  = 0
+
+    a_b3  = np.empty(MAX_A, dtype=np.int64)
+    a_idx = np.empty(MAX_A, dtype=np.int64)
+    na    = 0
+
+    body_top = np.maximum(o, c)
+    body_bot = np.minimum(o, c)
+    body_sz  = body_top - body_bot
+
+    for k in range(2, n):
+        # Invalidation + compaction
+        new_na = 0
+        for ai in range(na):
+            b3  = a_b3[ai]
+            idx = a_idx[ai]
+            if r_inv[idx]:
+                continue
+            if k <= b3:
+                a_b3[new_na]  = b3
+                a_idx[new_na] = idx
+                new_na += 1
+                continue
+            kd = r_kind[idx]
+            d  = r_dir[idx]
+            if kd == 0:  # FVG
+                if d == 1 and c[k] < r_near[idx]:
+                    r_inv[idx]    = True
+                    r_kind[n_poi] = np.int8(1)   # IFVG
+                    r_dir[n_poi]  = np.int8(-1)
+                    r_near[n_poi] = r_near[idx]
+                    r_mid[n_poi]  = r_mid[idx]
+                    r_far[n_poi]  = r_far[idx]
+                    r_cb[n_poi]   = k
+                    a_b3[new_na]  = b3
+                    a_idx[new_na] = n_poi
+                    n_poi += 1
+                    new_na += 1
+                elif d == -1 and c[k] > r_near[idx]:
+                    r_inv[idx]    = True
+                    r_kind[n_poi] = np.int8(1)   # IFVG
+                    r_dir[n_poi]  = np.int8(1)
+                    r_near[n_poi] = r_near[idx]
+                    r_mid[n_poi]  = r_mid[idx]
+                    r_far[n_poi]  = r_far[idx]
+                    r_cb[n_poi]   = k
+                    a_b3[new_na]  = b3
+                    a_idx[new_na] = n_poi
+                    n_poi += 1
+                    new_na += 1
+                else:
+                    a_b3[new_na]  = b3
+                    a_idx[new_na] = idx
+                    new_na += 1
+            elif kd == 1:  # IFVG
+                if d == 1 and c[k] < r_far[idx]:
+                    r_inv[idx] = True
+                elif d == -1 and c[k] > r_far[idx]:
+                    r_inv[idx] = True
+                else:
+                    a_b3[new_na]  = b3
+                    a_idx[new_na] = idx
+                    new_na += 1
+            else:  # RB
+                if d == 1 and l[k] <= r_mid[idx]:
+                    r_inv[idx] = True
+                elif d == -1 and h[k] >= r_mid[idx]:
+                    r_inv[idx] = True
+                else:
+                    a_b3[new_na]  = b3
+                    a_idx[new_na] = idx
+                    new_na += 1
+        na = new_na
+
+        # RB check against active FVGs only
+        n_pre_rb = na
+        for ai in range(n_pre_rb):
+            idx = a_idx[ai]
+            if r_inv[idx] or r_kind[idx] != 0:
+                continue
+            d = r_dir[idx]
+            if d == 1:
+                wt = l[k]
+                wb = body_bot[k]
+                if r_near[idx] <= wt <= r_far[idx]:
+                    wsz = wb - wt
+                    if body_sz[k] > 1e-9 and wsz > rb_min_wick_ratio * body_sz[k]:
+                        r_kind[n_poi] = np.int8(2)
+                        r_dir[n_poi]  = np.int8(1)
+                        r_near[n_poi] = wt
+                        r_mid[n_poi]  = (wt + wb) * 0.5
+                        r_far[n_poi]  = wb
+                        r_cb[n_poi]   = k
+                        r_wt[n_poi]   = wt
+                        r_wb[n_poi]   = wb
+                        a_b3[na]      = k
+                        a_idx[na]     = n_poi
+                        n_poi += 1
+                        na    += 1
+            elif d == -1:
+                wt = h[k]
+                wb = body_top[k]
+                if r_far[idx] <= wt <= r_near[idx]:
+                    wsz = wt - wb
+                    if body_sz[k] > 1e-9 and wsz > rb_min_wick_ratio * body_sz[k]:
+                        r_kind[n_poi] = np.int8(2)
+                        r_dir[n_poi]  = np.int8(-1)
+                        r_near[n_poi] = wt
+                        r_mid[n_poi]  = (wt + wb) * 0.5
+                        r_far[n_poi]  = wb
+                        r_cb[n_poi]   = k
+                        r_wt[n_poi]   = wt
+                        r_wb[n_poi]   = wb
+                        a_b3[na]      = k
+                        a_idx[na]     = n_poi
+                        n_poi += 1
+                        na    += 1
+
+        # New FVGs
+        bar1 = k - 2
+        if h[bar1] < l[k]:
+            r_kind[n_poi] = np.int8(0)
+            r_dir[n_poi]  = np.int8(1)
+            r_near[n_poi] = h[bar1]
+            r_mid[n_poi]  = (h[bar1] + l[k]) * 0.5
+            r_far[n_poi]  = l[k]
+            r_cb[n_poi]   = k
+            a_b3[na]      = k
+            a_idx[na]     = n_poi
+            n_poi += 1
+            na    += 1
+        if l[bar1] > h[k]:
+            r_kind[n_poi] = np.int8(0)
+            r_dir[n_poi]  = np.int8(-1)
+            r_near[n_poi] = l[bar1]
+            r_mid[n_poi]  = (l[bar1] + h[k]) * 0.5
+            r_far[n_poi]  = h[k]
+            r_cb[n_poi]   = k
+            a_b3[na]      = k
+            a_idx[na]     = n_poi
+            n_poi += 1
+            na    += 1
+
+    return (r_kind[:n_poi], r_dir[:n_poi], r_near[:n_poi], r_mid[:n_poi],
+            r_far[:n_poi],  r_cb[:n_poi],  r_inv[:n_poi],
+            r_wt[:n_poi],   r_wb[:n_poi])
+
+
+_OB_KIND_NAMES  = ('OB', 'BB')
+_FVG_KIND_NAMES = ('FVG', 'IFVG', 'RB')
+
+
+def _detect_ob_vectorized(o: np.ndarray, h: np.ndarray,
+                            l: np.ndarray, c: np.ndarray,
+                            bar_offset: int = 0) -> List[POI]:
+    """Detect Order Blocks and Breaker Blocks (Numba-accelerated wrapper)."""
+    if len(o) < 2:
+        return []
+    r_kind, r_dir, r_near, r_mid, r_far, r_cb, r_inv = _detect_ob_nb(o, h, l, c)
+    pois: List[POI] = []
+    for i in range(len(r_kind)):
+        pois.append(POI(
+            kind=_OB_KIND_NAMES[int(r_kind[i])],
+            direction=int(r_dir[i]),
+            near=float(r_near[i]),
+            mid=float(r_mid[i]),
+            far=float(r_far[i]),
+            created_bar=int(r_cb[i]) + bar_offset,
+            invalidated=bool(r_inv[i]),
+        ))
     return pois
 
 
@@ -385,128 +607,24 @@ def _detect_fvg_vectorized(o: np.ndarray, h: np.ndarray,
                              l: np.ndarray, c: np.ndarray,
                              rb_min_wick_ratio: float = 0.3,
                              bar_offset: int = 0) -> List[POI]:
-    """
-    Detect FVGs, promote to IFVGs when invalidated, and detect Rejection Blocks.
-    Processes bars sequentially; inline invalidation ensures no look-ahead.
-    """
-    n = len(o)
+    """Detect FVGs, IFVGs, and Rejection Blocks (Numba-accelerated wrapper)."""
+    if len(o) < 3:
+        return []
+    r_kind, r_dir, r_near, r_mid, r_far, r_cb, r_inv, r_wt, r_wb = \
+        _detect_fvg_nb(o, h, l, c, rb_min_wick_ratio)
     pois: List[POI] = []
-    if n < 3:
-        return pois
-
-    body_top = np.maximum(o, c)
-    body_bot = np.minimum(o, c)
-    body_sz  = body_top - body_bot
-
-    # (bar3_abs_idx, poi) tuples for active structures
-    active: List[Tuple[int, POI]] = []
-
-    for k in range(2, n):
-        bar1, bar3 = k - 2, k
-
-        # Update invalidation for active FVGs/IFVGs (only check bars after bar3 formed)
-        still_active: List[Tuple[int, POI]] = []
-        for (b3, fvg) in active:
-            if fvg.invalidated:
-                continue
-            if k <= b3:
-                still_active.append((b3, fvg))
-                continue
-            if fvg.kind == 'FVG':
-                if fvg.direction == 1 and c[k] < fvg.near:
-                    fvg.invalidated = True
-                    ifvg = POI(kind='IFVG', direction=-1,
-                               near=fvg.near, mid=fvg.mid, far=fvg.far,
-                               created_bar=k + bar_offset)
-                    pois.append(ifvg)
-                    still_active.append((b3, ifvg))
-                    continue
-                elif fvg.direction == -1 and c[k] > fvg.near:
-                    fvg.invalidated = True
-                    ifvg = POI(kind='IFVG', direction=1,
-                               near=fvg.near, mid=fvg.mid, far=fvg.far,
-                               created_bar=k + bar_offset)
-                    pois.append(ifvg)
-                    still_active.append((b3, ifvg))
-                    continue
-                else:
-                    still_active.append((b3, fvg))
-            elif fvg.kind == 'IFVG':
-                if fvg.direction == 1 and c[k] < fvg.far:
-                    fvg.invalidated = True
-                    continue
-                elif fvg.direction == -1 and c[k] > fvg.far:
-                    fvg.invalidated = True
-                    continue
-                else:
-                    still_active.append((b3, fvg))
-            elif fvg.kind == 'RB':
-                # Invalidated when any wick touches the 50% (mid) level
-                if fvg.direction == 1 and l[k] <= fvg.mid:
-                    fvg.invalidated = True
-                    continue
-                elif fvg.direction == -1 and h[k] >= fvg.mid:
-                    fvg.invalidated = True
-                    continue
-                else:
-                    still_active.append((b3, fvg))
-            # Check Rejection Blocks against active (non-invalidated) FVGs
-        # (done inside the above loop separately below)
-        active = still_active
-
-        # Check RB against all currently active bullish/bearish FVGs
-        for (b3, fvg) in active:
-            if fvg.invalidated or fvg.kind != 'FVG':
-                continue
-            if fvg.direction == 1:
-                # Bullish FVG: lower wick must reach INTO the FVG zone
-                wick_tip = l[k]
-                wick_base = body_bot[k]
-                if fvg.near <= wick_tip <= fvg.far:   # tip inside FVG gap
-                    wick_sz = wick_base - wick_tip
-                    if body_sz[k] > 1e-9 and wick_sz > rb_min_wick_ratio * body_sz[k]:
-                        rb = POI(kind='RB', direction=1,
-                                 near=wick_tip,
-                                 mid=(wick_tip + wick_base) / 2.0,
-                                 far=wick_base,
-                                 wick_tip=wick_tip, wick_base=wick_base,
-                                 created_bar=k + bar_offset)
-                        pois.append(rb)
-                        active.append((k, rb))
-            elif fvg.direction == -1:
-                # Bearish FVG: upper wick must reach INTO the FVG zone
-                wick_tip = h[k]
-                wick_base = body_top[k]
-                if fvg.near >= wick_tip >= fvg.far:
-                    wick_sz = wick_tip - wick_base
-                    if body_sz[k] > 1e-9 and wick_sz > rb_min_wick_ratio * body_sz[k]:
-                        rb = POI(kind='RB', direction=-1,
-                                 near=wick_tip,
-                                 mid=(wick_tip + wick_base) / 2.0,
-                                 far=wick_base,
-                                 wick_tip=wick_tip, wick_base=wick_base,
-                                 created_bar=k + bar_offset)
-                        pois.append(rb)
-                        active.append((k, rb))
-
-        # Detect new FVGs at bar k (bar1=k-2, bar3=k)
-        if h[bar1] < l[bar3]:
-            fvg = POI(kind='FVG', direction=1,
-                      near=h[bar1],
-                      mid=(h[bar1] + l[bar3]) / 2.0,
-                      far=l[bar3],
-                      created_bar=bar3 + bar_offset)
-            pois.append(fvg)
-            active.append((bar3, fvg))
-        if l[bar1] > h[bar3]:
-            fvg = POI(kind='FVG', direction=-1,
-                      near=l[bar1],
-                      mid=(l[bar1] + h[bar3]) / 2.0,
-                      far=h[bar3],
-                      created_bar=bar3 + bar_offset)
-            pois.append(fvg)
-            active.append((bar3, fvg))
-
+    for i in range(len(r_kind)):
+        pois.append(POI(
+            kind=_FVG_KIND_NAMES[int(r_kind[i])],
+            direction=int(r_dir[i]),
+            near=float(r_near[i]),
+            mid=float(r_mid[i]),
+            far=float(r_far[i]),
+            created_bar=int(r_cb[i]) + bar_offset,
+            invalidated=bool(r_inv[i]),
+            wick_tip=float(r_wt[i]),
+            wick_base=float(r_wb[i]),
+        ))
     return pois
 
 
@@ -678,7 +796,7 @@ def _cisd_check_at_bar(
     return False
 
 
-@_njit
+@_njit_nogil
 def _cisd_scan_nb(o: np.ndarray, c: np.ndarray, direction: int,
                   min_series: int, min_body_ratio: float,
                   start: int, end: int) -> int:
@@ -754,6 +872,7 @@ class ICTSMCStrategy(BaseStrategy):
 
     trading_hours = None   # All hours; 09:30-11:00 ET gated inside generate_signals
     min_lookback  = 300
+    _supports_precomputed_phase1 = True   # runner may pre-compute all days in parallel
 
     # ------------------------------------------------------------------
     # Initialisation
@@ -932,6 +1051,10 @@ class ICTSMCStrategy(BaseStrategy):
         self._sw_lo_all: np.ndarray = np.empty(0)
         self._sw_hi_all: np.ndarray = np.empty(0)
 
+        # Pre-computed Phase 1 results for all trading days — injected by runner
+        # before the main bar loop for parallel speedup.  None = compute on-the-fly.
+        self._phase1_precomputed: Optional[dict] = None
+
     # ------------------------------------------------------------------
     # Pre-computation of bar metadata (called once)
     # ------------------------------------------------------------------
@@ -968,7 +1091,10 @@ class ICTSMCStrategy(BaseStrategy):
         """
         Build a list of SESSION POIs using precomputed date/time arrays.
         Also returns (ndog_price, nwog_price).
-        All operations are numpy vectorised — no Python loops over bar indices.
+
+        Uses np.searchsorted instead of full-array boolean masks, which avoids
+        O(n) work on a 260K-element array. Each date range lookup is O(log n),
+        and the subsequent max/min only processes the relevant window (~200-1440 bars).
         """
         h1 = data.high_1m
         l1 = data.low_1m
@@ -980,110 +1106,139 @@ class ICTSMCStrategy(BaseStrategy):
         validity = self.session_level_validity_days
         results: List[POI] = []
 
-        # Helper: bar indices up to bar_i
-        arange_n = np.arange(n)
-
         def _make_sess(price: float, sk: str) -> POI:
             return POI(kind='SESSION', direction=0,
                        near=price, mid=price, far=price,
                        session_kind=sk)
 
-        def _hl(mask: np.ndarray) -> Tuple[Optional[float], Optional[float]]:
-            """Return (max_high, min_low) for bars where mask is True, else None."""
-            if not np.any(mask):
-                return None, None
-            return float(h1[:n][mask].max()), float(l1[:n][mask].min())
+        def _date_slice(d: int) -> Tuple[int, int]:
+            """Return (start, end) bar indices for date d, capped at n."""
+            s = int(np.searchsorted(dates, d))
+            e = int(np.searchsorted(dates, d + 1))
+            return s, min(e, n)
 
-        # ---- PDH / PDL: prev calendar day 09:30 to 16:00 ----
+        def _hl_window(d: int, t_lo: int = 0, t_hi: int = 1440) -> Tuple[Optional[float], Optional[float]]:
+            """High/low for bars on date d with t_lo <= time < t_hi."""
+            s, e = _date_slice(d)
+            if s >= e:
+                return None, None
+            t_sl = times[s:e]
+            if t_lo == 0 and t_hi == 1440:
+                m = np.ones(e - s, dtype=bool)
+            elif t_lo == 0:
+                m = t_sl < t_hi
+            elif t_hi == 1440:
+                m = t_sl >= t_lo
+            else:
+                m = (t_sl >= t_lo) & (t_sl < t_hi)
+            if not np.any(m):
+                return None, None
+            h_sl = h1[s:e]; l_sl = l1[s:e]
+            return float(h_sl[m].max()), float(l_sl[m].min())
+
+        def _hl_two_parts(
+            d1: int, t1_lo: int,
+            d2: int, t2: int,  # exact time match on d2
+        ) -> Tuple[Optional[float], Optional[float]]:
+            """High/low across two date/time ranges (used for Asia cross-midnight window)."""
+            hs: List[float] = []; ls: List[float] = []
+            h, l = _hl_window(d1, t_lo=t1_lo)
+            if h is not None:
+                hs.append(h); ls.append(l)
+            # Single-bar midnight check on d2
+            s2, e2 = _date_slice(d2)
+            if s2 < e2:
+                t_sl = times[s2:e2]
+                idx = np.where(t_sl == t2)[0]
+                if len(idx) > 0:
+                    hs.append(float(h1[s2 + idx[0]])); ls.append(float(l1[s2 + idx[0]]))
+            if not hs:
+                return None, None
+            return float(max(hs)), float(min(ls))
+
+        # ---- PDH / PDL: prev calendar day (all RTH bars) ----
         prev_d = tod - 1
-        m = (dates[:n] == prev_d)
-        hi, lo = _hl(m)
+        hi, lo = _hl_window(prev_d)
         if hi is not None:
             results.append(_make_sess(hi, 'PDH'))
             results.append(_make_sess(lo, 'PDL'))
 
         # ---- Asia H/L: 20:00 prev_d to 00:00 tod ----
-        # 20:00-24:00 on prev_d (times >= 1200) plus 00:00 on tod (times == 0)
         for delta in range(0, validity + 1):
-            pd = tod - 1 - delta
-            am = (((dates[:n] == pd)    & (times[:n] >= ASIA_START_MIN)) |
-                  ((dates[:n] == pd + 1) & (times[:n] == 0)))
-            hi, lo = _hl(am)
+            pd_ = tod - 1 - delta
+            hi, lo = _hl_two_parts(pd_, ASIA_START_MIN, pd_ + 1, 0)
             if hi is not None:
                 results.append(_make_sess(hi, 'Asia_H'))
                 results.append(_make_sess(lo, 'Asia_L'))
 
         # ---- London H/L: 02:00-05:00 ----
         for delta in range(0, validity + 1):
-            pd = tod - delta
-            m = (dates[:n] == pd) & (times[:n] >= LONDON_START_MIN) & (times[:n] < LONDON_END_MIN)
-            hi, lo = _hl(m)
+            pd_ = tod - delta
+            hi, lo = _hl_window(pd_, LONDON_START_MIN, LONDON_END_MIN)
             if hi is not None:
                 results.append(_make_sess(hi, 'London_H'))
                 results.append(_make_sess(lo, 'London_L'))
 
         # ---- NY Pre H/L: 08:00-09:30 ----
         for delta in range(0, validity + 1):
-            pd = tod - delta
-            m = (dates[:n] == pd) & (times[:n] >= NYPRE_START_MIN) & (times[:n] < NYPRE_END_MIN)
-            hi, lo = _hl(m)
+            pd_ = tod - delta
+            hi, lo = _hl_window(pd_, NYPRE_START_MIN, NYPRE_END_MIN)
             if hi is not None:
                 results.append(_make_sess(hi, 'NYPre_H'))
                 results.append(_make_sess(lo, 'NYPre_L'))
 
         # ---- NY AM H/L: 09:30-11:00 from prev day(s) ----
         for delta in range(1, validity + 1):
-            pd = tod - delta
-            m = (dates[:n] == pd) & (times[:n] >= NYAM_START_MIN) & (times[:n] < NYAM_END_MIN)
-            hi, lo = _hl(m)
+            pd_ = tod - delta
+            hi, lo = _hl_window(pd_, NYAM_START_MIN, NYAM_END_MIN)
             if hi is not None:
                 results.append(_make_sess(hi, 'NYAM_H'))
                 results.append(_make_sess(lo, 'NYAM_L'))
 
         # ---- NY Lunch H/L: 12:00-13:00 from prev day(s) ----
         for delta in range(1, validity + 1):
-            pd = tod - delta
-            m = (dates[:n] == pd) & (times[:n] >= NYLUNCH_START_MIN) & (times[:n] < NYLUNCH_END_MIN)
-            hi, lo = _hl(m)
+            pd_ = tod - delta
+            hi, lo = _hl_window(pd_, NYLUNCH_START_MIN, NYLUNCH_END_MIN)
             if hi is not None:
                 results.append(_make_sess(hi, 'NYLunch_H'))
                 results.append(_make_sess(lo, 'NYLunch_L'))
 
         # ---- NY PM H/L: 13:30-16:00 from prev day(s) ----
         for delta in range(1, validity + 1):
-            pd = tod - delta
-            m = (dates[:n] == pd) & (times[:n] >= NYPM_START_MIN) & (times[:n] < NYPM_END_MIN)
-            hi, lo = _hl(m)
+            pd_ = tod - delta
+            hi, lo = _hl_window(pd_, NYPM_START_MIN, NYPM_END_MIN)
             if hi is not None:
                 results.append(_make_sess(hi, 'NYPM_H'))
                 results.append(_make_sess(lo, 'NYPM_L'))
 
         # ---- Daily H/L: current day up to bar_i ----
-        m = dates[:n] == tod
-        hi, lo = _hl(m)
+        hi, lo = _hl_window(tod)
         if hi is not None:
             results.append(_make_sess(hi, 'Daily_H'))
             results.append(_make_sess(lo, 'Daily_L'))
 
         # ---- NDOG: midnight open (00:00 ET today) ----
-        ndog_mask = (dates[:n] == tod) & (times[:n] == 0)
-        ndog_idx = np.where(ndog_mask)[0]
+        s_tod, e_tod = _date_slice(tod)
         ndog: Optional[float] = None
-        if len(ndog_idx) > 0:
-            ndog = float(o1[ndog_idx[0]])
-            results.append(_make_sess(ndog, 'NDOG'))
+        if s_tod < e_tod:
+            t_sl = times[s_tod:e_tod]
+            idx = np.where(t_sl == 0)[0]
+            if len(idx) > 0:
+                ndog = float(o1[s_tod + idx[0]])
+                results.append(_make_sess(ndog, 'NDOG'))
 
         # ---- NWOG: open at most recent Monday 00:00 ET ----
-        # Monday of current week; if today is Monday → previous Monday
         d_obj = _date_cls.fromordinal(tod)
         dow = d_obj.weekday()  # 0=Mon … 6=Sun
-        monday_ord = tod - dow  # 0 on Monday (today), correct for all days
-        nwog_mask = (dates[:n] == monday_ord) & (times[:n] == 0)
-        nwog_idx = np.where(nwog_mask)[0]
+        monday_ord = tod - dow
+        s_mon, e_mon = _date_slice(monday_ord)
         nwog: Optional[float] = None
-        if len(nwog_idx) > 0:
-            nwog = float(o1[nwog_idx[0]])
-            results.append(_make_sess(nwog, 'NWOG'))
+        if s_mon < e_mon:
+            t_sl = times[s_mon:e_mon]
+            idx = np.where(t_sl == 0)[0]
+            if len(idx) > 0:
+                nwog = float(o1[s_mon + idx[0]])
+                results.append(_make_sess(nwog, 'NWOG'))
 
         return results, ndog, nwog
 
@@ -1134,10 +1289,15 @@ class ICTSMCStrategy(BaseStrategy):
                     _nyam_l_price = _sp.near
             if _nyam_h_price is not None and _nyam_l_price is not None:
                 _tod  = self._bar_dates_ord[n_1m - 1]
-                _nm   = ((self._bar_dates_ord[:n_1m] == _tod - 1)
-                         & (self._bar_times_min[:n_1m] >= NYAM_START_MIN)
-                         & (self._bar_times_min[:n_1m] < NYAM_END_MIN))
-                _ni   = np.where(_nm)[0]
+                _prev = _tod - 1
+                _s = int(np.searchsorted(self._bar_dates_ord, _prev))
+                _e = min(int(np.searchsorted(self._bar_dates_ord, _prev + 1)), n_1m)
+                _ni: np.ndarray = np.empty(0, dtype=np.intp)
+                if _s < _e:
+                    _tm = self._bar_times_min[_s:_e]
+                    _mi = np.where((_tm >= NYAM_START_MIN) & (_tm < NYAM_END_MIN))[0]
+                    if len(_mi) > 0:
+                        _ni = _mi + _s
                 if len(_ni) > 0:
                     _nyam_hi_abs = int(_ni[int(np.argmax(h1[_ni]))])
                     _nyam_lo_abs = int(_ni[int(np.argmin(l1[_ni]))])
@@ -1403,6 +1563,11 @@ class ICTSMCStrategy(BaseStrategy):
         legs: List[ManipLeg] = []
         depth = self.manip_leg_swing_depth
 
+        # Pre-extract valid swing indices — avoids O(nf) Python loop per zone
+        # (nf can be up to 2500 for 1m; actual swings are ~10–50)
+        sh_valid = np.where(~np.isnan(sh_))[0]  # sorted ascending
+        sl_valid = np.where(~np.isnan(sl_))[0]
+
         for zone in abs_zones:
             search_start = zone.end + 1
             if search_start >= nf:
@@ -1413,27 +1578,26 @@ class ICTSMCStrategy(BaseStrategy):
             # for bearish) supersedes the earlier one — it is the true manipulation.
             best_a: Optional[ManipLeg] = None
             best_b: Optional[ManipLeg] = None
+            ov_start = max(overnight_start, 0)
 
             # --- Scenario A: bullish manipulation (manip up → bearish setup / short trade)
-            for sh_idx in range(search_start, nf):
-                if np.isnan(sh_[sh_idx]):
-                    continue
+            # Iterate only confirmed swing-high indices at or after search_start
+            sh_start_pos = int(np.searchsorted(sh_valid, search_start))
+            for sh_idx in sh_valid[sh_start_pos:]:
                 # Gap constraint: always measured in 5m bars regardless of timeframe
                 gap_5m = (int(bar_map[sh_idx]) - zone.end) if bar_map is not None else (sh_idx - zone.end)
                 if gap_5m > self.po3_max_accum_gap_bars:
                     break
 
-                # Find the Nth prior swing low (depth=1 → nearest, depth=2 → second, …)
+                # Find the Nth prior swing low — search only confirmed sl indices before sh_idx
                 sl_idx_a: Optional[int] = None
                 sl_price_a: Optional[float] = None
-                found = 0
-                for j in range(sh_idx - 1, max(overnight_start, 0) - 1, -1):
-                    if not np.isnan(sl_[j]):
-                        found += 1
-                        if found == depth:
-                            sl_idx_a = j
-                            sl_price_a = float(sl_[j])
-                            break
+                sl_end_pos = int(np.searchsorted(sl_valid, sh_idx))
+                ov_start_pos = int(np.searchsorted(sl_valid, ov_start))
+                candidates = sl_valid[ov_start_pos:sl_end_pos]
+                if len(candidates) >= depth:
+                    sl_idx_a   = int(candidates[-depth])
+                    sl_price_a = float(sl_[sl_idx_a])
                 if sl_idx_a is None:
                     continue
 
@@ -1468,24 +1632,21 @@ class ICTSMCStrategy(BaseStrategy):
                     best_a = candidate
 
             # --- Scenario B: bearish manipulation (manip down → bullish setup / long trade)
-            for sl_idx_b in range(search_start, nf):
-                if np.isnan(sl_[sl_idx_b]):
-                    continue
+            sl_start_pos = int(np.searchsorted(sl_valid, search_start))
+            for sl_idx_b in sl_valid[sl_start_pos:]:
                 gap_5m = (int(bar_map[sl_idx_b]) - zone.end) if bar_map is not None else (sl_idx_b - zone.end)
                 if gap_5m > self.po3_max_accum_gap_bars:
                     break
 
-                # Find the Nth prior swing high
+                # Find the Nth prior swing high — search only confirmed sh indices before sl_idx_b
                 sh_idx_b: Optional[int] = None
                 sh_price_b: Optional[float] = None
-                found = 0
-                for j in range(sl_idx_b - 1, max(overnight_start, 0) - 1, -1):
-                    if not np.isnan(sh_[j]):
-                        found += 1
-                        if found == depth:
-                            sh_idx_b = j
-                            sh_price_b = float(sh_[j])
-                            break
+                sh_end_pos = int(np.searchsorted(sh_valid, sl_idx_b))
+                sh_ov_pos  = int(np.searchsorted(sh_valid, ov_start))
+                sh_cands = sh_valid[sh_ov_pos:sh_end_pos]
+                if len(sh_cands) >= depth:
+                    sh_idx_b   = int(sh_cands[-depth])
+                    sh_price_b = float(sh_[sh_idx_b])
                 if sh_idx_b is None:
                     continue
 
@@ -1655,12 +1816,25 @@ class ICTSMCStrategy(BaseStrategy):
         else:
             dates1 = self._bar_dates_ord
             times1 = self._bar_times_min
-            ov_mask_1m = (
-                ((dates1[:n_1m] == prev_d) & (times1[:n_1m] >= NYPM_END_MIN)) |
-                ((dates1[:n_1m] == tod)    & (times1[:n_1m] < SESSION_START_MIN))
-            )
-            ov_idx_1m          = np.where(ov_mask_1m)[0]
-            overnight_start_1m = int(ov_idx_1m[0]) if len(ov_idx_1m) > 0 else 0
+            # Use searchsorted to avoid O(n) mask over the full array.
+            # Part 1: bars on prev_d with times >= NYPM_END_MIN (after-hours)
+            s1 = int(np.searchsorted(dates1, prev_d))
+            e1 = min(int(np.searchsorted(dates1, prev_d + 1)), n_1m)
+            # Part 2: bars on tod with times < SESSION_START_MIN (pre-session)
+            s2 = int(np.searchsorted(dates1, tod))
+            e2 = min(int(np.searchsorted(dates1, tod + 1)), n_1m)
+            ov_candidates: List[int] = []
+            if s1 < e1:
+                t1_sl = times1[s1:e1]
+                idx1 = np.where(t1_sl >= NYPM_END_MIN)[0]
+                if len(idx1) > 0:
+                    ov_candidates.append(int(s1 + idx1[0]))
+            if s2 < e2:
+                t2_sl = times1[s2:e2]
+                idx2 = np.where(t2_sl < SESSION_START_MIN)[0]
+                if len(idx2) > 0:
+                    ov_candidates.append(int(s2 + idx2[0]))
+            overnight_start_1m = int(min(ov_candidates)) if ov_candidates else 0
 
             # Overnight range — used as an ML feature
             if overnight_start_1m < n_1m:
@@ -2171,8 +2345,21 @@ class ICTSMCStrategy(BaseStrategy):
 
         # Phase 1: run once at first bar with time >= 09:30 ET
         if not self._phase1_done and t_min >= SESSION_START_MIN:
-            # Use bar_i-1 as data cutoff: phase 1 must complete before 09:30 (spec §5.0)
-            self._run_phase1(data, max(0, i - 1), tod)
+            if self._phase1_precomputed is not None and tod in self._phase1_precomputed:
+                # Load pre-computed results injected by the parallel pre-compute pass
+                _ph = self._phase1_precomputed[tod]
+                self._validated_levels    = _ph['validated_levels']
+                self._session_ote_groups  = _ph['session_ote_groups']
+                self._session_atr         = _ph['session_atr']
+                self._overnight_range_atr = _ph['overnight_range_atr']
+                self._sw_1m_hi   = _ph['sw_1m_hi'];  self._sw_1m_lo  = _ph['sw_1m_lo']
+                self._sw_5m_hi   = _ph['sw_5m_hi'];  self._sw_5m_lo  = _ph['sw_5m_lo']
+                self._sw_15m_hi  = _ph['sw_15m_hi']; self._sw_15m_lo = _ph['sw_15m_lo']
+                self._sw_30m_hi  = _ph['sw_30m_hi']; self._sw_30m_lo = _ph['sw_30m_lo']
+                self._sw_lo_all  = _ph['sw_lo_all'];  self._sw_hi_all = _ph['sw_hi_all']
+            else:
+                # Use bar_i-1 as data cutoff: phase 1 must complete before 09:30 (spec §5.0)
+                self._run_phase1(data, max(0, i - 1), tod)
             self._phase1_done = True
 
         # Only enter trades from 09:30 ET up to entry_end_min (default 11:00 ET)
