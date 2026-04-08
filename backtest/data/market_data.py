@@ -37,6 +37,14 @@ class MarketData:
     # --- Session dates present in the data ---
     trading_dates: list[date] = field(default_factory=list)
 
+    # --- Pre-computed bar date/time arrays (cached here so strategy instances
+    #     share them rather than each computing from the pandas index) ---
+    # Populated lazily by ICTSMCStrategy._ensure_bar_metadata on first call.
+    bar_dates_1m_ord: np.ndarray = field(default=None)   # int32 Gregorian ordinals
+    bar_times_1m_min: np.ndarray = field(default=None)   # int32 minutes-since-midnight
+    bar_dates_5m_ord: np.ndarray = field(default=None)
+    bar_times_5m_min: np.ndarray = field(default=None)
+
     def __post_init__(self):
         self._validate()
 
