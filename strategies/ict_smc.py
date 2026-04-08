@@ -1031,6 +1031,7 @@ class ICTSMCStrategy(BaseStrategy):
         self._bar_times_min:    Optional[np.ndarray] = None
         self._bar_dates_5m_ord: Optional[np.ndarray] = None
         self._bar_times_5m_min: Optional[np.ndarray] = None
+        self._date_to_slice_1m: Optional[dict] = None
 
         # Cached POIs (computed in phase1)
         self._poi_1m:  List[POI] = []
@@ -1084,10 +1085,21 @@ class ICTSMCStrategy(BaseStrategy):
             idx5 = data.df_5m.index
             data.bar_dates_5m_ord = self._to_ordinals(idx5)
             data.bar_times_5m_min = (idx5.hour * 60 + idx5.minute).to_numpy(dtype=np.int32)
+            # Pre-compute date → (start, end) index map for 1m bars so session level
+            # lookups are O(1) dict access instead of O(log n) searchsorted each call.
+            d1m = data.bar_dates_1m_ord
+            unique_dates, first_idx = np.unique(d1m, return_index=True)
+            n_total = len(d1m)
+            end_idx = np.empty_like(first_idx)
+            end_idx[:-1] = first_idx[1:]
+            end_idx[-1]  = n_total
+            data.date_to_slice_1m = {int(d): (int(s), int(e))
+                                     for d, s, e in zip(unique_dates, first_idx, end_idx)}
         self._bar_dates_ord    = data.bar_dates_1m_ord
         self._bar_times_min    = data.bar_times_1m_min
         self._bar_dates_5m_ord = data.bar_dates_5m_ord
         self._bar_times_5m_min = data.bar_times_5m_min
+        self._date_to_slice_1m = data.date_to_slice_1m
 
     # ------------------------------------------------------------------
     # Session levels (fully vectorised)
@@ -1119,11 +1131,14 @@ class ICTSMCStrategy(BaseStrategy):
                        near=price, mid=price, far=price,
                        session_kind=sk)
 
+        _ds_map = self._date_to_slice_1m
+
         def _date_slice(d: int) -> Tuple[int, int]:
             """Return (start, end) bar indices for date d, capped at n."""
-            s = int(np.searchsorted(dates, d))
-            e = int(np.searchsorted(dates, d + 1))
-            return s, min(e, n)
+            pair = _ds_map.get(d)
+            if pair is None:
+                return n, n   # date not in dataset → empty slice
+            return pair[0], min(pair[1], n)
 
         def _hl_window(d: int, t_lo: int = 0, t_hi: int = 1440) -> Tuple[Optional[float], Optional[float]]:
             """High/low for bars on date d with t_lo <= time < t_hi."""
@@ -1875,25 +1890,35 @@ class ICTSMCStrategy(BaseStrategy):
 
         # Detect manipulation legs — timeframe determined by manip_leg_timeframe
         if self.manip_leg_timeframe == '1m':
-            # Convert 5m zone boundaries to 1m space.
+            # Bounded window for 1m path — same idea as the 5m path below.
+            # 1 5m bar ≈ 5 1m bars, so multiply the 5m buffer by 5.
+            _manip_win_start_1m = max(0, overnight_start_1m - max(self.swing_n * 20, 100))
+            bm_full = data.bar_map[:n_1m]
+            bm_win  = bm_full[_manip_win_start_1m:]
+
+            # Convert 5m zone boundaries to 1m space (relative to window start).
             # bar_map[i] = last completed 5m bar at 1m bar i.
             # The first 1m bar strictly after 5m zone.end completes is the first i
             # where bar_map[i] > zone.end.
-            bm = data.bar_map[:n_1m]
             abs_zones_1m = [
                 AccumZone(
-                    start=int(np.searchsorted(bm, z.start, side='left')),
-                    end=int(np.searchsorted(bm, z.end,   side='right')) - 1,
+                    start=int(np.searchsorted(bm_win, z.start, side='left')),
+                    end=int(np.searchsorted(bm_win, z.end,   side='right')) - 1,
                     high=z.high, low=z.low)
                 for z in abs_zones
             ]
 
             legs = self._detect_manip_legs(
-                data.open_1m[:n_1m], data.high_1m[:n_1m],
-                data.low_1m[:n_1m],  data.close_1m[:n_1m],
-                abs_zones_1m, overnight_start_1m, ndog,
-                bar_map=bm,
+                data.open_1m[_manip_win_start_1m:n_1m], data.high_1m[_manip_win_start_1m:n_1m],
+                data.low_1m[_manip_win_start_1m:n_1m],  data.close_1m[_manip_win_start_1m:n_1m],
+                abs_zones_1m, overnight_start_1m - _manip_win_start_1m, ndog,
+                bar_map=bm_win,
                 min_size=self.po3_min_manipulation_size_atr_mult * _phase1_atr)
+            # Shift returned ManipLeg indices back to absolute 1m space
+            for _leg in legs:
+                _leg.swing_lo_idx += _manip_win_start_1m
+                _leg.swing_hi_idx += _manip_win_start_1m
+                _leg.cisd_bar_idx += _manip_win_start_1m
         else:
             # Use bounded window (not full prefix) for swing detection.
             # Zone and overnight indices must be shifted relative to window start.
