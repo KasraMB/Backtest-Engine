@@ -1074,12 +1074,20 @@ class ICTSMCStrategy(BaseStrategy):
     def _ensure_bar_metadata(self, data: MarketData) -> None:
         if self._bar_dates_ord is not None:
             return
-        idx = data.df_1m.index
-        self._bar_dates_ord = self._to_ordinals(idx)
-        self._bar_times_min = (idx.hour * 60 + idx.minute).to_numpy(dtype=np.int32)
-        idx5 = data.df_5m.index
-        self._bar_dates_5m_ord = self._to_ordinals(idx5)
-        self._bar_times_5m_min = (idx5.hour * 60 + idx5.minute).to_numpy(dtype=np.int32)
+        # Fast path: use arrays cached on MarketData (shared across all strategy
+        # instances working on the same data object — avoids repeated O(n) pandas
+        # timezone conversions in parallel Phase-1 workers).
+        if data.bar_dates_1m_ord is None:
+            idx = data.df_1m.index
+            data.bar_dates_1m_ord = self._to_ordinals(idx)
+            data.bar_times_1m_min = (idx.hour * 60 + idx.minute).to_numpy(dtype=np.int32)
+            idx5 = data.df_5m.index
+            data.bar_dates_5m_ord = self._to_ordinals(idx5)
+            data.bar_times_5m_min = (idx5.hour * 60 + idx5.minute).to_numpy(dtype=np.int32)
+        self._bar_dates_ord    = data.bar_dates_1m_ord
+        self._bar_times_min    = data.bar_times_1m_min
+        self._bar_dates_5m_ord = data.bar_dates_5m_ord
+        self._bar_times_5m_min = data.bar_times_5m_min
 
     # ------------------------------------------------------------------
     # Session levels (fully vectorised)
@@ -1745,25 +1753,46 @@ class ICTSMCStrategy(BaseStrategy):
         self._session_atr = _phase1_atr
 
         # Identify overnight 5m bar index range (prev-day 16:00 to today 09:30)
+        # Use searchsorted to avoid O(n_5m) mask over the full growing array.
         prev_d = tod - 1
-        overnight_mask = (
-            ((dates5 == prev_d) & (times5 >= NYPM_END_MIN)) |
-            ((dates5 == tod)    & (times5 < SESSION_START_MIN))
-        )
-        # Restrict to completed bars
-        overnight_mask[completed_5m + 1:] = False
-        ov_indices = np.where(overnight_mask)[0]
-        if len(ov_indices) < self.po3_min_candles:
+        n5 = completed_5m + 1   # usable 5m bars
+        _s_prev = int(np.searchsorted(dates5, prev_d))
+        _e_prev = min(int(np.searchsorted(dates5, prev_d + 1)), n5)
+        _s_tod  = int(np.searchsorted(dates5, tod))
+        _e_tod  = min(int(np.searchsorted(dates5, tod + 1)), n5)
+        _ov_parts: List[int] = []
+        if _s_prev < _e_prev:
+            _t = times5[_s_prev:_e_prev]
+            _i = np.where(_t >= NYPM_END_MIN)[0]
+            if len(_i):
+                _ov_parts.extend((_s_prev + _i).tolist())
+        if _s_tod < _e_tod:
+            _t = times5[_s_tod:_e_tod]
+            _i = np.where(_t < SESSION_START_MIN)[0]
+            if len(_i):
+                _ov_parts.extend((_s_tod + _i).tolist())
+        if len(_ov_parts) < self.po3_min_candles:
             return
 
-        overnight_start_5m = int(ov_indices[0])
-        overnight_end_5m   = int(ov_indices[-1])
+        overnight_start_5m = int(min(_ov_parts))
+        overnight_end_5m   = int(max(_ov_parts))
 
-        # Slice full 5m arrays up to completed bar (for POI detection and swing detection)
+        # Slice full 5m arrays up to completed bar (for POI detection).
+        # For swing/manip detection, we use a bounded window: start slightly
+        # before overnight_start so swing confirmation has history, but avoid
+        # the O(total_history) cost of passing the full growing prefix.
         o5f = data.open_5m[:completed_5m + 1]
         h5f = data.high_5m[:completed_5m + 1]
         l5f = data.low_5m[:completed_5m + 1]
         c5f = data.close_5m[:completed_5m + 1]
+
+        # Bounded window for swing / manip-leg detection — overnight period +
+        # a small pre-overnight buffer for swing confirmation (swing_n bars).
+        _manip_win_start = max(0, overnight_start_5m - max(self.swing_n * 4, 20))
+        o5_win = data.open_5m[_manip_win_start:completed_5m + 1]
+        h5_win = data.high_5m[_manip_win_start:completed_5m + 1]
+        l5_win = data.low_5m[_manip_win_start:completed_5m + 1]
+        c5_win = data.close_5m[_manip_win_start:completed_5m + 1]
 
         # Overnight-only slices for accumulation zone detection
         o5_ov = data.open_5m[overnight_start_5m:overnight_end_5m + 1]
@@ -1866,10 +1895,22 @@ class ICTSMCStrategy(BaseStrategy):
                 bar_map=bm,
                 min_size=self.po3_min_manipulation_size_atr_mult * _phase1_atr)
         else:
+            # Use bounded window (not full prefix) for swing detection.
+            # Zone and overnight indices must be shifted relative to window start.
+            _ws = _manip_win_start
+            abs_zones_win = [
+                AccumZone(start=z.start - _ws, end=z.end - _ws, high=z.high, low=z.low)
+                for z in abs_zones
+            ]
             legs = self._detect_manip_legs(
-                o5f, h5f, l5f, c5f,
-                abs_zones, overnight_start_5m, ndog,
+                o5_win, h5_win, l5_win, c5_win,
+                abs_zones_win, overnight_start_5m - _ws, ndog,
                 min_size=self.po3_min_manipulation_size_atr_mult * _phase1_atr)
+            # Shift returned ManipLeg indices back to absolute 5m space
+            for _leg in legs:
+                _leg.swing_lo_idx += _ws
+                _leg.swing_hi_idx += _ws
+                _leg.cisd_bar_idx += _ws
 
         # Detect POIs on all timeframes — use a bounded lookback window so
         # cost stays O(poi_lookback_5m_bars) per day rather than O(total_history).
