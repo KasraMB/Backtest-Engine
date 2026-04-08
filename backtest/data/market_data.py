@@ -44,6 +44,10 @@ class MarketData:
     bar_times_1m_min: np.ndarray = field(default=None)   # int32 minutes-since-midnight
     bar_dates_5m_ord: np.ndarray = field(default=None)
     bar_times_5m_min: np.ndarray = field(default=None)
+    # Pre-computed date → (first_bar_idx, one_past_last_bar_idx) for 1m bars.
+    # Dict[int, Tuple[int, int]] — allows O(1) _date_slice lookups instead of
+    # two np.searchsorted calls per session level lookup.
+    date_to_slice_1m: dict = field(default=None)
 
     def __post_init__(self):
         self._validate()
