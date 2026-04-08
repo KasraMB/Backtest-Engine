@@ -283,6 +283,72 @@ def build_eod_bar_set(data: MarketData, eod_exit_time: time) -> set[int]:
 
 
 # ---------------------------------------------------------------------------
+# Parallel Phase 1 pre-computation
+# ---------------------------------------------------------------------------
+
+def _precompute_phase1_parallel(
+    strategy_class: Type[BaseStrategy],
+    params: dict,
+    data: MarketData,
+    n_workers: int = 8,
+) -> dict:
+    """
+    Pre-compute Phase 1 (validated levels, session OTE groups, swing arrays, etc.)
+    for every trading day in parallel using ThreadPoolExecutor.
+
+    Returns dict mapping date_ordinal → phase1_result_dict.
+
+    Requires strategy_class._supports_precomputed_phase1 == True.
+    Numba functions inside _run_phase1 (FVG/OB/cisd_scan) use nogil=True so
+    threads truly run in parallel for the hot inner loops.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    SESSION_START_MIN = 570  # 09:30 ET in minutes since midnight
+
+    # Build date+time arrays once (same logic as _ensure_bar_metadata)
+    idx = data.df_1m.index
+    y1  = idx.year.to_numpy(np.int64) - 1
+    doy = idx.day_of_year.to_numpy(np.int64)
+    bar_dates = (y1 * 365 + y1 // 4 - y1 // 100 + y1 // 400 + doy).astype(np.int32)
+    bar_times = (idx.hour * 60 + idx.minute).to_numpy(np.int32)
+
+    # Collect (date_ord, bar_i) for every Phase 1 trigger
+    trigger_bars: list = []
+    seen_days: set = set()
+    for i in range(len(bar_times)):
+        if int(bar_times[i]) >= SESSION_START_MIN:
+            tod = int(bar_dates[i])
+            if tod not in seen_days:
+                seen_days.add(tod)
+                trigger_bars.append((tod, max(0, i - 1)))
+
+    def _run_one(args):
+        tod_ord, bar_i = args
+        inst = strategy_class(params)
+        inst._ensure_bar_metadata(data)
+        inst._run_phase1(data, bar_i, tod_ord)
+        return tod_ord, {
+            'validated_levels':    inst._validated_levels,
+            'session_ote_groups':  inst._session_ote_groups,
+            'session_atr':         inst._session_atr,
+            'overnight_range_atr': inst._overnight_range_atr,
+            'sw_1m_hi':  inst._sw_1m_hi,  'sw_1m_lo':  inst._sw_1m_lo,
+            'sw_5m_hi':  inst._sw_5m_hi,  'sw_5m_lo':  inst._sw_5m_lo,
+            'sw_15m_hi': inst._sw_15m_hi, 'sw_15m_lo': inst._sw_15m_lo,
+            'sw_30m_hi': inst._sw_30m_hi, 'sw_30m_lo': inst._sw_30m_lo,
+            'sw_lo_all': inst._sw_lo_all,  'sw_hi_all': inst._sw_hi_all,
+        }
+
+    results: dict = {}
+    with ThreadPoolExecutor(max_workers=n_workers) as pool:
+        for tod_ord, result in pool.map(_run_one, trigger_bars):
+            results[tod_ord] = result
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Core bar loop
 # ---------------------------------------------------------------------------
 
@@ -345,6 +411,13 @@ def _run_single(
     _cancel_min = config.order_cancel_time.hour * 60 + config.order_cancel_time.minute
     _times_min  = (data.df_1m.index.hour * 60 + data.df_1m.index.minute).to_numpy()
     cancel_mask = _times_min >= _cancel_min
+
+    # Parallel Phase 1 pre-computation — each trading day is independent;
+    # Numba functions inside _run_phase1 use nogil=True for true parallelism.
+    if getattr(strategy, '_supports_precomputed_phase1', False):
+        strategy._phase1_precomputed = _precompute_phase1_parallel(
+            strategy_class, config.params, data
+        )
 
     trades: list[Trade] = []
     equity_curve: list[float] = [account.balance]
