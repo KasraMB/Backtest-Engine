@@ -1840,7 +1840,7 @@ class ICTSMCStrategy(BaseStrategy):
         # session_pois, overnight window scalars, and POI lists depend only on
         # BASE_PARAMS (rb_min_wick_ratio, session_level_validity_days — fixed).
         # Safe to share across all LHS-sampled configs in the same worker process.
-        _ph1a = _PHASE1A_CACHE.get(tod_ord)
+        _ph1a = _PHASE1A_CACHE.get((id(data), tod_ord))
 
         # Session levels + NDOG
         if _ph1a is not None:
@@ -1987,7 +1987,7 @@ class ICTSMCStrategy(BaseStrategy):
             self._poi_15m = _detect_all_pois(o15, h15, l15, c15, self.rb_min_wick_ratio) if len(c15) else []
             self._poi_30m = _detect_all_pois(o30, h30, l30, c30, self.rb_min_wick_ratio) if len(c30) else []
 
-            _PHASE1A_CACHE[tod_ord] = {
+            _PHASE1A_CACHE[(id(data), tod_ord)] = {
                 'session_pois':        session_pois,
                 'ndog':                ndog,
                 'nwog':                nwog,
