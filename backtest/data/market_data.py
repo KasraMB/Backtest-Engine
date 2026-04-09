@@ -49,6 +49,16 @@ class MarketData:
     # two np.searchsorted calls per session level lookup.
     date_to_slice_1m: dict = field(default=None)
 
+    # ---------------------------------------------------------------------------
+    # Runner-level caches (config-independent, safe to reuse across backtest calls
+    # on the same MarketData object — e.g. within a single ML-collect worker).
+    # ---------------------------------------------------------------------------
+    # build_eod_bar_set cache: {eod_exit_minute: set[int]}
+    _eod_bar_cache: dict = field(default=None)
+    # build_required_bar_set cache (trading_hours=None strategies only)
+    _required_bar_result: object = field(default=None)
+    _required_bar_ready: bool = field(default=False)
+
     def __post_init__(self):
         self._validate()
 
