@@ -5,11 +5,13 @@ Runs N_CONFIGS configs through the same worker pool as run_ml_collect.py
 and prints per-config wall times.
 
 Expected behaviour (4 workers, after all Tier 1+2 optimisations):
-  - First config per worker: ~30-40s (cold — Phase 1A + manip legs + Phase 2)
+  - First config per worker: ~30-50s (cold — Phase 1A + manip legs + Phase 2)
   - Configs 2+ in each worker:
-      * same swing_n group: ~15-20s (swing cache hit + Phase 1A cache hit)
-      * different swing_n:  ~20-30s (swing cache miss for this swing_n value)
+      * same swing_n group:  ~15-25s (Phase 1A + swing cache hits)
+      * different swing_n:   ~20-30s (swing cache miss for new swing_n value)
   - Validation is skipped (validate=False) — saves ~8s per config vs standalone
+  - 1 Phase 1 thread per worker (BACKTEST_PHASE1_THREADS=1) — avoids GIL
+    contention on cached (Python-heavy) warm runs
 
 Does NOT write any files — no dataset, no cache, no parquet.
 """
@@ -60,8 +62,10 @@ def _init_worker(
     exec_kwargs: dict,
 ) -> None:
     global _g_data, _g_exec_kwargs, _g_worker_id
-    # Mirror run_ml_collect.py: 2 Phase 1 threads per worker (4 workers × 2 = 8 total)
-    os.environ["BACKTEST_PHASE1_THREADS"] = "2"
+    # Mirror run_ml_collect.py: 1 Phase 1 thread per worker. Phase 1A is cached
+    # after the first config, so subsequent configs are GIL-bound — extra threads
+    # add overhead, not parallelism. Plain-loop path in runner handles n_workers=1.
+    os.environ["BACKTEST_PHASE1_THREADS"] = "1"
     _g_worker_id = os.getpid()
 
     from backtest.data.loader import DataLoader
@@ -133,8 +137,8 @@ def main() -> None:
     print("=== ML Collect Speedup Test ===")
     print(f"Configs: {N_CONFIGS}   Workers: {N_WORKERS}  (validate=False)")
     print("Expected (Tier 1+2 optimisations active):")
-    print("  Cold (first config per worker):  ~30-40s")
-    print("  Warm (same swing_n group):        ~15-20s")
+    print("  Cold (first config per worker):  ~30-50s")
+    print("  Warm (same swing_n group):        ~15-25s")
     print("  Warm (new swing_n value):         ~20-30s")
     print(f"  Total wall ≈ ceil({N_CONFIGS}/{N_WORKERS}) × ~20s avg ≈ "
           f"{-((-N_CONFIGS) // N_WORKERS) * 20:.0f}s\n")
