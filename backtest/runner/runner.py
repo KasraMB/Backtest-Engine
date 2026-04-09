@@ -184,20 +184,15 @@ def build_active_bar_set(
 def build_required_bar_set(data: MarketData, strategy_class) -> set[int]:
     """
     Pre-compute the set of bars that must be processed when flat.
-    For strategies with trading_hours=None but that only care about specific
-    sessions (e.g. DoubleSessionSweep), this avoids iterating dead bars.
 
-    A bar is required if it falls within ANY of these windows:
-      - The strategy's declared trading_hours (if not None)
-      - 20:00-00:00 ET (Asia)
+    A bar is required if it falls within ANY of:
+      - 20:00-00:00 ET (Asia overnight)
       - 02:00-05:00 ET (London)
-      - 09:30-16:00 ET (NY)
+      - 09:30-16:00 ET (NY RTH)
 
-    If trading_hours is not None, we use that directly (already restricted).
-    If trading_hours is None, we use the union of all three session windows
-    as a safe superset — this covers any overnight strategy.
+    Result is cached on the MarketData object; subsequent calls for the same
+    data object (e.g. across ML-collect configs in one worker) return instantly.
     """
-    # Get the trading_hours from a temporary strategy instance
     try:
         tmp = strategy_class.__new__(strategy_class)
         trading_hours = getattr(tmp, 'trading_hours', None)
@@ -205,34 +200,28 @@ def build_required_bar_set(data: MarketData, strategy_class) -> set[int]:
         trading_hours = None
 
     if trading_hours is not None:
-        # Strategy already declares its hours — use active_bars directly
         return None   # signal to caller: use active_bars as required_bars
 
-    # trading_hours=None: strategy processes all bars itself but we can still
-    # skip bars that fall entirely outside all known session windows.
-    session_windows = [
-        (time(20, 0),  time(0, 0)),    # Asia (overnight)
-        (time(2, 0),   time(5, 0)),    # London
-        (time(9, 30),  time(16, 0)),   # NY RTH
-    ]
+    # Return cached result if already computed for this data object.
+    if data._required_bar_ready:
+        return data._required_bar_result
 
-    required = set()
-    timestamps = data.df_1m.index
+    # Vectorised: use precomputed minute array if available, else compute once.
+    if data.bar_times_1m_min is not None:
+        t = data.bar_times_1m_min
+    else:
+        idx = data.df_1m.index
+        t = (idx.hour * 60 + idx.minute).to_numpy(np.int32)
 
-    for i, ts in enumerate(timestamps):
-        t = ts.time()
-        for start, end in session_windows:
-            if start < end:
-                if start <= t < end:
-                    required.add(i)
-                    break
-            else:
-                # Overnight: e.g. 20:00 to 00:00
-                if t >= start or t < end:
-                    required.add(i)
-                    break
+    # Asia: t >= 1200  (20:00–24:00)
+    # London: 120 <= t < 300  (02:00–05:00)
+    # NY RTH: 570 <= t < 960  (09:30–16:00)
+    mask = (t >= 1200) | ((t >= 120) & (t < 300)) | ((t >= 570) & (t < 960))
+    result = set(np.where(mask)[0].tolist())
 
-    return required
+    data._required_bar_result = result
+    data._required_bar_ready  = True
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -243,42 +232,57 @@ def build_eod_bar_set(data: MarketData, eod_exit_time: time) -> set[int]:
     """
     Pre-compute bar indices that trigger EOD exits.
 
-    NQ futures trade nearly 24 hours, so calendar-date grouping would put the
-    23:59 globex bar and the 17:00 ET close bar on the same date — and picking
-    the *last* bar at or after eod_exit_time would yield 23:59 instead of 17:00.
+    For each RTH session date finds the *first* bar at or after eod_exit_time.
+    Falls back to the last RTH bar on early-close sessions.
 
-    Correct approach: for each RTH session date, find the *first* bar whose
-    time is at or after eod_exit_time.  That is the bar where we close out.
-
-    RTH is defined as 09:30–17:00 ET (futures daily close is 16:00 CT = 17:00 ET).
-    For early-close sessions (holiday) where no bar reaches eod_exit_time,
-    fall back to the last RTH bar of that session.
+    Result is cached on the MarketData object keyed by eod_exit_minute so
+    subsequent calls for the same config (ML-collect workers) return instantly.
     """
-    eod_bars = set()
-    timestamps = data.df_1m.index
+    eod_min = eod_exit_time.hour * 60 + eod_exit_time.minute
 
-    from collections import defaultdict
-    # Group by calendar date
-    date_bars: dict = defaultdict(list)
-    for i, ts in enumerate(timestamps):
-        date_bars[ts.date()].append((i, ts.time()))
+    # Return cached result if available.
+    if data._eod_bar_cache is not None and eod_min in data._eod_bar_cache:
+        return data._eod_bar_cache[eod_min]
 
-    for bars in date_bars.values():
-        # Only consider RTH bars (09:30–17:00 ET) so late-night globex bars are excluded
-        rth_bars = [(i, t) for i, t in bars
-                    if time(9, 30) <= t <= time(16, 0)]
+    # Build minute and date arrays — use precomputed versions when available.
+    if data.bar_times_1m_min is not None:
+        t = data.bar_times_1m_min
+    else:
+        idx = data.df_1m.index
+        t = (idx.hour * 60 + idx.minute).to_numpy(np.int32)
 
-        if not rth_bars:
+    if data.bar_dates_1m_ord is not None:
+        dates = data.bar_dates_1m_ord
+    else:
+        idx = data.df_1m.index
+        y1  = idx.year.to_numpy(np.int64) - 1
+        doy = idx.day_of_year.to_numpy(np.int64)
+        dates = (y1 * 365 + y1 // 4 - y1 // 100 + y1 // 400 + doy).astype(np.int32)
+
+    RTH_LO, RTH_HI = 570, 960   # 09:30–16:00 in minutes
+
+    # Split into per-date slices using the sorted unique dates.
+    unique_dates, first_idx = np.unique(dates, return_index=True)
+    n_total = len(dates)
+    end_idx = np.empty_like(first_idx)
+    end_idx[:-1] = first_idx[1:]
+    end_idx[-1]  = n_total
+
+    eod_bars: set = set()
+    for d_start, d_end in zip(first_idx.tolist(), end_idx.tolist()):
+        t_sl  = t[d_start:d_end]
+        rth   = np.where((t_sl >= RTH_LO) & (t_sl <= RTH_HI))[0]
+        if len(rth) == 0:
             continue
-
-        # First RTH bar at or after eod_exit_time
-        eod_candidates = [(i, t) for i, t in rth_bars if t >= eod_exit_time]
-        if eod_candidates:
-            eod_bars.add(eod_candidates[0][0])   # FIRST, not last
+        at_or_after = rth[t_sl[rth] >= eod_min]
+        if len(at_or_after) > 0:
+            eod_bars.add(d_start + int(at_or_after[0]))
         else:
-            # Early-close: use the last RTH bar of the session
-            eod_bars.add(rth_bars[-1][0])
+            eod_bars.add(d_start + int(rth[-1]))
 
+    if data._eod_bar_cache is None:
+        data._eod_bar_cache = {}
+    data._eod_bar_cache[eod_min] = eod_bars
     return eod_bars
 
 
