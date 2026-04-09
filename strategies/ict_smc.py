@@ -144,31 +144,51 @@ class SessionOTEGroup:
     levels:       List['ValidLevel'] = field(default_factory=list)  # linked ValidLevels
 
 
-@dataclass
 class POI:
-    """A Point-of-Interest zone (OB, BB, FVG, IFVG, RB, SESSION)."""
-    kind:      str   # 'OB', 'BB', 'FVG', 'IFVG', 'RB', 'SESSION'
-    direction: int   # +1 bullish, -1 bearish, 0 neutral (session)
-    near:      float # 0% level
-    mid:       float # 50% level
-    far:       float # 100% level
-    wick_tip:  float = 0.0
-    wick_base: float = 0.0
-    invalidated:  bool = False
-    created_bar:  int  = -1   # absolute bar index (timeframe-specific) when POI formed; -1 = unknown
-    session_kind: str  = ''   # non-empty only for SESSION POIs: 'PDH','PDL','Asia','London', etc.
-    levels: List[float] = field(default_factory=list)
+    """A Point-of-Interest zone (OB, BB, FVG, IFVG, RB, SESSION).
 
-    def __post_init__(self) -> None:
-        self.levels = [self.near, self.mid, self.far]
-        if self.kind == 'RB':
-            wr = abs(self.wick_base - self.wick_tip)
+    Uses __slots__ instead of @dataclass to eliminate per-instance __dict__
+    and dataclass machinery overhead.  3.4M POIs are created per backtest run
+    so construction cost matters.  Interface is identical to the former dataclass.
+    """
+    __slots__ = (
+        'kind', 'direction', 'near', 'mid', 'far',
+        'wick_tip', 'wick_base', 'invalidated', 'created_bar',
+        'session_kind', 'levels',
+    )
+
+    def __init__(
+        self,
+        kind: str,
+        direction: int,
+        near: float,
+        mid: float,
+        far: float,
+        wick_tip: float = 0.0,
+        wick_base: float = 0.0,
+        invalidated: bool = False,
+        created_bar: int = -1,
+        session_kind: str = '',
+    ) -> None:
+        self.kind         = kind
+        self.direction    = direction
+        self.near         = near
+        self.mid          = mid
+        self.far          = far
+        self.wick_tip     = wick_tip
+        self.wick_base    = wick_base
+        self.invalidated  = invalidated
+        self.created_bar  = created_bar
+        self.session_kind = session_kind
+        self.levels: List[float] = [near, mid, far]
+        if kind == 'RB':
+            wr = abs(wick_base - wick_tip)
             self.levels = [
-                self.near, self.mid, self.far,
-                self.wick_tip + 0.50  * wr,
-                self.wick_tip + 0.618 * wr,
-                self.wick_tip + 0.705 * wr,
-                self.wick_tip + 0.79  * wr,
+                near, mid, far,
+                wick_tip + 0.50  * wr,
+                wick_tip + 0.618 * wr,
+                wick_tip + 0.705 * wr,
+                wick_tip + 0.79  * wr,
             ]
 
 
