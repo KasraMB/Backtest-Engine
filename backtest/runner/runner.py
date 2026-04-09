@@ -418,9 +418,14 @@ def _run_single(
 
     # Parallel Phase 1 pre-computation — each trading day is independent;
     # Numba functions inside _run_phase1 use nogil=True for true parallelism.
+    # When running inside a ProcessPool worker (ML collect), the env variable
+    # BACKTEST_PHASE1_THREADS=1 limits internal threads to 1 so N workers × 2
+    # threads does not double CPU contention.
     if getattr(strategy, '_supports_precomputed_phase1', False):
+        import os as _os
+        _phase1_threads = int(_os.environ.get("BACKTEST_PHASE1_THREADS", "2"))
         strategy._phase1_precomputed = _precompute_phase1_parallel(
-            strategy_class, config.params, data
+            strategy_class, config.params, data, n_workers=_phase1_threads
         )
 
     trades: list[Trade] = []
