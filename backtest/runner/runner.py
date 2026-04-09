@@ -365,9 +365,16 @@ def _precompute_phase1_parallel(
         }
 
     results: dict = {}
-    with ThreadPoolExecutor(max_workers=n_workers) as pool:
-        for tod_ord, result in pool.map(_run_one, trigger_bars):
+    if n_workers <= 1:
+        # Plain loop avoids ThreadPoolExecutor overhead (~50ms/task × 1033 days)
+        # when Phase 1A is cached (GIL-bound work makes threads harmful not helpful).
+        for args in trigger_bars:
+            tod_ord, result = _run_one(args)
             results[tod_ord] = result
+    else:
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            for tod_ord, result in pool.map(_run_one, trigger_bars):
+                results[tod_ord] = result
 
     return results
 

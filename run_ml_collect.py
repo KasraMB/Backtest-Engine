@@ -101,10 +101,10 @@ def _init_worker(
     split: str = "train",
 ) -> None:
     global _g_data, _g_exec_kwargs
-    # With 4 worker processes, allowing 2 Phase 1 threads each gives 8 threads
-    # total — manageable on an 8+ core machine and cuts cold-run Phase 1 time
-    # roughly in half compared to serial (1 thread) execution.
-    os.environ["BACKTEST_PHASE1_THREADS"] = "2"
+    # 1 Phase 1 thread per worker: Phase 1A is cached after first config, so
+    # subsequent configs are GIL-bound Python work — extra threads add overhead,
+    # not parallelism. Plain-loop path in _precompute_phase1_parallel handles n_workers=1.
+    os.environ["BACKTEST_PHASE1_THREADS"] = "1"
     from backtest.data.loader import DataLoader
     from backtest.data.market_data import MarketData
     from backtest.ml.splits import filter_market_data
