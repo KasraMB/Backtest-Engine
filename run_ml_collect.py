@@ -101,6 +101,10 @@ def _init_worker(
     split: str = "train",
 ) -> None:
     global _g_data, _g_exec_kwargs
+    # Signal to the runner that Phase 1 should use a single thread.
+    # With N worker processes already saturating the CPU, spawning additional
+    # threads per worker creates N×2 threads fighting for the same cores.
+    os.environ["BACKTEST_PHASE1_THREADS"] = "1"
     from backtest.data.loader import DataLoader
     from backtest.data.market_data import MarketData
     from backtest.ml.splits import filter_market_data
