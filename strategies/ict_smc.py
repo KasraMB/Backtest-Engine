@@ -312,6 +312,118 @@ def _detect_swings_confirmed_at(high: np.ndarray, low: np.ndarray,
     return sh, sl
 
 
+@_njit
+def _detect_accum_zones_nb(
+    h5: np.ndarray, l5: np.ndarray, c5: np.ndarray,
+    atr5: np.ndarray, atr_pct: np.ndarray,
+    xs_dev: np.ndarray, xs_sq: float,
+    atr_mult: float, band_pct: float, vol_sens: float,
+    max_r2: float, min_dir_changes: int, min_candles: int, lb: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Numba kernel for accumulation zone detection. Returns (starts, ends, highs, lows)
+    parallel arrays — one entry per candidate zone (before merging).
+    """
+    n = len(c5)
+    # Pre-allocate output (max possible zones = n)
+    out_starts = np.empty(n, dtype=np.int64)
+    out_ends   = np.empty(n, dtype=np.int64)
+    out_highs  = np.empty(n, dtype=np.float64)
+    out_lows   = np.empty(n, dtype=np.float64)
+    n_zones = 0
+
+    active_start = -1
+    active_hi    = -1e18
+    active_lo    =  1e18
+
+    # Reusable buffer for sign array (length lb-1)
+    dirs = np.empty(lb - 1, dtype=np.float64)
+
+    for k in range(lb, n):
+        c_win = c5[k - lb:k]
+        h_win = h5[k - lb:k]
+        l_win = l5[k - lb:k]
+
+        # Condition 1: low ATR%
+        cur_atr_pct = atr_pct[k]
+        avg_atr_pct = atr_pct[k - lb:k].mean()
+        cond1 = cur_atr_pct < atr_mult * avg_atr_pct
+
+        # Condition 2: tight price band
+        h_max = h_win.max()
+        l_min = l_win.min()
+        c_k   = c5[k]
+        if c_k < 1e-9:
+            c_k = 1e-9
+        rng_pct = (h_max - l_min) / c_k
+        cur_atr = atr5[k]
+        avg_atr = atr5[k - lb:k].mean()
+        if avg_atr > 1e-9:
+            adaptive_band = band_pct * ((cur_atr / avg_atr) ** vol_sens)
+        else:
+            adaptive_band = band_pct
+        cond2 = rng_pct < adaptive_band
+
+        # Condition 3: no trend (R²)
+        c_mean = c_win.mean()
+        y_dev  = c_win - c_mean
+        ss_tot = (y_dev * y_dev).sum()
+        if ss_tot < 1e-10 or xs_sq < 1e-10:
+            r2 = 0.0
+        else:
+            cov = (xs_dev * y_dev).sum()
+            r2  = (cov * cov) / (xs_sq * ss_tot)
+        cond3 = r2 < max_r2
+
+        # Condition 4: direction flips — replicates np.sign(np.diff(c_win))
+        for j in range(lb - 1):
+            d = c_win[j + 1] - c_win[j]
+            if d > 0.0:
+                dirs[j] = 1.0
+            elif d < 0.0:
+                dirs[j] = -1.0
+            else:
+                dirs[j] = 0.0
+        flips = 0
+        for j in range(lb - 2):
+            if dirs[j] != dirs[j + 1]:
+                flips += 1
+        cond4 = flips >= min_dir_changes
+
+        in_accum = cond1 and cond2 and cond3 and cond4
+
+        if in_accum:
+            if active_start == -1:
+                active_start = k - lb
+            if h_max > active_hi:
+                active_hi = h_max
+            if l_min < active_lo:
+                active_lo = l_min
+        else:
+            if active_start != -1:
+                zone_len = k - active_start
+                if zone_len >= min_candles:
+                    out_starts[n_zones] = active_start
+                    out_ends[n_zones]   = k - 1
+                    out_highs[n_zones]  = active_hi
+                    out_lows[n_zones]   = active_lo
+                    n_zones += 1
+                active_start = -1
+                active_hi    = -1e18
+                active_lo    =  1e18
+
+    if active_start != -1:
+        zone_len = n - 1 - active_start
+        if zone_len >= min_candles:
+            out_starts[n_zones] = active_start
+            out_ends[n_zones]   = n - 1
+            out_highs[n_zones]  = active_hi
+            out_lows[n_zones]   = active_lo
+            n_zones += 1
+
+    return out_starts[:n_zones], out_ends[:n_zones], out_highs[:n_zones], out_lows[:n_zones]
+
+
 def _resample_5m_to_Nm(o5: np.ndarray, h5: np.ndarray, l5: np.ndarray,
                          c5: np.ndarray, group_size: int
                          ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -1495,77 +1607,18 @@ class ICTSMCStrategy(BaseStrategy):
             return []
 
         atr_pct = atr5 / np.maximum(c5, 1e-9)
-        zones: List[AccumZone] = []
-        active_start: Optional[int] = None
-        active_hi = -np.inf
-        active_lo =  np.inf
+        xs = np.arange(lb, dtype=np.float64)
+        xs_dev = xs - xs.mean()
+        xs_sq  = float((xs_dev ** 2).sum())
 
-        xs = np.arange(lb, dtype=float)
-        xs_mean = xs.mean()
-        xs_dev  = xs - xs_mean
-        xs_sq   = float((xs_dev ** 2).sum())
-
-        for k in range(lb, n):
-            win_sl = slice(k - lb, k)
-            c_win   = c5[win_sl]
-            h_win   = h5[win_sl]
-            l_win   = l5[win_sl]
-
-            # Condition 1: low volatility
-            cur_atr_pct = float(atr_pct[k])
-            avg_atr_pct = float(atr_pct[win_sl].mean())
-            cond1 = cur_atr_pct < self.po3_atr_mult * avg_atr_pct
-
-            # Condition 2: tight price band
-            rng_pct = (float(h_win.max()) - float(l_win.min())) / max(float(c5[k]), 1e-9)
-            cur_atr = float(atr5[k])
-            avg_atr = float(atr5[win_sl].mean())
-            if avg_atr > 1e-9:
-                adaptive_band = self.po3_band_pct * ((cur_atr / avg_atr) ** self.po3_vol_sens)
-            else:
-                adaptive_band = self.po3_band_pct
-            cond2 = rng_pct < adaptive_band
-
-            # Condition 3: no trend (R²)
-            y_dev  = c_win - float(c_win.mean())
-            ss_tot = float((y_dev ** 2).sum())
-            if ss_tot < 1e-10 or xs_sq < 1e-10:
-                r2 = 0.0
-            else:
-                cov = float((xs_dev * y_dev).sum())
-                r2  = (cov ** 2) / (xs_sq * ss_tot)
-            cond3 = r2 < self.po3_max_r2
-
-            # Condition 4: direction flips
-            dirs  = np.sign(np.diff(c_win))
-            flips = int(np.sum(dirs[:-1] != dirs[1:]))
-            cond4 = flips >= self.po3_min_dir_changes
-
-            in_accum = cond1 and cond2 and cond3 and cond4
-
-            if in_accum:
-                if active_start is None:
-                    active_start = k - lb
-                active_hi = max(active_hi, float(h_win.max()))
-                active_lo = min(active_lo, float(l_win.min()))
-            else:
-                if active_start is not None:
-                    zone_len = k - active_start
-                    if zone_len >= self.po3_min_candles:
-                        zones.append(AccumZone(
-                            start=active_start, end=k - 1,
-                            high=active_hi, low=active_lo))
-                    active_start = None
-                    active_hi = -np.inf
-                    active_lo =  np.inf
-
-        if active_start is not None:
-            zone_len = n - 1 - active_start
-            if zone_len >= self.po3_min_candles:
-                zones.append(AccumZone(
-                    start=active_start, end=n - 1,
-                    high=active_hi, low=active_lo))
-
+        starts, ends, highs, lows = _detect_accum_zones_nb(
+            h5, l5, c5, atr5, atr_pct, xs_dev, xs_sq,
+            float(self.po3_atr_mult), float(self.po3_band_pct),
+            float(self.po3_vol_sens), float(self.po3_max_r2),
+            int(self.po3_min_dir_changes), int(self.po3_min_candles), int(lb),
+        )
+        zones = [AccumZone(start=int(s), end=int(e), high=float(h), low=float(l))
+                 for s, e, h, l in zip(starts, ends, highs, lows)]
         return self._merge_accum_zones(zones)
 
     def _merge_accum_zones(self, zones: List[AccumZone]) -> List[AccumZone]:
