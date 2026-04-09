@@ -161,7 +161,7 @@ def _task_run_config(args: tuple) -> tuple:
         order_cancel_time       = _g_exec_kwargs["order_cancel_time"],
         params                  = {**params, "ml_model": None},
     )
-    result = run_backtest(ICTSMCStrategy, config, _g_data)
+    result = run_backtest(ICTSMCStrategy, config, _g_data, validate=False)
 
     r_arr = np.array(
         [t.r_multiple for t in result.trades if t.r_multiple is not None],
