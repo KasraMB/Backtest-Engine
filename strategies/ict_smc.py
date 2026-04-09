@@ -51,6 +51,13 @@ except ImportError:
 # ---------------------------------------------------------------------------
 _PHASE1A_CACHE: dict = {}
 
+# Swing-array cache keyed by (id(data), tod_ord, swing_n).
+# swing_n is the only LHS param that affects swing detection; all other
+# inputs (price arrays, slice bounds, h15/l15/h30/l30 from Phase 1A) are
+# identical for a given day across all configs with the same swing_n.
+# swing_n ∈ {1,2,3}, so 3 clusters cover ~150 configs → ~147 cache hits.
+_SWING_CACHE: dict = {}
+
 from backtest.data.market_data import MarketData
 from backtest.strategy.base import BaseStrategy
 from backtest.strategy.enums import OrderType, SizeType
@@ -2021,38 +2028,56 @@ class ICTSMCStrategy(BaseStrategy):
                 'h30': h30, 'l30': l30,
             }
 
-        # Build swing caches
-        def _sw_prices(sh: np.ndarray, sl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-            return sh[~np.isnan(sh)], sl[~np.isnan(sl)]
+        # Build swing caches — keyed by (id(data), tod_ord, swing_n) so configs
+        # with the same swing_n share results without recomputing for each day.
+        _sw_key = (id(data), tod_ord, self.swing_n)
+        _sw_cached = _SWING_CACHE.get(_sw_key)
 
-        sw_start_1m = max(0, n_1m - 200)
-        sh1, sl1 = _detect_swings(data.high_1m[sw_start_1m:n_1m],
-                                   data.low_1m[sw_start_1m:n_1m], self.swing_n)
-        self._sw_1m_hi, self._sw_1m_lo = _sw_prices(sh1, sl1)
-
-        sw_start_5m = max(0, completed_5m + 1 - 78)
-        sh5s, sl5s = _detect_swings(h5f[sw_start_5m:], l5f[sw_start_5m:], self.swing_n)
-        self._sw_5m_hi, self._sw_5m_lo = _sw_prices(sh5s, sl5s)
-
-        if len(h15):
-            sw15 = max(0, len(h15) - 26)
-            sh15, sl15 = _detect_swings(h15[sw15:], l15[sw15:], self.swing_n)
-            self._sw_15m_hi, self._sw_15m_lo = _sw_prices(sh15, sl15)
+        if _sw_cached is not None:
+            (self._sw_1m_hi, self._sw_1m_lo,
+             self._sw_5m_hi, self._sw_5m_lo,
+             self._sw_15m_hi, self._sw_15m_lo,
+             self._sw_30m_hi, self._sw_30m_lo,
+             self._sw_lo_all, self._sw_hi_all) = _sw_cached
         else:
-            self._sw_15m_hi = self._sw_15m_lo = np.empty(0)
+            def _sw_prices(sh: np.ndarray, sl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+                return sh[~np.isnan(sh)], sl[~np.isnan(sl)]
 
-        if len(h30):
-            sw30 = max(0, len(h30) - 13)
-            sh30, sl30 = _detect_swings(h30[sw30:], l30[sw30:], self.swing_n)
-            self._sw_30m_hi, self._sw_30m_lo = _sw_prices(sh30, sl30)
-        else:
-            self._sw_30m_hi = self._sw_30m_lo = np.empty(0)
+            sw_start_1m = max(0, n_1m - 200)
+            sh1, sl1 = _detect_swings(data.high_1m[sw_start_1m:n_1m],
+                                       data.low_1m[sw_start_1m:n_1m], self.swing_n)
+            self._sw_1m_hi, self._sw_1m_lo = _sw_prices(sh1, sl1)
 
-        # Cache concatenated swing arrays used every bar in _compute_tp
-        self._sw_lo_all = np.concatenate([self._sw_1m_lo, self._sw_5m_lo,
-                                           self._sw_15m_lo, self._sw_30m_lo])
-        self._sw_hi_all = np.concatenate([self._sw_1m_hi, self._sw_5m_hi,
-                                           self._sw_15m_hi, self._sw_30m_hi])
+            sw_start_5m = max(0, completed_5m + 1 - 78)
+            sh5s, sl5s = _detect_swings(h5f[sw_start_5m:], l5f[sw_start_5m:], self.swing_n)
+            self._sw_5m_hi, self._sw_5m_lo = _sw_prices(sh5s, sl5s)
+
+            if len(h15):
+                sw15 = max(0, len(h15) - 26)
+                sh15, sl15 = _detect_swings(h15[sw15:], l15[sw15:], self.swing_n)
+                self._sw_15m_hi, self._sw_15m_lo = _sw_prices(sh15, sl15)
+            else:
+                self._sw_15m_hi = self._sw_15m_lo = np.empty(0)
+
+            if len(h30):
+                sw30 = max(0, len(h30) - 13)
+                sh30, sl30 = _detect_swings(h30[sw30:], l30[sw30:], self.swing_n)
+                self._sw_30m_hi, self._sw_30m_lo = _sw_prices(sh30, sl30)
+            else:
+                self._sw_30m_hi = self._sw_30m_lo = np.empty(0)
+
+            self._sw_lo_all = np.concatenate([self._sw_1m_lo, self._sw_5m_lo,
+                                               self._sw_15m_lo, self._sw_30m_lo])
+            self._sw_hi_all = np.concatenate([self._sw_1m_hi, self._sw_5m_hi,
+                                               self._sw_15m_hi, self._sw_30m_hi])
+
+            _SWING_CACHE[_sw_key] = (
+                self._sw_1m_hi, self._sw_1m_lo,
+                self._sw_5m_hi, self._sw_5m_lo,
+                self._sw_15m_hi, self._sw_15m_lo,
+                self._sw_30m_hi, self._sw_30m_lo,
+                self._sw_lo_all, self._sw_hi_all,
+            )
 
         # Pre-build per-fib-type POI lists once per day.
         # candle-based POIs are filtered by validation_timeframes;
