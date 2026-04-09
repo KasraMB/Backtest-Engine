@@ -154,27 +154,47 @@ def build_active_bar_set(
     declared trading_hours. Used to gate generate_signals calls.
 
     If trading_hours is None, returns all bar indices.
+
+    Result is cached on the MarketData object keyed by the trading_hours
+    tuple so repeated calls across ML-collect configs return instantly.
     """
+    # Build a hashable cache key
     if trading_hours is None:
-        return set(range(len(data.df_1m)))
+        _key = None
+    else:
+        _key = tuple((s.hour * 60 + s.minute, e.hour * 60 + e.minute)
+                     for s, e in trading_hours)
 
-    active = set()
-    timestamps = data.df_1m.index
+    # Return cached result if available
+    if data._active_bar_cache is not None and _key in data._active_bar_cache:
+        return data._active_bar_cache[_key]
 
-    for i, ts in enumerate(timestamps):
-        t = ts.time()
-        for start, end in trading_hours:
-            if start <= end:
-                if start <= t <= end:
-                    active.add(i)
-                    break
+    if trading_hours is None:
+        result = set(range(len(data.df_1m)))
+    else:
+        # Use precomputed minute array to avoid 1.4M pandas Timestamp.time() calls
+        if data.bar_times_1m_min is not None:
+            t = data.bar_times_1m_min
+        else:
+            idx = data.df_1m.index
+            t = (idx.hour * 60 + idx.minute).to_numpy(np.int32)
+
+        mask = np.zeros(len(t), dtype=bool)
+        for s, e in trading_hours:
+            s_min = s.hour * 60 + s.minute
+            e_min = e.hour * 60 + e.minute
+            if s_min <= e_min:
+                mask |= (t >= s_min) & (t <= e_min)
             else:
-                # Overnight window: e.g. (18:00, 08:00)
-                if t >= start or t <= end:
-                    active.add(i)
-                    break
+                # Overnight window: e.g. 18:00–08:00
+                mask |= (t >= s_min) | (t <= e_min)
 
-    return active
+        result = set(np.where(mask)[0].tolist())
+
+    if data._active_bar_cache is None:
+        data._active_bar_cache = {}
+    data._active_bar_cache[_key] = result
+    return result
 
 
 # ---------------------------------------------------------------------------
