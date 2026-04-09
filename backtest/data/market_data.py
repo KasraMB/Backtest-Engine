@@ -58,6 +58,9 @@ class MarketData:
     # build_required_bar_set cache (trading_hours=None strategies only)
     _required_bar_result: object = field(default=None)
     _required_bar_ready: bool = field(default=False)
+    # build_active_bar_set cache: {trading_hours_key: set[int]}
+    # trading_hours_key is None (for trading_hours=None) or a tuple-of-tuples
+    _active_bar_cache: dict = field(default=None)
 
     def __post_init__(self):
         self._validate()
