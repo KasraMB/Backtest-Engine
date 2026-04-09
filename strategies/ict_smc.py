@@ -886,6 +886,98 @@ def _poi_matches_price(poi: POI, price: float, tol: float) -> bool:
     return False
 
 
+# Maximum number of price levels a single POI can carry (RB has 7: near/mid/far + 4 fib wicks).
+_MAX_POI_LEVELS = 7
+
+
+def _poi_list_to_arrays(poi_list: list) -> Optional[dict]:
+    """
+    Convert a [(tf, POI)] list into parallel numpy arrays for vectorized price matching.
+
+    Returns None if the list is empty.  The 'levels' array is (n, _MAX_POI_LEVELS)
+    with NaN padding — np.nan comparisons evaluate to False so unused slots are
+    automatically excluded from distance checks.
+    """
+    n = len(poi_list)
+    if n == 0:
+        return None
+    lv_arr   = np.full((n, _MAX_POI_LEVELS), np.nan, dtype=np.float64)
+    dir_arr  = np.empty(n, dtype=np.int32)
+    cb_arr   = np.empty(n, dtype=np.int32)
+    inv_arr  = np.empty(n, dtype=np.bool_)
+    near_arr = np.empty(n, dtype=np.float64)
+    far_arr  = np.empty(n, dtype=np.float64)
+    kind_ls: List[str] = [''] * n
+    sk_ls:   List[str] = [''] * n
+    tf_ls:   List[str] = [''] * n
+    for i, (tf, poi) in enumerate(poi_list):
+        lvs = poi.levels
+        for j in range(min(len(lvs), _MAX_POI_LEVELS)):
+            lv_arr[i, j] = lvs[j]
+        dir_arr[i]  = poi.direction
+        cb_arr[i]   = poi.created_bar
+        inv_arr[i]  = poi.invalidated
+        near_arr[i] = poi.near
+        far_arr[i]  = poi.far
+        kind_ls[i]  = poi.kind
+        sk_ls[i]    = poi.session_kind or ''
+        tf_ls[i]    = tf
+    return {
+        'levels': lv_arr, 'direction': dir_arr, 'created_bar': cb_arr,
+        'invalidated': inv_arr,
+        'near': near_arr, 'far': far_arr,
+        'kind': kind_ls, 'session_kind': sk_ls, 'tf': tf_ls,
+    }
+
+
+def _poi_arr_match(
+    arr: dict, price: float, tol: float, fdir: int, leg_start: int = -1,
+) -> Optional[Tuple[int, str, str, str, float, float]]:
+    """
+    Vectorized POI lookup replacing the Python inner loop in Phase 1B validation.
+
+    Applies direction filter and (optionally) created_bar < leg_start filter,
+    then checks whether any of a POI's price levels falls within tol of price.
+
+    Returns (orig_idx, kind, session_kind, tf, near, far) for the *first*
+    matching POI, or None if no match.  In the pre-computation path POIs are
+    always freshly created (invalidated=False), so that check is omitted here.
+
+    leg_start < 0  →  skip the created_bar filter (used by SESSION_OTE path).
+    """
+    dir_arr = arr['direction']
+    cb_arr  = arr['created_bar']
+    inv_arr = arr['invalidated']
+
+    dir_ok = (dir_arr == 0) | (dir_arr == fdir)
+    if leg_start >= 0:
+        cb_ok = (cb_arr < 0) | (cb_arr < leg_start)
+        mask  = ~inv_arr & dir_ok & cb_ok
+    else:
+        mask = ~inv_arr & dir_ok
+
+    if not np.any(mask):
+        return None
+
+    masked_idx = np.where(mask)[0]
+    lv_sub = arr['levels'][masked_idx]       # (n_valid, _MAX_POI_LEVELS)
+    dist   = np.abs(lv_sub - price)          # NaN stays NaN → not <= tol
+    hit    = np.any(dist <= tol, axis=1)     # (n_valid,)
+
+    if not np.any(hit):
+        return None
+
+    orig_idx = int(masked_idx[int(np.argmax(hit))])
+    return (
+        orig_idx,
+        arr['kind'][orig_idx],
+        arr['session_kind'][orig_idx],
+        arr['tf'][orig_idx],
+        float(arr['near'][orig_idx]),
+        float(arr['far'][orig_idx]),
+    )
+
+
 def _cisd_check_at_bar(
     o: np.ndarray, c: np.ndarray,
     i: int, scan_start: int, direction: int,
@@ -1417,6 +1509,7 @@ class ICTSMCStrategy(BaseStrategy):
             n_1m: int,
             poi_by_fib: dict,
             phase1_atr: float = 0.0,
+            poi_arr_sote: Optional[dict] = None,
     ) -> Tuple[List[ValidLevel], List[SessionOTEGroup]]:
         """
         Build SESSION_OTE ValidLevels from session level POIs (independent of manip legs).
@@ -1437,6 +1530,8 @@ class ICTSMCStrategy(BaseStrategy):
         validated: List[ValidLevel]      = []
         seen_prices: set                 = set()
         poi_list = poi_by_fib.get('SESSION_OTE', [])
+        # Pre-extract POI arrays for vectorized confluence matching (passed from _run_phase1)
+        _arr_sote = poi_arr_sote if poi_arr_sote is not None else _poi_list_to_arrays(poi_list)
 
         # Pre-compute NYAM prev-session bar order once so the loop can use it.
         _nyam_h_price: Optional[float] = None
@@ -1548,21 +1643,11 @@ class ICTSMCStrategy(BaseStrategy):
                     if touched_pre:
                         continue
 
-                # POI confluence check
-                confirmed_poi: Optional[POI] = None
-                confirmed_tf: str = ''
-                for (ctf, cpoi) in poi_list:
-                    if cpoi.invalidated:
-                        continue
-                    # Direction filter: POI must match trade direction or be neutral (SESSION)
-                    if cpoi.direction != 0 and cpoi.direction != direction:
-                        continue
-                    if _poi_matches_price(cpoi, level_price, tol):
-                        confirmed_poi = cpoi
-                        confirmed_tf = ctf
-                        break
-
-                if confirmed_poi is None:
+                # POI confluence check — vectorized
+                if _arr_sote is None:
+                    continue
+                _match = _poi_arr_match(_arr_sote, level_price, tol, direction, leg_start=-1)
+                if _match is None:
                     continue
 
                 key = (round(level_price, 2), direction)
@@ -1570,15 +1655,15 @@ class ICTSMCStrategy(BaseStrategy):
                     continue
                 seen_prices.add(key)
 
+                _, _ck, _csk, _ctf, _cnear, _cfar = _match
                 lv = ValidLevel(
                     price=level_price,
                     direction=direction,
                     fib_type='SESSION_OTE',
                     fib_value=f,
-                    confluence_kind=(confirmed_poi.kind if confirmed_poi.kind != 'SESSION'
-                                     else confirmed_poi.session_kind),
-                    confluence_price=round((confirmed_poi.near + confirmed_poi.far) / 2, 2),
-                    confluence_tf=confirmed_tf,
+                    confluence_kind=_ck if _ck != 'SESSION' else _csk,
+                    confluence_price=round((_cnear + _cfar) / 2, 2),
+                    confluence_tf=_ctf,
                     ote_group=group,
                 )
                 group.levels.append(lv)
@@ -2161,10 +2246,18 @@ class ICTSMCStrategy(BaseStrategy):
             return result
 
         poi_by_fib: dict = {ft: _build_poi_list(ft) for ft in ('OTE', 'STDV', 'SESSION_OTE')}
+        # Pre-extract POI arrays once per day per config — replaces the inner
+        # Python loop (50–200 iterations per price) with numpy distance checks.
+        poi_arrs_by_fib = {ft: _poi_list_to_arrays(poi_by_fib[ft])
+                           for ft in ('OTE', 'STDV', 'SESSION_OTE')}
 
         tol = self.confluence_tolerance_atr_mult * _phase1_atr
         seen: set = set()
         validated: List[ValidLevel] = []
+
+        # Hoist the overnight 1m slice (same for all legs/prices this day)
+        _h1_ov = data.high_1m[overnight_start_1m:n_1m]
+        _l1_ov = data.low_1m[overnight_start_1m:n_1m]
 
         for leg in legs:
             # OTE size filter — skip this leg's OTE levels if the leg span is too small
@@ -2189,36 +2282,28 @@ class ICTSMCStrategy(BaseStrategy):
                     continue
                 # Pre-session touch check: if price reached this level during overnight/pre-market,
                 # the level is already consumed and should not be traded at session open.
-                _h1 = data.high_1m[overnight_start_1m:n_1m]
-                _l1 = data.low_1m[overnight_start_1m:n_1m]
-                if fdir == 1 and bool(np.any(_l1 <= price)):
+                if fdir == 1 and bool(np.any(_l1_ov <= price)):
                     continue
-                if fdir == -1 and bool(np.any(_h1 >= price)):
+                if fdir == -1 and bool(np.any(_h1_ov >= price)):
                     continue
-                poi_list = poi_by_fib.get(fib_type, [])
-                for (tf, poi) in poi_list:
-                    if poi.invalidated:
-                        continue
-                    # Direction filter: POI must match trade direction or be neutral (SESSION)
-                    if poi.direction != 0 and poi.direction != fdir:
-                        continue
-                    # Skip POIs that formed at or after the leg started.
-                    # created_bar == -1 means unknown (15m/30m/session POIs) — allow them.
-                    if poi.created_bar >= 0 and poi.created_bar >= leg_start:
-                        continue
-                    if _poi_matches_price(poi, price, tol):
-                        seen.add(key)
-                        validated.append(ValidLevel(
-                            price=price,
-                            direction=fdir,
-                            manip_leg=leg,
-                            fib_type=fib_type,
-                            fib_value=fib_value,
-                            confluence_kind=poi.kind if poi.kind != 'SESSION' else poi.session_kind,
-                            confluence_price=round((poi.near + poi.far) / 2, 2),
-                            confluence_tf=tf,
-                        ))
-                        break
+                arr = poi_arrs_by_fib.get(fib_type)
+                if arr is None:
+                    continue
+                _match = _poi_arr_match(arr, price, tol, fdir, leg_start)
+                if _match is None:
+                    continue
+                _, _mk, _msk, _mtf, _mnear, _mfar = _match
+                seen.add(key)
+                validated.append(ValidLevel(
+                    price=price,
+                    direction=fdir,
+                    manip_leg=leg,
+                    fib_type=fib_type,
+                    fib_value=fib_value,
+                    confluence_kind=_mk if _mk != 'SESSION' else _msk,
+                    confluence_price=round((_mnear + _mfar) / 2, 2),
+                    confluence_tf=_mtf,
+                ))
 
         self._validated_levels = validated
 
@@ -2227,6 +2312,7 @@ class ICTSMCStrategy(BaseStrategy):
         sote_levels, self._session_ote_groups = self._compute_session_ote_levels(
             session_pois, data.high_1m, data.low_1m,
             overnight_start_1m, n_1m, poi_by_fib, _phase1_atr,
+            poi_arr_sote=poi_arrs_by_fib.get('SESSION_OTE'),
         )
         self._validated_levels.extend(sote_levels)
 
