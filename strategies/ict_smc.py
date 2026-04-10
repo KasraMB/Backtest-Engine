@@ -51,6 +51,17 @@ except ImportError:
 # ---------------------------------------------------------------------------
 _PHASE1A_CACHE: dict = {}
 
+# Phase 1B POI-array cache — persists across config runs in the same worker.
+# Key: (id(data), tod_ord).  Stores poi_arrs_by_fib (the pre-built numpy
+# arrays used for confluence matching) and poi_by_fib (the filtered [(tf,POI)]
+# lists, needed by _compute_session_ote_levels fallback).
+#
+# Safe to share because validation_poi_types and validation_timeframes are
+# BASE_PARAMS (not LHS axes) — identical across all configs in a worker.
+# Saves _build_poi_list + _poi_list_to_arrays (~15s/config in actual time)
+# for every warm config (configs 2+ per worker).
+_PHASE1B_ARRS_CACHE: dict = {}
+
 # Swing-array cache keyed by (id(data), tod_ord, swing_n).
 # swing_n is the only LHS param that affects swing detection; all other
 # inputs (price arrays, slice bounds, h15/l15/h30/l30 from Phase 1A) are
@@ -2216,39 +2227,47 @@ class ICTSMCStrategy(BaseStrategy):
                 self._sw_lo_all, self._sw_hi_all,
             )
 
-        # Pre-build per-fib-type POI lists once per day.
-        # candle-based POIs are filtered by validation_timeframes;
-        # session POIs are filtered by session_kind via validation_poi_types.
-        # Both are always filtered by validation_poi_types (kind membership).
-        _tf_to_pois = {
-            '1m':  self._poi_1m,
-            '5m':  self._poi_5m,
-            '15m': self._poi_15m,
-            '30m': self._poi_30m,
-        }
-        _default_tfs     = ['1m', '5m', '15m', '30m']
-        _default_sources = (set(self.validation_poi_types.get('OTE', [])) |
-                            set(self.validation_poi_types.get('STDV', [])) |
-                            set(self.validation_poi_types.get('SESSION_OTE', [])))
+        # Pre-build per-fib-type POI lists and numpy arrays once per day.
+        # validation_poi_types and validation_timeframes are BASE_PARAMS (not
+        # LHS axes), so the result is identical for every config on the same
+        # day.  Cache in _PHASE1B_ARRS_CACHE to save ~15s on warm configs 2+.
+        _ph1b_key = (id(data), tod_ord)
+        _ph1b = _PHASE1B_ARRS_CACHE.get(_ph1b_key)
+        if _ph1b is not None:
+            poi_by_fib      = _ph1b['poi_by_fib']
+            poi_arrs_by_fib = _ph1b['poi_arrs_by_fib']
+        else:
+            _tf_to_pois = {
+                '1m':  self._poi_1m,
+                '5m':  self._poi_5m,
+                '15m': self._poi_15m,
+                '30m': self._poi_30m,
+            }
+            _default_tfs     = ['1m', '5m', '15m', '30m']
+            _default_sources = (set(self.validation_poi_types.get('OTE', [])) |
+                                set(self.validation_poi_types.get('STDV', [])) |
+                                set(self.validation_poi_types.get('SESSION_OTE', [])))
 
-        def _build_poi_list(fib_type: str) -> List[Tuple[str, POI]]:
-            allowed: set = set(self.validation_poi_types.get(fib_type, list(_default_sources)))
-            tfs = self.validation_timeframes.get(fib_type, _default_tfs)
-            result: List[Tuple[str, POI]] = []
-            for tf in tfs:
-                for poi in _tf_to_pois.get(tf, []):
-                    if poi.kind in allowed:
-                        result.append((tf, poi))
-            for poi in session_pois:
-                if poi.session_kind in allowed:
-                    result.append(('session', poi))
-            return result
+            def _build_poi_list(fib_type: str) -> List[Tuple[str, POI]]:
+                allowed: set = set(self.validation_poi_types.get(fib_type, list(_default_sources)))
+                tfs = self.validation_timeframes.get(fib_type, _default_tfs)
+                result: List[Tuple[str, POI]] = []
+                for tf in tfs:
+                    for poi in _tf_to_pois.get(tf, []):
+                        if poi.kind in allowed:
+                            result.append((tf, poi))
+                for poi in session_pois:
+                    if poi.session_kind in allowed:
+                        result.append(('session', poi))
+                return result
 
-        poi_by_fib: dict = {ft: _build_poi_list(ft) for ft in ('OTE', 'STDV', 'SESSION_OTE')}
-        # Pre-extract POI arrays once per day per config — replaces the inner
-        # Python loop (50–200 iterations per price) with numpy distance checks.
-        poi_arrs_by_fib = {ft: _poi_list_to_arrays(poi_by_fib[ft])
-                           for ft in ('OTE', 'STDV', 'SESSION_OTE')}
+            poi_by_fib      = {ft: _build_poi_list(ft) for ft in ('OTE', 'STDV', 'SESSION_OTE')}
+            poi_arrs_by_fib = {ft: _poi_list_to_arrays(poi_by_fib[ft])
+                               for ft in ('OTE', 'STDV', 'SESSION_OTE')}
+            _PHASE1B_ARRS_CACHE[_ph1b_key] = {
+                'poi_by_fib':      poi_by_fib,
+                'poi_arrs_by_fib': poi_arrs_by_fib,
+            }
 
         tol = self.confluence_tolerance_atr_mult * _phase1_atr
         seen: set = set()
