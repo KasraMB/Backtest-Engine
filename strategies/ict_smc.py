@@ -890,78 +890,43 @@ def _poi_matches_price(poi: POI, price: float, tol: float) -> bool:
 _MAX_POI_LEVELS = 7
 
 
-def _build_poi_arrays(
-    allowed_kinds: set,
-    tfs: list,
-    tf_to_pois: dict,
-    session_pois: list,
-) -> Optional[dict]:
+def _poi_list_to_arrays(poi_list: list) -> Optional[dict]:
     """
-    Single-pass replacement for _build_poi_list() + _poi_list_to_arrays().
+    Convert a [(tf, POI)] list into parallel numpy arrays for vectorized price matching.
 
-    Builds numpy arrays for POI confluence matching directly from source POI
-    dicts without constructing the intermediate [(tf, POI)] list.  Uses numpy
-    slice assignment (lv_arr[i, :n] = lvs) instead of a per-element Python
-    inner loop — avoids ~600-1400 redundant Python iterations per call.
-
+    Single-pass over poi_list.  Level rows use numpy slice assignment
+    (lv_arr[i, :n] = lvs) to avoid a per-element Python inner loop.
     The 'levels' array is (n, _MAX_POI_LEVELS) with NaN padding — NaN
-    comparisons evaluate to False so unused slots are automatically excluded.
-
-    Returns None when no POIs pass the filter.
+    comparisons evaluate to False so unused slots are excluded.
     """
-    lvs_col  = []
-    dir_col  = []
-    cb_col   = []
-    inv_col  = []
-    near_col = []
-    far_col  = []
-    kind_col = []
-    sk_col   = []
-    tf_col   = []
-
-    for tf in tfs:
-        for poi in tf_to_pois.get(tf, []):
-            if poi.kind in allowed_kinds:
-                lvs_col.append(poi.levels)
-                dir_col.append(poi.direction)
-                cb_col.append(poi.created_bar)
-                inv_col.append(poi.invalidated)
-                near_col.append(poi.near)
-                far_col.append(poi.far)
-                kind_col.append(poi.kind)
-                sk_col.append(poi.session_kind or '')
-                tf_col.append(tf)
-
-    for poi in session_pois:
-        if poi.session_kind in allowed_kinds:
-            lvs_col.append(poi.levels)
-            dir_col.append(poi.direction)
-            cb_col.append(poi.created_bar)
-            inv_col.append(poi.invalidated)
-            near_col.append(poi.near)
-            far_col.append(poi.far)
-            kind_col.append(poi.kind)
-            sk_col.append(poi.session_kind or '')
-            tf_col.append('session')
-
-    n = len(lvs_col)
+    n = len(poi_list)
     if n == 0:
         return None
-
-    lv_arr = np.full((n, _MAX_POI_LEVELS), np.nan, dtype=np.float64)
-    for i, lvs in enumerate(lvs_col):
-        lv_arr[i, :len(lvs)] = lvs   # slice assignment — no inner Python loop
-
+    lv_arr   = np.full((n, _MAX_POI_LEVELS), np.nan, dtype=np.float64)
+    dir_arr  = np.empty(n, dtype=np.int32)
+    cb_arr   = np.empty(n, dtype=np.int32)
+    inv_arr  = np.empty(n, dtype=np.bool_)
+    near_arr = np.empty(n, dtype=np.float64)
+    far_arr  = np.empty(n, dtype=np.float64)
+    kind_ls: List[str] = [''] * n
+    sk_ls:   List[str] = [''] * n
+    tf_ls:   List[str] = [''] * n
+    for i, (tf, poi) in enumerate(poi_list):
+        lvs = poi.levels
+        lv_arr[i, :len(lvs)] = lvs   # slice assignment — no per-element inner loop
+        dir_arr[i]  = poi.direction
+        cb_arr[i]   = poi.created_bar
+        inv_arr[i]  = poi.invalidated
+        near_arr[i] = poi.near
+        far_arr[i]  = poi.far
+        kind_ls[i]  = poi.kind
+        sk_ls[i]    = poi.session_kind or ''
+        tf_ls[i]    = tf
     return {
-        'levels':       lv_arr,
-        'direction':    np.array(dir_col,  dtype=np.int32),
-        'created_bar':  np.array(cb_col,   dtype=np.int32),
-        'invalidated':  np.array(inv_col,  dtype=np.bool_),
-        'near':         np.array(near_col, dtype=np.float64),
-        'far':          np.array(far_col,  dtype=np.float64),
-        'kind':         kind_col,
-        'session_kind': sk_col,
-        'tf':           tf_col,
+        'levels': lv_arr, 'direction': dir_arr, 'created_bar': cb_arr,
+        'invalidated': inv_arr,
+        'near': near_arr, 'far': far_arr,
+        'kind': kind_ls, 'session_kind': sk_ls, 'tf': tf_ls,
     }
 
 
@@ -1542,8 +1507,9 @@ class ICTSMCStrategy(BaseStrategy):
             l1: np.ndarray,
             overnight_start_1m: int,
             n_1m: int,
-            poi_arr_sote: Optional[dict],
+            poi_by_fib: dict,
             phase1_atr: float = 0.0,
+            poi_arr_sote: Optional[dict] = None,
     ) -> Tuple[List[ValidLevel], List[SessionOTEGroup]]:
         """
         Build SESSION_OTE ValidLevels from session level POIs (independent of manip legs).
@@ -1563,7 +1529,8 @@ class ICTSMCStrategy(BaseStrategy):
         groups:    List[SessionOTEGroup] = []
         validated: List[ValidLevel]      = []
         seen_prices: set                 = set()
-        _arr_sote = poi_arr_sote
+        poi_list  = poi_by_fib.get('SESSION_OTE', [])
+        _arr_sote = poi_arr_sote if poi_arr_sote is not None else _poi_list_to_arrays(poi_list)
 
         # Pre-compute NYAM prev-session bar order once so the loop can use it.
         _nyam_h_price: Optional[float] = None
@@ -2249,7 +2216,7 @@ class ICTSMCStrategy(BaseStrategy):
                 self._sw_lo_all, self._sw_hi_all,
             )
 
-        # Pre-build per-fib-type POI arrays once per day.
+        # Pre-build per-fib-type POI lists once per day.
         # candle-based POIs are filtered by validation_timeframes;
         # session POIs are filtered by session_kind via validation_poi_types.
         # Both are always filtered by validation_poi_types (kind membership).
@@ -2264,15 +2231,24 @@ class ICTSMCStrategy(BaseStrategy):
                             set(self.validation_poi_types.get('STDV', [])) |
                             set(self.validation_poi_types.get('SESSION_OTE', [])))
 
-        # _build_poi_arrays combines filter + numpy-array-build in one pass,
-        # replacing the former _build_poi_list() + _poi_list_to_arrays() calls.
-        poi_arrs_by_fib: dict = {}
-        for _ft in ('OTE', 'STDV', 'SESSION_OTE'):
-            _allowed = set(self.validation_poi_types.get(_ft, list(_default_sources)))
-            _tfs     = self.validation_timeframes.get(_ft, _default_tfs)
-            poi_arrs_by_fib[_ft] = _build_poi_arrays(
-                _allowed, _tfs, _tf_to_pois, session_pois
-            )
+        def _build_poi_list(fib_type: str) -> List[Tuple[str, POI]]:
+            allowed: set = set(self.validation_poi_types.get(fib_type, list(_default_sources)))
+            tfs = self.validation_timeframes.get(fib_type, _default_tfs)
+            result: List[Tuple[str, POI]] = []
+            for tf in tfs:
+                for poi in _tf_to_pois.get(tf, []):
+                    if poi.kind in allowed:
+                        result.append((tf, poi))
+            for poi in session_pois:
+                if poi.session_kind in allowed:
+                    result.append(('session', poi))
+            return result
+
+        poi_by_fib: dict = {ft: _build_poi_list(ft) for ft in ('OTE', 'STDV', 'SESSION_OTE')}
+        # Pre-extract POI arrays once per day per config — replaces the inner
+        # Python loop (50–200 iterations per price) with numpy distance checks.
+        poi_arrs_by_fib = {ft: _poi_list_to_arrays(poi_by_fib[ft])
+                           for ft in ('OTE', 'STDV', 'SESSION_OTE')}
 
         tol = self.confluence_tolerance_atr_mult * _phase1_atr
         seen: set = set()
@@ -2334,9 +2310,8 @@ class ICTSMCStrategy(BaseStrategy):
         # computed from session level anchors and the overnight extreme.
         sote_levels, self._session_ote_groups = self._compute_session_ote_levels(
             session_pois, data.high_1m, data.low_1m,
-            overnight_start_1m, n_1m,
+            overnight_start_1m, n_1m, poi_by_fib, _phase1_atr,
             poi_arr_sote=poi_arrs_by_fib.get('SESSION_OTE'),
-            phase1_atr=_phase1_atr,
         )
         self._validated_levels.extend(sote_levels)
 
