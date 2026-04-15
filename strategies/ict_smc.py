@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from datetime import date as _date_cls
+from datetime import date as _date_cls, time as _time_cls
 from typing import Callable, List, Optional, Tuple
 
 import numpy as np
@@ -1112,7 +1112,7 @@ class ICTSMCStrategy(BaseStrategy):
     ICT / SMC NQ 1-minute futures strategy implementing strategy_spec.md v1.2.
     """
 
-    trading_hours = None   # All hours; 09:30-11:00 ET gated inside generate_signals
+    trading_hours = None   # overridden in __init__ to (09:30, entry_end_min)
     min_lookback  = 300
     _supports_precomputed_phase1 = True   # runner may pre-compute all days in parallel
 
@@ -1147,6 +1147,12 @@ class ICTSMCStrategy(BaseStrategy):
         # Latest minute-of-day (minutes since midnight ET) at which a new entry signal
         # can be generated.  Default 660 = 11:00 ET (original behaviour).
         self._entry_end_min:              int   = p.get('entry_end_min', SESSION_END_MIN)
+
+        # Set trading_hours so the runner's active_bar_set only includes the
+        # signal window (09:30 ET → entry_end_min).  Skips ~700K no-op
+        # generate_signals calls per config (pre-market + post-entry bars).
+        _end_h, _end_m = divmod(self._entry_end_min, 60)
+        self.trading_hours = [(_time_cls(9, 30), _time_cls(_end_h, _end_m))]
         # Max validated levels kept per session for each fib type.
         # Priority: biggest manipulation leg range; tiebreak by proximity to 09:30 open.
         # 0 = keep all (no limit).
