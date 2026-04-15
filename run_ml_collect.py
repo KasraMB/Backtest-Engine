@@ -327,8 +327,8 @@ def main() -> None:
     lhs_axes = set(ranges.keys())
 
     n_cpu     = os.cpu_count() or 1
-    n_workers = min(4, max(1, n_cpu - 1))
-    print(f"CPU cores: {n_cpu}  ->  using {n_workers} worker(s) (capped at 4)")
+    n_workers = min(2, max(1, n_cpu - 1))
+    print(f"CPU cores: {n_cpu}  ->  using {n_workers} worker(s) (capped at 2)")
     _warmup_numba()
     print(f"Sampling {N_CONFIGS} configs via LHS (Round {ROUND} ranges)\n")
 

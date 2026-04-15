@@ -34,7 +34,7 @@ import pandas as pd
 # Config
 # ---------------------------------------------------------------------------
 N_CONFIGS   = 16      # 4 per worker — enough to see cold + multiple warm runs
-N_WORKERS   = 4       # matches production
+N_WORKERS   = 2       # matches production
 LHS_SEED    = 42
 
 BASE_EXEC = dict(
