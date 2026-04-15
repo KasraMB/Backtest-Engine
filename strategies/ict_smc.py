@@ -1318,7 +1318,9 @@ class ICTSMCStrategy(BaseStrategy):
         """
         y1  = idx.year.to_numpy(np.int64) - 1
         doy = idx.day_of_year.to_numpy(np.int64)
-        return (y1 * 365 + y1 // 4 - y1 // 100 + y1 // 400 + doy).astype(np.int32)
+        # Keep int64 — np.searchsorted on int32 arrays >10K elements is ~400x
+        # slower than int64 on this platform (SIMD path not used for int32).
+        return y1 * 365 + y1 // 4 - y1 // 100 + y1 // 400 + doy
 
     def _ensure_bar_metadata(self, data: MarketData) -> None:
         if self._bar_dates_ord is not None:
