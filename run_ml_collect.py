@@ -89,6 +89,39 @@ DATASET_OUT       = ROOT / "data" / "ml_dataset.parquet"
 VALID_CONFIGS_OUT = ROOT / "data" / "validated_configs.json"
 
 # ---------------------------------------------------------------------------
+# Numba warmup — called in the main process before spawning workers so that
+# all JIT kernels are compiled and cached to disk.  Workers then load from
+# __pycache__ instead of all competing to compile at startup.
+# ---------------------------------------------------------------------------
+def _warmup_numba() -> None:
+    try:
+        from strategies.ict_smc import (
+            _wilder_atr, _detect_swings, _detect_swings_confirmed_at,
+            _detect_accum_zones_nb, _detect_ob_nb, _detect_fvg_nb, _cisd_scan_nb,
+        )
+        z4 = np.zeros(4, dtype=np.float64)
+        z8 = np.ones(8, dtype=np.float64)
+        lb = 6
+        n  = lb + 4
+        zn = np.ones(n, dtype=np.float64)
+        xs_dev = np.arange(lb, dtype=np.float64) - (lb - 1) / 2.0
+        xs_sq  = float((xs_dev * xs_dev).sum())
+        _wilder_atr(z4, z4, z4, 14)
+        _detect_swings(z8, z8, 1)
+        _detect_swings_confirmed_at(z8, z8, 1)
+        _detect_accum_zones_nb(
+            zn, zn, zn, zn, zn, xs_dev, xs_sq,
+            1.0, 0.01, 0.5, 1.0, 2, 3, lb,
+        )
+        _detect_ob_nb(z8, z8, z8, z8)
+        _detect_fvg_nb(z8, z8, z8, z8, 0.5)
+        _cisd_scan_nb(z8, z8, 1, 2, 0.5, 0, 7)
+        print("Numba warmup complete.")
+    except Exception as exc:
+        print(f"Numba warmup skipped: {exc}")
+
+
+# ---------------------------------------------------------------------------
 # Worker globals — initialised once per worker process
 # ---------------------------------------------------------------------------
 _g_data        = None
@@ -294,8 +327,9 @@ def main() -> None:
     lhs_axes = set(ranges.keys())
 
     n_cpu     = os.cpu_count() or 1
-    n_workers = max(1, n_cpu - 1)
-    print(f"CPU cores: {n_cpu}  ->  using {n_workers} worker(s)")
+    n_workers = min(4, max(1, n_cpu - 1))
+    print(f"CPU cores: {n_cpu}  ->  using {n_workers} worker(s) (capped at 4)")
+    _warmup_numba()
     print(f"Sampling {N_CONFIGS} configs via LHS (Round {ROUND} ranges)\n")
 
     all_configs = sample_configs(N_CONFIGS, ranges, seed=LHS_SEED + ROUND - 1)
