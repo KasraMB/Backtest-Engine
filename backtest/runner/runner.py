@@ -212,16 +212,11 @@ def build_required_bar_set(data: MarketData, strategy_class) -> set[int]:
 
     Result is cached on the MarketData object; subsequent calls for the same
     data object (e.g. across ML-collect configs in one worker) return instantly.
+
+    When the strategy declares trading_hours, active_bars is a subset of RTH,
+    so required_mask still applies for the fast-skip of ~1.1M non-session bars.
+    generate_signals is separately gated by active_bars (line 582).
     """
-    try:
-        tmp = strategy_class.__new__(strategy_class)
-        trading_hours = getattr(tmp, 'trading_hours', None)
-    except Exception:
-        trading_hours = None
-
-    if trading_hours is not None:
-        return None   # signal to caller: use active_bars as required_bars
-
     # Return cached result if already computed for this data object.
     if data._required_bar_ready:
         return data._required_bar_result
