@@ -64,6 +64,7 @@ def _step(label):
 
 
 if __name__ == "__main__":
+    _t_total = time.perf_counter()
     # ── Config ─────────────────────────────────────────────────────────────────
     AUTO_OPEN_TEARSHEET = True
 
@@ -418,3 +419,4 @@ if __name__ == "__main__":
             run_result_rev=result_rev,
             market_data=data,
         )
+    print(f"Total time: {time.perf_counter() - _t_total:.1f}s")
