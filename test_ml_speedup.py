@@ -50,6 +50,37 @@ CACHE_5M      = ROOT / "data" / "NQ_5m.parquet"
 CACHE_BAR_MAP = ROOT / "data" / "NQ_bar_map.npy"
 
 # ---------------------------------------------------------------------------
+# Numba warmup — see run_ml_collect.py for rationale
+# ---------------------------------------------------------------------------
+def _warmup_numba() -> None:
+    try:
+        from strategies.ict_smc import (
+            _wilder_atr, _detect_swings, _detect_swings_confirmed_at,
+            _detect_accum_zones_nb, _detect_ob_nb, _detect_fvg_nb, _cisd_scan_nb,
+        )
+        z4 = np.zeros(4, dtype=np.float64)
+        z8 = np.ones(8, dtype=np.float64)
+        lb = 6
+        n  = lb + 4
+        zn = np.ones(n, dtype=np.float64)
+        xs_dev = np.arange(lb, dtype=np.float64) - (lb - 1) / 2.0
+        xs_sq  = float((xs_dev * xs_dev).sum())
+        _wilder_atr(z4, z4, z4, 14)
+        _detect_swings(z8, z8, 1)
+        _detect_swings_confirmed_at(z8, z8, 1)
+        _detect_accum_zones_nb(
+            zn, zn, zn, zn, zn, xs_dev, xs_sq,
+            1.0, 0.01, 0.5, 1.0, 2, 3, lb,
+        )
+        _detect_ob_nb(z8, z8, z8, z8)
+        _detect_fvg_nb(z8, z8, z8, z8, 0.5)
+        _cisd_scan_nb(z8, z8, 1, 2, 0.5, 0, 7)
+        print("Numba warmup complete.")
+    except Exception as exc:
+        print(f"Numba warmup skipped: {exc}")
+
+
+# ---------------------------------------------------------------------------
 # Worker globals
 # ---------------------------------------------------------------------------
 _g_data        = None
@@ -134,13 +165,14 @@ def main() -> None:
     ranges      = ROUND_RANGES[1]
     all_configs = sample_configs(N_CONFIGS, ranges, seed=LHS_SEED)
 
+    _warmup_numba()
     print("=== ML Collect Speedup Test ===")
     print(f"Configs: {N_CONFIGS}   Workers: {N_WORKERS}  (validate=False)")
     print("Expected (Tier 1+2 optimisations active):")
     print("  Cold (first config per worker):  ~30-50s")
     print("  Warm (same swing_n group):        ~15-25s")
     print("  Warm (new swing_n value):         ~20-30s")
-    print(f"  Total wall ≈ ceil({N_CONFIGS}/{N_WORKERS}) × ~20s avg ≈ "
+    print(f"  Total wall ~= ceil({N_CONFIGS}/{N_WORKERS}) x ~20s avg ~= "
           f"{-((-N_CONFIGS) // N_WORKERS) * 20:.0f}s\n")
 
     init_args = (
@@ -191,7 +223,7 @@ def main() -> None:
     print(f"\nExtrapolated to 150 configs / {N_WORKERS} workers:")
     print(f"  avg per config = {avg:.1f}s")
     print(f"  configs per worker = {per_worker}")
-    print(f"  estimated wall ≈ {extrapolated:.0f}s = {extrapolated/60:.1f} min")
+    print(f"  estimated wall ~= {extrapolated:.0f}s = {extrapolated/60:.1f} min")
 
 
 if __name__ == "__main__":
