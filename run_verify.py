@@ -20,6 +20,7 @@ CACHE_BAR_MAP = "data/NQ_bar_map.npy"
 DATE_FROM     = "2024-01-01"
 OUT_CSV       = "trade_logs/ICTSMCStrategy_verify.csv"
 
+_t_total = time.perf_counter()
 loader = DataLoader()
 df_1m   = pd.read_parquet(CACHE_1M)
 df_5m   = pd.read_parquet(CACHE_5M)
@@ -90,3 +91,4 @@ result.print_summary()
 print(f"Backtest time: {elapsed:.2f}s")
 save_trade_log(result, data, OUT_CSV)
 print(f"Trade log saved -> {OUT_CSV}")
+print(f"Total time: {time.perf_counter() - _t_total:.1f}s")

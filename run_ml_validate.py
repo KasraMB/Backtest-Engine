@@ -255,4 +255,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import time as _time
+    _t0 = _time.perf_counter()
     main()
+    print(f"\nTotal time: {_time.perf_counter() - _t0:.1f}s")

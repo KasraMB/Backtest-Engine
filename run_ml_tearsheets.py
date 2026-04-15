@@ -265,6 +265,7 @@ def run_one(label, date_from, date_to, out, full_data, loader, ml_model):
 
 
 if __name__ == "__main__":
+    _t0 = time.perf_counter()
     full_data, loader = load_full_data()
     ml_model = MLModel.load("models/ict_smc.pkl")
     # Use the walk-forward threshold (unbiased — from OOS folds on train split only).
@@ -286,3 +287,4 @@ if __name__ == "__main__":
     print("\nDone. Tearsheets:")
     for run in RUNS:
         print(f"  {run['out']}")
+    print(f"\nTotal time: {time.perf_counter() - _t0:.1f}s")

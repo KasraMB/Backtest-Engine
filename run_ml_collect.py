@@ -57,7 +57,7 @@ from backtest.regime.vol_regime import compute_vol_regime_map
 # Configuration — edit before each run
 # ---------------------------------------------------------------------------
 ROUND         = 1          # 1 = fresh broad LHS; 2+ = append tighter ranges
-N_CONFIGS     = 150        # configs to sample per round
+N_CONFIGS     = 15        # configs to sample per round
 LHS_SEED      = 42         # reproducibility
 
 SENSITIVITY_CFG = dict(
@@ -810,4 +810,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import time as _time
+    _t0 = _time.perf_counter()
     main()
+    print(f"\nTotal time: {_time.perf_counter() - _t0:.1f}s")
