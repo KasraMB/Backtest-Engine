@@ -379,6 +379,10 @@ def main() -> None:
         if base_run_key not in sens_runs_cache:
             capture = h not in trades_cache  # capture trades only if not already collected
             pending_tasks.append((h, 'base', params, capture))
+        elif h not in trades_cache:
+            # Sensitivity already cached but trades not yet captured — add trade-only run.
+            # Without this, these configs fall through to a separate pool (cold start).
+            pending_tasks.append((h, 'base', params, True))
 
         # Perturbation runs (only for non-LHS params; empty in Round 1)
         if h not in sens_agg_cache:
