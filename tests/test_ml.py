@@ -1035,5 +1035,41 @@ class TestEnsembleMLModel:
         assert isinstance(score, float)
 
 
+class TestEnsembleWalkForwardTrainer:
+
+    def _make_dataset(self, n=300, seed=3):
+        rng   = np.random.default_rng(seed)
+        dates = pd.date_range("2019-01-01", periods=n, freq="D")[:n]
+        X     = rng.uniform(-1, 1, (n, len(ALL_FEATURE_NAMES)))
+        r     = rng.normal(-0.1, 1.5, n)
+        df    = pd.DataFrame(X, columns=ALL_FEATURE_NAMES)
+        df["r_multiple"] = r
+        df["is_winner"]  = (r > 0).astype(int)
+        df["date"]       = dates
+        df["entry_bar"]  = np.arange(n)
+        return df
+
+    def test_fit_returns_ensemble_model(self):
+        from backtest.ml.train import EnsembleWalkForwardTrainer, WalkForwardConfig
+        from backtest.ml.model import EnsembleMLModel
+
+        cfg     = WalkForwardConfig(train_months=6, test_months=2, embargo_months=0,
+                                    min_train_trades=5, min_test_trades=2)
+        trainer = EnsembleWalkForwardTrainer(cfg)
+        df      = self._make_dataset()
+        result  = trainer.fit(df)
+        assert isinstance(result.ensemble_model, EnsembleMLModel)
+
+    def test_ensemble_model_can_decide(self):
+        from backtest.ml.train import EnsembleWalkForwardTrainer, WalkForwardConfig
+
+        cfg     = WalkForwardConfig(train_months=6, test_months=2, embargo_months=0,
+                                    min_train_trades=5, min_test_trades=2)
+        result  = EnsembleWalkForwardTrainer(cfg).fit(self._make_dataset())
+        feat    = {k: 0.0 for k in ALL_FEATURE_NAMES}
+        skip, tp_idx, p2 = result.ensemble_model.decide(feat)
+        assert isinstance(skip, bool)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
