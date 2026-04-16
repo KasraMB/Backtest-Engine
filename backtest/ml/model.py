@@ -313,8 +313,8 @@ class EnsembleMLModel:
     def _build_row(
         self,
         signal_features: dict,
-        phase2_params: Optional[dict] = None,
         phase1_cfg: Optional[dict] = None,
+        phase2_params: Optional[dict] = None,
     ) -> dict:
         row = {k: signal_features.get(k, 0) for k in self._feature_names}
         if phase1_cfg:
@@ -341,7 +341,7 @@ class EnsembleMLModel:
                 if k not in _PHASE2_CFG_KEYS:
                     phase1_cfg[k] = v
 
-        row = self._build_row(signal_features, phase2_params, phase1_cfg)
+        row = self._build_row(signal_features, phase1_cfg, phase2_params)
         X = pd.DataFrame([row])
         pred_r = float(self._model_a.predict_r(X)[0])
         X_arr  = X[self._feature_names].values.astype(float)
@@ -358,14 +358,7 @@ class EnsembleMLModel:
         phase2_candidates: Optional[list] = None,
         n_tp_candidates: int = 1,
         phase1_params: Optional[dict] = None,
-    ) -> Tuple[bool, int, dict]:
-        """
-        Make a take/skip decision identical to MLModel.decide() interface.
-
-        Returns
-        -------
-        (skip, tp_idx, best_phase2_config)
-        """
+    ) -> tuple[bool, int, dict]:
         if self._model_a is None or self._model_b is None:
             return False, 0, {}
 
@@ -379,7 +372,7 @@ class EnsembleMLModel:
         if phase2_candidates:
             rows = []
             for p2 in phase2_candidates:
-                rows.append(self._build_row(signal_features, p2, phase1_cfg))
+                rows.append(self._build_row(signal_features, phase1_cfg, p2))
             X      = pd.DataFrame(rows)
             preds_r = self._model_a.predict_r(X)
             X_arr   = X[self._feature_names].values.astype(float)
@@ -391,7 +384,7 @@ class EnsembleMLModel:
             pred_r_single = float(preds_r[best_i])
             best_sf = {**signal_features, **phase1_cfg, **normalize_config(best_p2)}
         else:
-            row    = self._build_row(signal_features, None, phase1_cfg)
+            row    = self._build_row(signal_features, phase1_cfg)
             X      = pd.DataFrame([row])
             pred_r_single = float(self._model_a.predict_r(X)[0])
             X_arr  = X[self._feature_names].values.astype(float)
@@ -409,7 +402,7 @@ class EnsembleMLModel:
     # Persistence
     # ------------------------------------------------------------------
 
-    def save(self, path: 'str | Path') -> None:
+    def save(self, path: str | Path) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         state = {
@@ -423,7 +416,7 @@ class EnsembleMLModel:
             pickle.dump(state, f)
 
     @classmethod
-    def load(cls, path: 'str | Path') -> 'EnsembleMLModel':
+    def load(cls, path: str | Path) -> 'EnsembleMLModel':
         with open(path, 'rb') as f:
             state = pickle.load(f)
         obj = cls(threshold=state['threshold'], loss_penalty=state['loss_penalty'])
