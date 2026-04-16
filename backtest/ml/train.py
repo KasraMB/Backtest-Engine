@@ -352,7 +352,9 @@ class EnsembleWalkForwardTrainer:
             'oos_pf_all':         profit_factor_r(oos_actual),
             'oos_pf_taken':       profit_factor_r(oos_taken),
             'oos_win_rate_all':   float(np.mean(oos_actual > 0)) if len(oos_actual) > 0 else 0.0,
-            'oos_win_rate_taken': float(np.mean(oos_taken > 0)) if len(oos_taken) > 0 else 0.0,
+            'oos_win_rate_taken':      float(np.mean(oos_taken > 0)) if len(oos_taken) > 0 else 0.0,
+            'oos_expectancy_r_all':   float(np.mean(oos_actual)) if len(oos_actual) > 0 else 0.0,
+            'oos_expectancy_r_taken': float(np.mean(oos_taken))  if len(oos_taken)  > 0 else 0.0,
         }
 
         return EnsembleWalkForwardResult(
