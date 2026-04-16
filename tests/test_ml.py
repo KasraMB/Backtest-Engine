@@ -978,5 +978,62 @@ class TestSplits:
         assert len(result) == 0
 
 
+class TestEnsembleMLModel:
+
+    def _make_xy(self, n=150, seed=1):
+        rng = np.random.default_rng(seed)
+        X   = pd.DataFrame(
+            rng.uniform(-1, 1, (n, len(ALL_FEATURE_NAMES))),
+            columns=ALL_FEATURE_NAMES,
+        )
+        r = rng.normal(-0.1, 1.5, n)
+        y_r   = pd.Series(r)
+        y_bin = pd.Series((r > 0).astype(int))
+        return X, y_r, y_bin
+
+    def test_ensemble_decide_returns_tuple(self):
+        from backtest.ml.model import EnsembleMLModel
+        X, y_r, y_bin = self._make_xy()
+        em = EnsembleMLModel(threshold=0.0)
+        em.fit(X, y_r, y_bin)
+        feat = {k: 0.0 for k in ALL_FEATURE_NAMES}
+        skip, tp_idx, best_p2 = em.decide(feat)
+        assert isinstance(skip, bool)
+        assert isinstance(tp_idx, int)
+        assert isinstance(best_p2, dict)
+
+    def test_ensemble_high_threshold_always_skips(self):
+        from backtest.ml.model import EnsembleMLModel
+        X, y_r, y_bin = self._make_xy()
+        em = EnsembleMLModel(threshold=999.0)
+        em.fit(X, y_r, y_bin)
+        feat = {k: 0.0 for k in ALL_FEATURE_NAMES}
+        skip, _, _ = em.decide(feat)
+        assert skip
+
+    def test_ensemble_save_load_roundtrip(self, tmp_path):
+        from backtest.ml.model import EnsembleMLModel
+        X, y_r, y_bin = self._make_xy()
+        em = EnsembleMLModel(threshold=0.42)
+        em.fit(X, y_r, y_bin)
+        path = tmp_path / "ensemble.pkl"
+        em.save(path)
+        loaded = EnsembleMLModel.load(path)
+        assert loaded.threshold == pytest.approx(0.42)
+        feat = {k: 0.0 for k in ALL_FEATURE_NAMES}
+        s1, _, _ = em.decide(feat)
+        s2, _, _ = loaded.decide(feat)
+        assert s1 == s2
+
+    def test_ensemble_score_is_float(self):
+        from backtest.ml.model import EnsembleMLModel
+        X, y_r, y_bin = self._make_xy()
+        em = EnsembleMLModel(threshold=0.0)
+        em.fit(X, y_r, y_bin)
+        feat = {k: 0.0 for k in ALL_FEATURE_NAMES}
+        score = em.score(feat)
+        assert isinstance(score, float)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
