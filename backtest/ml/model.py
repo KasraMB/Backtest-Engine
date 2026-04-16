@@ -95,6 +95,7 @@ class MLModel:
         signal_features: dict,
         phase2_candidates: Optional[list] = None,
         n_tp_candidates: int = 1,
+        phase1_params: Optional[dict] = None,
     ) -> Tuple[bool, int, dict]:
         """
         Make a take/skip decision, choose the TP candidate index, and select
@@ -126,12 +127,32 @@ class MLModel:
 
         from backtest.ml.configs import normalize_config, CONFIG_FEATURE_NAMES
 
+        # Phase 2 and metadata cfg_ keys — must NOT be overwritten by Phase 1 injection.
+        _PHASE2_CFG_KEYS: frozenset[str] = frozenset({
+            'cfg_cancel_pct_to_tp',
+            'cfg_tick_offset',
+            'cfg_order_expiry_bars',
+            'cfg_is_valid',
+            'cfg_base_metric',
+        })
+
+        # Build Phase 1 cfg_ overrides (fixed for this trade, same across all Phase 2 candidates).
+        phase1_cfg: dict[str, float] = {}
+        if phase1_params is not None:
+            for k, v in normalize_config(phase1_params).items():
+                if k not in _PHASE2_CFG_KEYS:
+                    phase1_cfg[k] = v
+
         # Build candidate list — each entry is (phase2_params, feature_row)
         if phase2_candidates:
             rows = []
             for p2 in phase2_candidates:
                 cfg_feat = normalize_config(p2)
                 row      = {k: signal_features.get(k, 0) for k in self._feature_names}
+                # Phase 1 first (lower priority), then Phase 2 overrides its own keys.
+                for k, v in phase1_cfg.items():
+                    if k in self._feature_names:
+                        row[k] = v
                 for k, v in cfg_feat.items():
                     if k in self._feature_names:
                         row[k] = v
@@ -141,13 +162,16 @@ class MLModel:
             best_i  = int(np.argmax(preds))
             pred_r  = float(preds[best_i])
             best_p2 = phase2_candidates[best_i]
-            best_sf = {**signal_features, **normalize_config(best_p2)}
+            best_sf = {**signal_features, **phase1_cfg, **normalize_config(best_p2)}
         else:
             row    = {k: signal_features.get(k, 0) for k in self._feature_names}
+            for k, v in phase1_cfg.items():
+                if k in self._feature_names:
+                    row[k] = v
             X      = pd.DataFrame([row])
             pred_r = float(self.predict_r(X)[0])
             best_p2 = {}
-            best_sf = signal_features
+            best_sf = {**signal_features, **phase1_cfg}
 
         skip   = pred_r < self.threshold
         tp_idx = self._select_tp_idx(best_sf, n_tp_candidates, pred_r)
@@ -205,10 +229,11 @@ class MLModel:
     # Internal
     # ------------------------------------------------------------------
 
-    def _prepare_X(self, X: pd.DataFrame) -> np.ndarray:
+    def _prepare_X(self, X: pd.DataFrame) -> pd.DataFrame:
         """Ensure all expected features are present and in the correct order."""
-        for col in self._feature_names:
-            if col not in X.columns:
-                X = X.copy()
+        missing = [col for col in self._feature_names if col not in X.columns]
+        if missing:
+            X = X.copy()
+            for col in missing:
                 X[col] = 0
-        return X[self._feature_names].values.astype(float)
+        return X[self._feature_names].astype(float)

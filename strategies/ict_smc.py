@@ -2744,7 +2744,9 @@ class ICTSMCStrategy(BaseStrategy):
                 tp_candidates, _default_tp, data, i)
             phase2_cands = get_phase2_candidates()
             skip, tp_idx, _best_phase2 = self.ml_model.decide(
-                signal_feats, phase2_cands, len(tp_candidates))
+                signal_feats, phase2_cands, len(tp_candidates),
+                phase1_params=self.params,
+            )
             if skip:
                 return None  # zone NOT consumed; can fire again next bar
         else:
