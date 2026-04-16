@@ -600,6 +600,31 @@ class TestMLModel:
         preds = model.predict_r(X_missing)
         assert len(preds) == len(X_missing)
 
+    def test_decide_injects_phase1_features(self):
+        """Phase 1 features must appear in the row sent to the model, not be zero."""
+        from backtest.ml.model import MLModel
+        import numpy as np, pandas as pd
+        from backtest.ml.features import ALL_FEATURE_NAMES
+
+        captured_rows = []
+
+        class _SpyModel:
+            def predict(self, X):
+                captured_rows.append(X.copy())
+                return np.array([0.5] * len(X))
+
+        model = MLModel()
+        model._model = _SpyModel()
+        model.threshold = 0.0
+
+        feat = {k: 0.0 for k in ALL_FEATURE_NAMES}
+        phase1 = {'min_rr': 5.0, 'confluence_tolerance_atr_mult': 0.18}
+        model.decide(feat, phase1_params=phase1)
+
+        row = captured_rows[0]
+        # cfg_min_rr should NOT be 0 when min_rr=5.0 (range 2-8 → normalised ≈ 0.5)
+        assert row['cfg_min_rr'].iloc[0] != 0.0, "Phase 1 cfg_min_rr was not injected"
+
 
 # ===========================================================================
 # Walk-forward fold generation
