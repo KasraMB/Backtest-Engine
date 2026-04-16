@@ -253,30 +253,34 @@ def simulate_eval_batch(
     MAX_DAYS = 200
     MAX_T    = min(30, max(3, int(trades_per_day * 4)))  # cap per-day trades
 
-    balance      = np.full(n_sims, account.starting_balance, dtype=np.float64)
-    mll_level    = np.full(n_sims, account.starting_balance - account.mll_amount)
-    peak_eod     = np.full(n_sims, account.starting_balance)
-    total_profit = np.zeros(n_sims)
-    max_day_pnl  = np.zeros(n_sims)
+    balance      = np.full(n_sims, account.starting_balance, dtype=np.float32)
+    mll_level    = np.full(n_sims, account.starting_balance - account.mll_amount, dtype=np.float32)
+    peak_eod     = np.full(n_sims, account.starting_balance, dtype=np.float32)
+    total_profit = np.zeros(n_sims, dtype=np.float32)
+    max_day_pnl  = np.zeros(n_sims, dtype=np.float32)
     n_prof_days  = np.zeros(n_sims, dtype=np.int32)
     alive        = np.ones(n_sims, dtype=bool)
     passed       = np.zeros(n_sims, dtype=bool)
     last_won     = np.ones(n_sims, dtype=bool)
-    prev_risk    = np.full(n_sims, risk_pct * account.mll_amount)
+    prev_risk    = np.full(n_sims, risk_pct * account.mll_amount, dtype=np.float32)
     days_elapsed = np.zeros(n_sims, dtype=np.int32)  # trading days run so far
+
+    # Pre-generate all random variates — eliminates per-iteration Python RNG overhead.
+    all_counts = rng.poisson(trades_per_day, size=(n_sims, MAX_DAYS)).clip(0, MAX_T).astype(np.int16)
+    all_idx    = rng.integers(0, n_pool, size=(n_sims, MAX_DAYS, MAX_T), dtype=np.int32)
 
     for day in range(MAX_DAYS):
         n_alive = alive.sum()
         if n_alive == 0:
             break
 
-        n_today = rng.poisson(trades_per_day, size=n_sims).clip(0, MAX_T)
+        n_today = all_counts[:, day].astype(np.int32)
         max_t   = int(n_today.max())
         if max_t == 0:
             continue
 
         # Sample trades: (n_sims, max_t)
-        idx     = rng.integers(0, n_pool, size=(n_sims, max_t))
+        idx     = all_idx[:, day, :max_t]
         t_pnl   = pnl_pts[idx]    # (n_sims, max_t)
         t_sl    = sl_dists[idx]   # (n_sims, max_t)
 
@@ -378,16 +382,16 @@ def simulate_funded_batch(
     n_pool    = len(pnl_pts)
     max_pay   = account.max_payouts   # 6
 
-    balance    = starting_balances.copy()
-    mll_level  = np.full(n, account.starting_balance - account.mll_amount)
-    peak_eod   = starting_balances.copy()
+    balance    = starting_balances.copy().astype(np.float32)
+    mll_level  = np.full(n, account.starting_balance - account.mll_amount, dtype=np.float32)
+    peak_eod   = starting_balances.copy().astype(np.float32)
     mll_locked = np.zeros(n, dtype=bool)
     alive      = np.ones(n, dtype=bool)
     n_payouts  = np.zeros(n, dtype=np.int32)
-    total_w    = np.zeros(n, dtype=np.float64)
+    total_w    = np.zeros(n, dtype=np.float32)
     prof_days  = np.zeros(n, dtype=np.int32)
     last_won   = np.ones(n, dtype=bool)
-    prev_risk  = np.full(n, risk_pct * account.mll_amount)
+    prev_risk  = np.full(n, risk_pct * account.mll_amount, dtype=np.float32)
 
     # Track day of each payout: shape (n, max_payouts), NaN = not reached
     payout_days    = np.full((n, max_pay), np.nan, dtype=np.float64)
@@ -397,6 +401,10 @@ def simulate_funded_batch(
     # Last trading day each sim was alive (unconditional denominator for per-K ev/day)
     funded_days_elapsed = np.zeros(n, dtype=np.float64)
 
+    # Pre-generate all random variates — eliminates per-iteration Python RNG overhead.
+    all_counts = rng.poisson(trades_per_day, size=(n, MAX_DAYS)).clip(0, MAX_T).astype(np.int16)
+    all_idx    = rng.integers(0, n_pool, size=(n, MAX_DAYS, MAX_T), dtype=np.int32)
+
     for day in range(MAX_DAYS):
         if not alive.any():
             break
@@ -405,12 +413,12 @@ def simulate_funded_batch(
         # killed this day still count their day toward the denominator.
         funded_days_elapsed = np.where(alive, float(day + 1), funded_days_elapsed)
 
-        n_today = rng.poisson(trades_per_day, size=n).clip(0, MAX_T)
+        n_today = all_counts[:, day].astype(np.int32)
         max_t   = int(n_today.max())
         if max_t == 0:
             continue
 
-        idx      = rng.integers(0, n_pool, size=(n, max_t))
+        idx      = all_idx[:, day, :max_t]
         t_pnl    = pnl_pts[idx]
         t_sl     = sl_dists[idx]
         target   = compute_target_risk_vec(
