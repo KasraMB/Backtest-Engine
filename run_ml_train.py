@@ -34,11 +34,12 @@ import numpy as np
 import pandas as pd
 
 from backtest.ml.splits import filter_df, SPLITS
-from backtest.ml.train import WalkForwardTrainer, WalkForwardConfig
+from backtest.ml.train import WalkForwardTrainer, WalkForwardConfig, EnsembleWalkForwardTrainer
 from backtest.ml.evaluate import sortino_r, profit_factor_r, search_threshold
 
 DATASET_PATH = ROOT / "data" / "ml_dataset.parquet"
-MODEL_PATH   = ROOT / "models" / "ict_smc.pkl"
+MODEL_PATH          = ROOT / "models" / "ict_smc.pkl"
+ENSEMBLE_MODEL_PATH = ROOT / "models" / "ict_smc_ensemble.pkl"
 
 WALK_FORWARD_CONFIG = WalkForwardConfig(
     train_months=24,
@@ -245,6 +246,23 @@ def main() -> None:
     wf_result.final_model.save(MODEL_PATH)
     print(f"Model saved -> {MODEL_PATH}")
     print(f"Skip threshold: {wf_result.final_model.threshold:.4f}")
+
+    # --- Ensemble model ---
+    print("\n=== Training Ensemble Model ===\n")
+    ensemble_trainer = EnsembleWalkForwardTrainer(WALK_FORWARD_CONFIG)
+    ens_result = ensemble_trainer.fit(df_train)
+
+    print(f"  Walk-forward folds:   {ens_result.summary['n_folds']}")
+    print(f"  OOS take rate:        {ens_result.summary['oos_take_rate']:.1%}")
+    print(f"  OOS Sortino (taken):  {ens_result.summary['oos_sortino_taken']:.3f}")
+    print(f"  OOS win rate (taken): {ens_result.summary['oos_win_rate_taken']:.1%}")
+    print(f"  OOS expectancy R:     {ens_result.summary['oos_expectancy_r_taken']:.3f}")
+    print()
+
+    ENSEMBLE_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ens_result.ensemble_model.save(ENSEMBLE_MODEL_PATH)
+    print(f"Ensemble model saved -> {ENSEMBLE_MODEL_PATH}")
+    print("Threshold = 0.0 (run run_ml_threshold_opt.py to find optimal threshold)")
 
 
 if __name__ == "__main__":
