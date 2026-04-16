@@ -625,6 +625,40 @@ class TestMLModel:
         # cfg_min_rr should NOT be 0 when min_rr=5.0 (range 2-8 → normalised ≈ 0.5)
         assert row['cfg_min_rr'].iloc[0] != 0.0, "Phase 1 cfg_min_rr was not injected"
 
+    def test_phase1_does_not_override_phase2_keys(self):
+        """Phase 2 keys must not be overwritten by Phase 1 injection."""
+        from backtest.ml.model import MLModel
+        import numpy as np, pandas as pd
+        from backtest.ml.features import ALL_FEATURE_NAMES
+        from backtest.ml.configs import normalize_config
+
+        captured_rows = []
+
+        class _SpyModel:
+            def predict(self, X):
+                captured_rows.append(X.copy())
+                return np.array([0.5] * len(X))
+
+        model = MLModel()
+        model._model = _SpyModel()
+        model.threshold = 0.0
+
+        feat = {k: 0.0 for k in ALL_FEATURE_NAMES}
+        # Provide a phase2 candidate with a specific tick_offset
+        phase2_candidate = {'cancel_pct_to_tp': 0.75, 'tick_offset': 2, 'order_expiry_bars': 10,
+                            'tp_atr_mult': 2.0, 'sl_atr_mult': 1.0}
+        phase1 = {'min_rr': 5.0, 'confluence_tolerance_atr_mult': 0.18}
+        model.decide(feat, phase2_candidates=[phase2_candidate], n_tp_candidates=1,
+                     phase1_params=phase1)
+
+        row = captured_rows[0]
+        # cfg_tick_offset must come from phase2, not be overwritten to 0 by phase1 injection
+        p2_normalized = normalize_config(phase2_candidate)
+        expected_tick_offset = p2_normalized.get('cfg_tick_offset', 0.0)
+        actual_tick_offset = row['cfg_tick_offset'].iloc[0] if 'cfg_tick_offset' in row.columns else 0.0
+        assert actual_tick_offset == pytest.approx(expected_tick_offset), \
+            f"Phase 2 cfg_tick_offset was overwritten by Phase 1: got {actual_tick_offset}, expected {expected_tick_offset}"
+
 
 # ===========================================================================
 # Walk-forward fold generation

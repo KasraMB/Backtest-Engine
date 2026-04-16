@@ -15,6 +15,16 @@ import numpy as np
 import pandas as pd
 
 from backtest.ml.features import ALL_FEATURE_NAMES
+from backtest.ml.configs import normalize_config, CONFIG_FEATURE_NAMES
+
+# Phase 2 and metadata cfg_ keys — must NOT be overwritten by Phase 1 injection.
+_PHASE2_CFG_KEYS: frozenset[str] = frozenset({
+    'cfg_cancel_pct_to_tp',
+    'cfg_tick_offset',
+    'cfg_order_expiry_bars',
+    'cfg_is_valid',
+    'cfg_base_metric',
+})
 
 
 class MLModel:
@@ -124,17 +134,6 @@ class MLModel:
         """
         if self._model is None:
             return False, 0, {}
-
-        from backtest.ml.configs import normalize_config, CONFIG_FEATURE_NAMES
-
-        # Phase 2 and metadata cfg_ keys — must NOT be overwritten by Phase 1 injection.
-        _PHASE2_CFG_KEYS: frozenset[str] = frozenset({
-            'cfg_cancel_pct_to_tp',
-            'cfg_tick_offset',
-            'cfg_order_expiry_bars',
-            'cfg_is_valid',
-            'cfg_base_metric',
-        })
 
         # Build Phase 1 cfg_ overrides (fixed for this trade, same across all Phase 2 candidates).
         phase1_cfg: dict[str, float] = {}
