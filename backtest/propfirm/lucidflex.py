@@ -108,6 +108,29 @@ FUNDED_RISK_PCT_OF_MLL= [0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1
 MICRO_POINT_VALUE = 2.0
 MINI_POINT_VALUE  = 20.0
 
+# Integer scheme codes for Numba JIT (no string comparison in kernel)
+_SCHEME_FIXED_DOLLAR = np.int32(0)
+_SCHEME_PCT_BALANCE  = np.int32(1)
+_SCHEME_FRAC_DD      = np.int32(2)
+_SCHEME_FLOOR_AWARE  = np.int32(3)
+_SCHEME_MAX_SIZE     = np.int32(4)
+_SCHEME_MARTINGALE   = np.int32(5)
+
+SCHEME_CODE: dict[str, int] = {
+    'fixed_dollar': 0, 'pct_balance': 1, 'frac_dd': 2,
+    'floor_aware': 3, 'max_size': 4, 'martingale': 5,
+}
+
+try:
+    from numba import njit, prange
+    _NUMBA_AVAILABLE = True
+except ImportError:
+    _NUMBA_AVAILABLE = False
+    def njit(*a, **kw):
+        return lambda f: f
+    def prange(n):
+        return range(n)
+
 
 # ---------------------------------------------------------------------------
 # Trade normalisation
@@ -231,6 +254,216 @@ def compute_target_risk_vec(
 
 
 # ---------------------------------------------------------------------------
+# Numba JIT eval kernel
+# ---------------------------------------------------------------------------
+
+@njit(parallel=True, cache=True, fastmath=True)
+def _eval_loop_nb(
+    pnl_pts:    np.ndarray,   # (n_pool,) float32
+    sl_dists:   np.ndarray,   # (n_pool,) float32
+    all_counts: np.ndarray,   # (n_sims, MAX_DAYS) int16
+    all_idx:    np.ndarray,   # (n_sims, MAX_DAYS, MAX_T) int32
+    regime_seq: np.ndarray,   # (n_sims, MAX_DAYS) int8
+    pnl_r0: np.ndarray, pnl_r1: np.ndarray, pnl_r2: np.ndarray,
+    sl_r0:  np.ndarray, sl_r1:  np.ndarray, sl_r2:  np.ndarray,
+    n_pool_r0: int, n_pool_r1: int, n_pool_r2: int,
+    starting_balance: float,
+    mll_amount:       float,
+    profit_target:    float,
+    max_micros:       int,
+    risk_pct:    float,
+    scheme_code: int,
+    point_value: float,
+    max_t:       int,
+):
+    n_sims   = all_counts.shape[0]
+    max_days = all_counts.shape[1]
+
+    passed_out  = np.zeros(n_sims, dtype=np.bool_)
+    balance_out = np.full(n_sims, np.float32(starting_balance))
+    days_out    = np.zeros(n_sims, dtype=np.int32)
+
+    base      = np.float32(risk_pct * mll_amount)
+    base_frac = np.float32(base / starting_balance)
+
+    for sim_i in prange(n_sims):
+        balance      = np.float32(starting_balance)
+        mll_level    = np.float32(starting_balance - mll_amount)
+        peak_eod     = np.float32(starting_balance)
+        total_profit = np.float32(0.0)
+        max_day_pnl  = np.float32(0.0)
+        n_prof_days  = np.int32(0)
+        alive        = True
+        passed       = False
+        last_won     = True
+        prev_risk    = base
+        days_elapsed = np.int32(0)
+
+        for day in range(max_days):
+            if not alive:
+                break
+
+            n_today = int(all_counts[sim_i, day])
+            if n_today == 0:
+                continue
+
+            # Select trade pool for today's regime
+            regime = int(regime_seq[sim_i, day])
+            if regime == 0:
+                pool_pnl = pnl_r0; pool_sl = sl_r0; n_pool = n_pool_r0
+            elif regime == 1:
+                pool_pnl = pnl_r1; pool_sl = sl_r1; n_pool = n_pool_r1
+            else:
+                pool_pnl = pnl_r2; pool_sl = sl_r2; n_pool = n_pool_r2
+            if n_pool == 0:
+                pool_pnl = pnl_pts; pool_sl = sl_dists; n_pool = len(pnl_pts)
+
+            # Target risk this day
+            remaining = max(np.float32(1.0), balance - mll_level)
+            if scheme_code == 0:
+                target = base
+            elif scheme_code == 1:
+                target = balance * base_frac
+            elif scheme_code == 2:
+                target = np.float32(remaining * risk_pct)
+            elif scheme_code == 3:
+                buf_ratio = remaining / np.float32(mll_amount)
+                scale = min(np.float32(2.0), max(np.float32(0.25), buf_ratio / np.float32(0.5)))
+                target = base * scale
+            elif scheme_code == 4:
+                target = np.float32(1e9)
+            else:  # martingale
+                doubled = min(prev_risk * np.float32(2.0), base * np.float32(4.0))
+                target  = base if last_won else doubled
+
+            # Process trades
+            day_pnl        = np.float32(0.0)
+            cum_pnl        = np.float32(0.0)
+            breached       = False
+            last_trade_pnl = np.float32(0.0)
+
+            for t in range(n_today):
+                raw_idx = all_idx[sim_i, day, t] % n_pool
+                pnl_t   = pool_pnl[raw_idx]
+                sl_t    = max(np.float32(0.25), pool_sl[raw_idx])
+                raw_c   = target / (sl_t * np.float32(point_value))
+                n_c     = max(1, min(max_micros, int(raw_c)))
+                dollar  = pnl_t * np.float32(n_c) * np.float32(point_value)
+                cum_pnl += dollar
+                day_pnl += dollar
+                last_trade_pnl = dollar
+                if balance + cum_pnl <= mll_level:
+                    breached = True
+                    break
+
+            last_won  = last_trade_pnl > np.float32(0.0)
+            prev_risk = target
+
+            if breached:
+                alive = False
+                continue
+
+            balance += day_pnl
+
+            new_peak = max(peak_eod, balance)
+            peak_eod = new_peak
+            new_mll  = peak_eod - np.float32(mll_amount)
+            if new_mll > mll_level:
+                mll_level = new_mll
+
+            if balance <= mll_level:
+                alive = False
+                continue
+
+            total_profit = balance - np.float32(starting_balance)
+            if day_pnl > np.float32(0.0):
+                n_prof_days += 1
+                if day_pnl > max_day_pnl:
+                    max_day_pnl = day_pnl
+
+            days_elapsed += 1
+
+            if not passed and total_profit >= np.float32(profit_target):
+                consistent = (
+                    (max_day_pnl <= total_profit * np.float32(0.5))
+                    and (n_prof_days >= 2)
+                )
+                if consistent:
+                    passed       = True
+                    days_elapsed = day + 1
+                    alive        = False
+
+        passed_out[sim_i]  = passed
+        balance_out[sim_i] = balance
+        days_out[sim_i]    = days_elapsed
+
+    return passed_out, balance_out, days_out
+
+
+# ---------------------------------------------------------------------------
+# Regime helpers
+# ---------------------------------------------------------------------------
+
+def _build_regime_arrays(
+    pnl_pts: np.ndarray,
+    sl_dists: np.ndarray,
+    regime_labels: Optional[np.ndarray],
+) -> tuple:
+    """Split pnl_pts/sl_dists by regime (0/1/2). If None, all pools are the full array."""
+    if regime_labels is None:
+        arr  = pnl_pts.astype(np.float32)
+        sl_a = sl_dists.astype(np.float32)
+        return arr, arr, arr, sl_a, sl_a, sl_a
+    pools, sl_pools = [], []
+    for r in (0, 1, 2):
+        mask = regime_labels == r
+        if mask.any():
+            pools.append(pnl_pts[mask].astype(np.float32))
+            sl_pools.append(sl_dists[mask].astype(np.float32))
+        else:
+            pools.append(pnl_pts.astype(np.float32))
+            sl_pools.append(sl_dists.astype(np.float32))
+    return (*pools, *sl_pools)
+
+
+def _build_regime_seq(
+    n_sims: int,
+    max_days: int,
+    transition_matrix: Optional[np.ndarray],
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Pre-generate regime sequence via Markov chain. Returns int8 (n_sims, max_days)."""
+    if transition_matrix is None:
+        return np.zeros((n_sims, max_days), dtype=np.int8)
+    n_states = transition_matrix.shape[0]
+    try:
+        vals, vecs = np.linalg.eig(transition_matrix.T)
+        idx  = np.argmin(np.abs(vals - 1.0))
+        stat = np.real(vecs[:, idx])
+        stat = np.abs(stat) / np.abs(stat).sum()
+    except Exception:
+        stat = np.ones(n_states) / n_states
+    seq = np.zeros((n_sims, max_days), dtype=np.int8)
+    for sim_i in range(n_sims):
+        regime = int(rng.choice(n_states, p=stat))
+        for day in range(max_days):
+            seq[sim_i, day] = np.int8(regime)
+            regime = int(rng.choice(n_states, p=transition_matrix[regime]))
+    return seq
+
+
+def _build_transition_matrix_from_labels(labels: np.ndarray, n_states: int = 3) -> np.ndarray:
+    mat = np.zeros((n_states, n_states))
+    for a, b in zip(labels[:-1], labels[1:]):
+        a, b = int(a), int(b)
+        if 0 <= a < n_states and 0 <= b < n_states:
+            mat[a, b] += 1
+    row_sums = mat.sum(axis=1, keepdims=True)
+    row_sums = np.where(row_sums == 0, 1, row_sums)
+    return mat / row_sums
+
+
+# ---------------------------------------------------------------------------
 # Vectorised eval simulation
 # ---------------------------------------------------------------------------
 
@@ -244,111 +477,46 @@ def simulate_eval_batch(
     rng: np.random.Generator,
     trades_per_day: float,
     n_sims: int,
-) -> tuple[np.ndarray, np.ndarray]:
+    regime_labels: Optional[np.ndarray] = None,
+    transition_matrix: Optional[np.ndarray] = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Run n_sims eval simulations in parallel.
-    Returns (passed: bool array (n_sims,), final_balance: float array (n_sims,)).
+    Run n_sims eval simulations in parallel using Numba JIT kernel.
+    Returns (passed: bool array (n_sims,), final_balance: float array (n_sims,),
+             days_elapsed: int array (n_sims,)).
     """
     n_pool   = len(pnl_pts)
     MAX_DAYS = 200
     MAX_T    = min(30, max(3, int(trades_per_day * 4)))  # cap per-day trades
 
-    balance      = np.full(n_sims, account.starting_balance, dtype=np.float32)
-    mll_level    = np.full(n_sims, account.starting_balance - account.mll_amount, dtype=np.float32)
-    peak_eod     = np.full(n_sims, account.starting_balance, dtype=np.float32)
-    total_profit = np.zeros(n_sims, dtype=np.float32)
-    max_day_pnl  = np.zeros(n_sims, dtype=np.float32)
-    n_prof_days  = np.zeros(n_sims, dtype=np.int32)
-    alive        = np.ones(n_sims, dtype=bool)
-    passed       = np.zeros(n_sims, dtype=bool)
-    last_won     = np.ones(n_sims, dtype=bool)
-    prev_risk    = np.full(n_sims, risk_pct * account.mll_amount, dtype=np.float32)
-    days_elapsed = np.zeros(n_sims, dtype=np.int32)  # trading days run so far
-
     # Pre-generate all random variates — eliminates per-iteration Python RNG overhead.
     all_counts = rng.poisson(trades_per_day, size=(n_sims, MAX_DAYS)).clip(0, MAX_T).astype(np.int16)
     all_idx    = rng.integers(0, n_pool, size=(n_sims, MAX_DAYS, MAX_T), dtype=np.int32)
 
-    for day in range(MAX_DAYS):
-        n_alive = alive.sum()
-        if n_alive == 0:
-            break
+    # Build regime-partitioned trade pools
+    pnl_r0, pnl_r1, pnl_r2, sl_r0, sl_r1, sl_r2 = _build_regime_arrays(
+        pnl_pts, sl_dists, regime_labels
+    )
 
-        n_today = all_counts[:, day].astype(np.int32)
-        max_t   = int(n_today.max())
-        if max_t == 0:
-            continue
+    # Build per-sim regime sequence (Markov chain)
+    regime_seq = _build_regime_seq(n_sims, MAX_DAYS, transition_matrix, rng)
 
-        # Sample trades: (n_sims, max_t)
-        idx     = all_idx[:, day, :max_t]
-        t_pnl   = pnl_pts[idx]    # (n_sims, max_t)
-        t_sl    = sl_dists[idx]   # (n_sims, max_t)
-
-        # Compute target risk per sim — (n_sims,) → broadcast to (n_sims, max_t)
-        target  = compute_target_risk_vec(
-            scheme, risk_pct, account, balance, mll_level, last_won, prev_risk
-        )
-        n_c     = resolve_contracts_vec(
-            target[:, None], t_sl, account.max_micros, sizing_mode
-        )                          # (n_sims, max_t)
-
-        dollar_pnl = t_pnl * n_c * (MICRO_POINT_VALUE if sizing_mode == "micros" else n_c)
-        # For micros always $2/pt — override
-        dollar_pnl = t_pnl * n_c * MICRO_POINT_VALUE
-
-        # Mask trades beyond each sim's n_today
-        trade_mask = np.arange(max_t)[None, :] < n_today[:, None]
-        dollar_pnl = np.where(trade_mask, dollar_pnl, 0.0)
-
-        # Intraday breach: check cumulative balance at each trade
-        cum = balance[:, None] + np.cumsum(dollar_pnl, axis=1)
-        intra_breach = alive & (cum <= mll_level[:, None]).any(axis=1)
-
-        day_pnl = dollar_pnl.sum(axis=1)
-
-        # Update last_won from last actual trade of the day
-        last_trade_mask = (np.arange(max_t)[None, :] == (n_today - 1).clip(0)[:, None])
-        last_trade_pnl  = (dollar_pnl * last_trade_mask).sum(axis=1)
-        last_won = np.where(alive, last_trade_pnl > 0, last_won)
-        prev_risk = np.where(alive, target, prev_risk)
-
-        # Apply day PnL to alive, non-breached sims
-        apply_mask = alive & ~intra_breach
-        balance    = np.where(apply_mask, balance + day_pnl, balance)
-        alive      = alive & ~intra_breach
-
-        # EOD MLL update
-        new_peak  = np.maximum(peak_eod, balance)
-        peak_eod  = np.where(alive, new_peak, peak_eod)
-        new_mll   = np.maximum(mll_level, peak_eod - account.mll_amount)
-        mll_level = np.where(alive, new_mll, mll_level)
-
-        # EOD breach
-        eod_breach = alive & (balance <= mll_level)
-        alive      = alive & ~eod_breach
-
-        # Daily profit tracking for consistency rule
-        total_profit = np.where(alive, balance - account.starting_balance, total_profit)
-        day_pnl_alive = np.where(alive, day_pnl, 0.0)
-        max_day_pnl   = np.maximum(max_day_pnl, day_pnl_alive)
-        n_prof_days  += (alive & (day_pnl > 0)).astype(np.int32)
-
-        # Track days elapsed per sim
-        days_elapsed += alive.astype(np.int32)
-
-        # Pass check: profit target hit AND consistency satisfied
-        hit_target = alive & (total_profit >= account.profit_target)
-        consistent = (
-            (max_day_pnl <= np.where(total_profit > 0, total_profit * 0.50, 1e9))
-            & (n_prof_days >= 2)
-        )
-        just_passed = hit_target & consistent & ~passed
-        # Record days at pass BEFORE updating passed (so ~passed is still True for these sims)
-        days_elapsed = np.where(just_passed, day + 1, days_elapsed)
-        passed       = passed | just_passed
-        alive        = alive & ~just_passed
-
-    return passed, balance, days_elapsed
+    passed, balance, days = _eval_loop_nb(
+        pnl_pts.astype(np.float32), sl_dists.astype(np.float32),
+        all_counts, all_idx, regime_seq,
+        pnl_r0, pnl_r1, pnl_r2,
+        sl_r0,  sl_r1,  sl_r2,
+        len(pnl_r0), len(pnl_r1), len(pnl_r2),
+        float(account.starting_balance),
+        float(account.mll_amount),
+        float(account.profit_target),
+        int(account.max_micros),
+        float(risk_pct),
+        int(SCHEME_CODE.get(scheme, 0)),
+        float(MICRO_POINT_VALUE),
+        int(MAX_T),
+    )
+    return passed, balance, days
 
 
 # ---------------------------------------------------------------------------
@@ -499,7 +667,8 @@ def _run_scheme_worker(args: tuple) -> tuple[str, dict]:
     Defined at module level so it can be pickled by ProcessPoolExecutor.
     """
     (scheme, pnl_pts, sl_dists, account, eval_risk_pcts, funded_risk_pcts,
-     sizing_mode, n_sims, seed, BS, trades_per_day) = args
+     sizing_mode, n_sims, seed, BS, trades_per_day,
+     regime_labels, transition_matrix) = args
 
     # Each worker gets its own RNG seeded deterministically per scheme
     scheme_seed = seed + hash(scheme) % 10_000
@@ -513,6 +682,8 @@ def _run_scheme_worker(args: tuple) -> tuple[str, dict]:
         passed, _, days_eval = simulate_eval_batch(
             pnl_pts, sl_dists, account, erp, scheme,
             sizing_mode, rng, trades_per_day, n_sims,
+            regime_labels=regime_labels,
+            transition_matrix=transition_matrix,
         )
         eval_cache[erp] = (passed, days_eval)
 
@@ -734,6 +905,7 @@ def run_propfirm_grid(
     schemes: list[str] = None,
     seed: int = 42,
     n_workers: int = None,
+    regime_labels: Optional[np.ndarray] = None,
 ) -> dict:
     """
     Sweep scheme × eval_risk_pct × funded_risk_pct.
@@ -760,6 +932,27 @@ def run_propfirm_grid(
     else:
         trades_per_day = 1.0
 
+    # ── Regime transition matrix ──────────────────────────────────────────────
+    transition_matrix = None
+    if regime_labels is not None and len(regime_labels) > 0:
+        transition_matrix = _build_transition_matrix_from_labels(regime_labels)
+
+    # ── Numba warmup ─────────────────────────────────────────────────────────
+    if _NUMBA_AVAILABLE:
+        _dummy = np.zeros(4, dtype=np.float32)
+        _dummy_sl = np.ones(4, dtype=np.float32)
+        _eval_loop_nb(
+            _dummy, _dummy_sl,
+            np.ones((2, 3), dtype=np.int16),
+            np.zeros((2, 3, 3), dtype=np.int32),
+            np.zeros((2, 3), dtype=np.int8),
+            _dummy, _dummy, _dummy,
+            _dummy_sl, _dummy_sl, _dummy_sl,
+            4, 4, 4,
+            25000.0, 1000.0, 1250.0, 20,
+            0.20, 0, 2.0, 3,
+        )
+
     BS = 500
 
     # ── Determine worker count ────────────────────────────────────────────────
@@ -776,7 +969,8 @@ def run_propfirm_grid(
     # ── Build worker args ─────────────────────────────────────────────────────
     worker_args = [
         (scheme, pnl_pts, sl_dists, account, eval_risk_pcts, funded_risk_pcts,
-         sizing_mode, n_sims, seed, BS, trades_per_day)
+         sizing_mode, n_sims, seed, BS, trades_per_day,
+         regime_labels, transition_matrix)
         for scheme in schemes
     ]
 
