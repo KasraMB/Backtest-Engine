@@ -236,3 +236,198 @@ class MLModel:
             for col in missing:
                 X[col] = 0
         return X[self._feature_names].astype(float)
+
+
+class EnsembleMLModel:
+    """
+    Ensemble of Model A (asymmetric-R XGBoost regressor) and
+    Model B (calibrated XGBoost classifier).
+
+    Inference score: score = pred_asymmetric_r × P(win)
+    Skips trade if score < threshold.
+    Drop-in replace for MLModel — same decide() interface.
+    """
+
+    def __init__(self, threshold: float = 0.0, loss_penalty: float = 1.5):
+        self.threshold    = threshold
+        self.loss_penalty = loss_penalty
+        self._model_a: Optional['MLModel'] = None
+        self._model_b = None
+        self._feature_names = ALL_FEATURE_NAMES
+
+    # ------------------------------------------------------------------
+    # Training
+    # ------------------------------------------------------------------
+
+    def fit(self, X: pd.DataFrame, y_r: pd.Series, y_bin: pd.Series) -> 'EnsembleMLModel':
+        """
+        Train both sub-models.
+
+        Parameters
+        ----------
+        X     : feature DataFrame with all ALL_FEATURE_NAMES columns
+        y_r   : R-multiple targets
+        y_bin : binary win/loss labels (1=win, 0=loss)
+        """
+        try:
+            from xgboost import XGBClassifier
+            from sklearn.calibration import CalibratedClassifierCV
+        except ImportError as e:
+            raise ImportError("xgboost and scikit-learn are required") from e
+
+        import warnings
+
+        # Model A: asymmetric-R regressor
+        y_asym = y_r.apply(lambda r: r if r > 0 else r * self.loss_penalty)
+        self._model_a = MLModel()
+        self._model_a.fit(X, y_asym)
+
+        # Model B: calibrated classifier
+        spw = float((y_bin == 0).sum()) / max(float((y_bin == 1).sum()), 1.0)
+        xgb_clf = XGBClassifier(
+            n_estimators=300,
+            max_depth=4,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            min_child_weight=10,
+            reg_alpha=0.1,
+            reg_lambda=1.0,
+            scale_pos_weight=spw,
+            random_state=42,
+            n_jobs=-1,
+            eval_metric='logloss',
+        )
+        self._model_b = CalibratedClassifierCV(xgb_clf, cv=3, method='isotonic')
+        X_arr = X[self._feature_names].values.astype(float)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self._model_b.fit(X_arr, y_bin.values)
+
+        return self
+
+    # ------------------------------------------------------------------
+    # Inference helpers
+    # ------------------------------------------------------------------
+
+    def _build_row(
+        self,
+        signal_features: dict,
+        phase2_params: Optional[dict] = None,
+        phase1_cfg: Optional[dict] = None,
+    ) -> dict:
+        row = {k: signal_features.get(k, 0) for k in self._feature_names}
+        if phase1_cfg:
+            for k, v in phase1_cfg.items():
+                if k in self._feature_names:
+                    row[k] = v
+        if phase2_params:
+            cfg_feat = normalize_config(phase2_params)
+            for k, v in cfg_feat.items():
+                if k in self._feature_names:
+                    row[k] = v
+        return row
+
+    def score(
+        self,
+        signal_features: dict,
+        phase2_params: Optional[dict] = None,
+        phase1_params: Optional[dict] = None,
+    ) -> float:
+        """Return ensemble score = pred_asymmetric_r × P(win) for a single row."""
+        phase1_cfg: dict = {}
+        if phase1_params is not None:
+            for k, v in normalize_config(phase1_params).items():
+                if k not in _PHASE2_CFG_KEYS:
+                    phase1_cfg[k] = v
+
+        row = self._build_row(signal_features, phase2_params, phase1_cfg)
+        X = pd.DataFrame([row])
+        pred_r = float(self._model_a.predict_r(X)[0])
+        X_arr  = X[self._feature_names].values.astype(float)
+        p_win  = float(self._model_b.predict_proba(X_arr)[0, 1])
+        return float(pred_r * p_win)
+
+    # ------------------------------------------------------------------
+    # Inference — decide()
+    # ------------------------------------------------------------------
+
+    def decide(
+        self,
+        signal_features: dict,
+        phase2_candidates: Optional[list] = None,
+        n_tp_candidates: int = 1,
+        phase1_params: Optional[dict] = None,
+    ) -> Tuple[bool, int, dict]:
+        """
+        Make a take/skip decision identical to MLModel.decide() interface.
+
+        Returns
+        -------
+        (skip, tp_idx, best_phase2_config)
+        """
+        if self._model_a is None or self._model_b is None:
+            return False, 0, {}
+
+        # Build Phase 1 cfg_ overrides
+        phase1_cfg: dict = {}
+        if phase1_params is not None:
+            for k, v in normalize_config(phase1_params).items():
+                if k not in _PHASE2_CFG_KEYS:
+                    phase1_cfg[k] = v
+
+        if phase2_candidates:
+            rows = []
+            for p2 in phase2_candidates:
+                rows.append(self._build_row(signal_features, p2, phase1_cfg))
+            X      = pd.DataFrame(rows)
+            preds_r = self._model_a.predict_r(X)
+            X_arr   = X[self._feature_names].values.astype(float)
+            p_wins  = self._model_b.predict_proba(X_arr)[:, 1]
+            scores  = preds_r * p_wins
+            best_i  = int(np.argmax(scores))
+            score   = float(scores[best_i])
+            best_p2 = phase2_candidates[best_i]
+            pred_r_single = float(preds_r[best_i])
+            best_sf = {**signal_features, **phase1_cfg, **normalize_config(best_p2)}
+        else:
+            row    = self._build_row(signal_features, None, phase1_cfg)
+            X      = pd.DataFrame([row])
+            pred_r_single = float(self._model_a.predict_r(X)[0])
+            X_arr  = X[self._feature_names].values.astype(float)
+            p_win  = float(self._model_b.predict_proba(X_arr)[0, 1])
+            score  = pred_r_single * p_win
+            best_p2 = {}
+            best_sf = {**signal_features, **phase1_cfg}
+
+        skip   = score < self.threshold
+        tp_idx = self._model_a._select_tp_idx(best_sf, n_tp_candidates, pred_r_single)
+
+        return skip, tp_idx, best_p2
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def save(self, path: 'str | Path') -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        state = {
+            'threshold':     self.threshold,
+            'loss_penalty':  self.loss_penalty,
+            'model_a':       self._model_a,
+            'model_b':       self._model_b,
+            'feature_names': self._feature_names,
+        }
+        with open(path, 'wb') as f:
+            pickle.dump(state, f)
+
+    @classmethod
+    def load(cls, path: 'str | Path') -> 'EnsembleMLModel':
+        with open(path, 'rb') as f:
+            state = pickle.load(f)
+        obj = cls(threshold=state['threshold'], loss_penalty=state['loss_penalty'])
+        obj._model_a       = state['model_a']
+        obj._model_b       = state['model_b']
+        obj._feature_names = state['feature_names']
+        return obj
