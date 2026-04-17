@@ -26,6 +26,16 @@ from backtest.ml.features import ALL_FEATURE_NAMES
 from backtest.ml.model import MLModel
 
 
+def _config_weights(df: pd.DataFrame) -> np.ndarray | None:
+    """Per-config inverse frequency weights so every config contributes equally to the loss."""
+    if 'config_hash' not in df.columns:
+        return None
+    counts = df['config_hash'].value_counts()
+    w = df['config_hash'].map(counts).values.astype(np.float32)
+    w = 1.0 / w
+    return w / w.mean()  # normalize: mean weight = 1 preserves loss scale
+
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -146,7 +156,7 @@ class WalkForwardTrainer:
             model = MLModel(xgb_params=cfg.xgb_params)
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore')
-                model.fit(X_train, y_train)
+                model.fit(X_train, y_train, sample_weight=_config_weights(df_train))
 
             pred_r = model.predict_r(X_test)
 
@@ -196,7 +206,7 @@ class WalkForwardTrainer:
         final_model = MLModel(xgb_params=cfg.xgb_params)
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
-            final_model.fit(X_all, y_all)
+            final_model.fit(X_all, y_all, sample_weight=_config_weights(df))
 
         pred_all = final_model.predict_r(X_all)
         final_thresh, _ = search_threshold(
@@ -294,7 +304,7 @@ class EnsembleWalkForwardTrainer:
             fold_model = MLModel(xgb_params=cfg.xgb_params)
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore')
-                fold_model.fit(X_train, y_asym)
+                fold_model.fit(X_train, y_asym, sample_weight=_config_weights(df_train))
 
             pred_r = fold_model.predict_r(X_test)
 
@@ -337,7 +347,7 @@ class EnsembleWalkForwardTrainer:
         ensemble_model = EnsembleMLModel(threshold=0.0, loss_penalty=LOSS_PENALTY)
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
-            ensemble_model.fit(X_all, y_r_all, y_bin_all)
+            ensemble_model.fit(X_all, y_r_all, y_bin_all, sample_weight=_config_weights(df))
 
         oos_actual = np.array(all_oos_actual)
         oos_taken  = oos_actual[np.array(all_oos_taken_mask, dtype=bool)]

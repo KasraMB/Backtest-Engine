@@ -75,7 +75,8 @@ class MLModel:
     # Training
     # ------------------------------------------------------------------
 
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> 'MLModel':
+    def fit(self, X: pd.DataFrame, y: pd.Series,
+            sample_weight: np.ndarray | None = None) -> 'MLModel':
         """
         Train on a feature DataFrame X and R-multiple target y.
         X must contain all columns in ALL_FEATURE_NAMES.
@@ -87,7 +88,7 @@ class MLModel:
 
         X_arr = self._prepare_X(X)
         self._model = XGBRegressor(**self._xgb_params)
-        self._model.fit(X_arr, y.values)
+        self._model.fit(X_arr, y.values, sample_weight=sample_weight)
         return self
 
     # ------------------------------------------------------------------
@@ -259,15 +260,17 @@ class EnsembleMLModel:
     # Training
     # ------------------------------------------------------------------
 
-    def fit(self, X: pd.DataFrame, y_r: pd.Series, y_bin: pd.Series) -> 'EnsembleMLModel':
+    def fit(self, X: pd.DataFrame, y_r: pd.Series, y_bin: pd.Series,
+            sample_weight: np.ndarray | None = None) -> 'EnsembleMLModel':
         """
         Train both sub-models.
 
         Parameters
         ----------
-        X     : feature DataFrame with all ALL_FEATURE_NAMES columns
-        y_r   : R-multiple targets
-        y_bin : binary win/loss labels (1=win, 0=loss)
+        X             : feature DataFrame with all ALL_FEATURE_NAMES columns
+        y_r           : R-multiple targets
+        y_bin         : binary win/loss labels (1=win, 0=loss)
+        sample_weight : optional per-sample weights (e.g. inverse config frequency)
         """
         try:
             from xgboost import XGBClassifier
@@ -280,7 +283,7 @@ class EnsembleMLModel:
         # Model A: asymmetric-R regressor
         y_asym = y_r.apply(lambda r: r if r > 0 else r * self.loss_penalty)
         self._model_a = MLModel()
-        self._model_a.fit(X, y_asym)
+        self._model_a.fit(X, y_asym, sample_weight=sample_weight)
 
         # Model B: calibrated classifier
         spw = float((y_bin == 0).sum()) / max(float((y_bin == 1).sum()), 1.0)
@@ -302,7 +305,7 @@ class EnsembleMLModel:
         X_arr = X[self._feature_names].values.astype(float)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            self._model_b.fit(X_arr, y_bin.values)
+            self._model_b.fit(X_arr, y_bin.values, sample_weight=sample_weight)
 
         return self
 
