@@ -37,17 +37,41 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
 
+import json
+
 import numpy as np
 import pandas as pd
 
-from backtest.ml.model import MLModel
+from backtest.ml.model import MLModel, EnsembleMLModel
 from backtest.ml.splits import filter_df, SPLITS
 from backtest.ml.features import ALL_FEATURE_NAMES
 from backtest.ml.evaluate import sortino_r, profit_factor_r, win_rate, expectancy_r, search_threshold
 from backtest.ml.ensemble import evaluate_ensemble, per_config_metrics
 
-DATASET_PATH = ROOT / "data" / "ml_dataset.parquet"
-MODEL_PATH   = ROOT / "models" / "ict_smc.pkl"
+DATASET_PATH        = ROOT / "data"   / "ml_dataset.parquet"
+MODEL_PATH          = ROOT / "models" / "ict_smc_ensemble.pkl"
+THRESHOLD_OPT_PATH  = ROOT / "models" / "threshold_opt.json"
+
+
+# ---------------------------------------------------------------------------
+# Score helper — works for both MLModel and EnsembleMLModel
+# ---------------------------------------------------------------------------
+
+def _compute_scores(model: MLModel | EnsembleMLModel, X: pd.DataFrame) -> np.ndarray:
+    if isinstance(model, EnsembleMLModel):
+        pred_r = model._model_a.predict_r(X)
+        p_win  = model._model_b.predict_proba(X.values.astype(float))[:, 1]
+        return pred_r * p_win
+    return model.predict_r(X)
+
+
+def _load_threshold_opt() -> float | None:
+    if THRESHOLD_OPT_PATH.exists():
+        with open(THRESHOLD_OPT_PATH) as f:
+            opt = json.load(f)
+        if opt:
+            return float(next(iter(opt.values()))['threshold'])
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +126,7 @@ def run_baseline(df_val: pd.DataFrame) -> None:
     print()
 
 
-def run_single(df_val: pd.DataFrame, model: MLModel,
+def run_single(df_val: pd.DataFrame, model: MLModel | EnsembleMLModel,
                config_indices: list[int] | None) -> None:
     if config_indices:
         if 'config_idx' not in df_val.columns:
@@ -113,7 +137,7 @@ def run_single(df_val: pd.DataFrame, model: MLModel,
 
     y     = df_val['r_multiple'].values
     X     = df_val[ALL_FEATURE_NAMES]
-    pred  = model.predict_r(X)
+    pred  = _compute_scores(model, X)
     mask  = pred >= model.threshold
     r_all = y
     r_ml  = y[mask]
@@ -240,13 +264,18 @@ def main() -> None:
         run_baseline(df_val)
         return
 
-    # Load model for single / ensemble modes
+    # Load ensemble model for single / ensemble modes
     if not MODEL_PATH.exists():
         print(f"ERROR: Model not found at {MODEL_PATH}. Run run_ml_train.py first.")
         return
-    model = MLModel.load(MODEL_PATH)
+    model = EnsembleMLModel.load(MODEL_PATH)
+    # Apply optimal threshold from threshold_opt.json if available
+    opt_thr = _load_threshold_opt()
+    if opt_thr is not None:
+        model.threshold = opt_thr
     print(f"Model:     {MODEL_PATH}")
-    print(f"Threshold: {model.threshold:.4f}\n")
+    print(f"Threshold: {model.threshold:.4f}"
+          f"  ({'threshold_opt.json' if opt_thr is not None else 'model default'})\n")
 
     if args.mode == 'single':
         run_single(df_val, model, config_indices)

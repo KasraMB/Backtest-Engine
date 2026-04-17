@@ -18,7 +18,10 @@ from backtest.runner.config import RunConfig
 from backtest.performance.engine import PerformanceEngine
 from backtest.performance.tearsheet import TearsheetRenderer
 from backtest.performance.trade_log import save_trade_log
-from backtest.ml.model import MLModel
+import json
+from pathlib import Path
+
+from backtest.ml.model import EnsembleMLModel
 from backtest.propfirm.lucidflex import LUCIDFLEX_ACCOUNTS, run_propfirm_grid
 from backtest.regime.hmm import fit_regimes
 from backtest.regime.analysis import run_regime_analysis
@@ -267,11 +270,14 @@ def run_one(label, date_from, date_to, out, full_data, loader, ml_model):
 if __name__ == "__main__":
     _t0 = time.perf_counter()
     full_data, loader = load_full_data()
-    ml_model = MLModel.load("models/ict_smc.pkl")
-    # Use the walk-forward threshold (unbiased — from OOS folds on train split only).
-    # The saved threshold (0.2771) was tuned on validation which causes leakage.
-    ml_model.threshold = -0.0772
-    print(f"ML model loaded  |  threshold (WF): {ml_model.threshold:.4f}\n")
+    ml_model = EnsembleMLModel.load("models/ict_smc_ensemble.pkl")
+    # Apply propfirm-EV-optimal threshold from run_ml_threshold_opt.py if available.
+    _thr_path = Path("models/threshold_opt.json")
+    if _thr_path.exists():
+        _opt = json.load(open(_thr_path))
+        if _opt:
+            ml_model.threshold = float(next(iter(_opt.values()))['threshold'])
+    print(f"Ensemble model loaded  |  threshold: {ml_model.threshold:.4f}\n")
 
     for run in RUNS:
         run_one(
