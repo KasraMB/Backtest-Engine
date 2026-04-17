@@ -84,17 +84,19 @@ def _build_threshold_arrays(
 
 def _best_result_for_account(
     results_per_thr: list[dict],
-) -> tuple[int, str, float, float]:
+) -> tuple[int, str, float, float, float, float | None]:
     """
     Scan all (threshold × scheme × erp × frp) cells and return the combo with
     the highest ev_per_day.
 
-    Returns (best_thr_idx, best_scheme, best_erp, best_ev_per_day).
+    Returns (best_thr_idx, best_scheme, best_erp, best_ev_per_day, total_cost, roi).
     """
-    best_ev  = -np.inf
-    best_idx = 0
+    best_ev     = -np.inf
+    best_idx    = 0
     best_scheme = ''
     best_erp    = 0.0
+    best_cost   = 0.0
+    best_roi    = None
 
     for thr_i, thr_result in enumerate(results_per_thr):
         for scheme, erp_dict in thr_result.items():
@@ -112,8 +114,10 @@ def _best_result_for_account(
                         best_idx    = thr_i
                         best_scheme = scheme
                         best_erp    = float(erp_key)
+                        best_cost   = float(cell.get('total_cost') or 0.0)
+                        best_roi    = cell.get('roi')
 
-    return best_idx, best_scheme, best_erp, best_ev
+    return best_idx, best_scheme, best_erp, best_ev, best_cost, best_roi
 
 
 def main() -> None:
@@ -180,25 +184,31 @@ def main() -> None:
         )
 
         elapsed = _t.perf_counter() - t0
-        best_idx, best_scheme, best_erp, best_ev = _best_result_for_account(results_per_thr)
+        best_idx, best_scheme, best_erp, best_ev, best_cost, best_roi = (
+            _best_result_for_account(results_per_thr)
+        )
         best_thr = float(THRESHOLD_CANDIDATES[best_idx])
+        roi_str  = f"{best_roi:.2%}" if best_roi is not None else "n/a"
 
         print(f"{elapsed:.1f}s  ->  threshold={best_thr:.3f}  "
               f"geometry={best_scheme}  risk_pct={best_erp:.2f}  "
-              f"ev/day={best_ev:.4f}", flush=True)
+              f"ev/day={best_ev:.4f}  cost=${best_cost:.0f}  roi={roi_str}", flush=True)
 
         optimal[acc_name] = {
-            'threshold':  best_thr,
-            'geometry':   best_scheme,
-            'risk_pct':   best_erp,
-            'ev_per_day': round(best_ev, 4) if best_ev > -np.inf else 0.0,
+            'threshold':   best_thr,
+            'geometry':    best_scheme,
+            'risk_pct':    best_erp,
+            'ev_per_day':  round(best_ev, 4) if best_ev > -np.inf else 0.0,
+            'total_cost':  round(best_cost, 2),
+            'roi':         round(best_roi, 4) if best_roi is not None else None,
         }
 
     print("\n=== Optimal Parameters ===")
     for acc_name, opt in optimal.items():
+        roi_str = f"{opt['roi']:.2%}" if opt['roi'] is not None else "n/a"
         print(f"  {acc_name:<6}  threshold={opt['threshold']:>6.3f}  "
               f"geometry={opt['geometry']:<14}  risk_pct={opt['risk_pct']:.2f}  "
-              f"ev/day={opt['ev_per_day']:.4f}")
+              f"ev/day={opt['ev_per_day']:.4f}  cost=${opt['total_cost']:.0f}  roi={roi_str}")
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(OUTPUT_PATH, 'w') as f:
