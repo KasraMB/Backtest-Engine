@@ -443,12 +443,19 @@ def _build_regime_seq(
         stat = np.abs(stat) / np.abs(stat).sum()
     except Exception:
         stat = np.ones(n_states) / n_states
+    # Vectorised: sample initial state for all sims, then step day-by-day using
+    # cumulative row sums and a pre-drawn uniform matrix. O(n_sims * max_days)
+    # numpy ops instead of a pure-Python double loop.
     seq = np.zeros((n_sims, max_days), dtype=np.int8)
-    for sim_i in range(n_sims):
-        regime = int(rng.choice(n_states, p=stat))
-        for day in range(max_days):
-            seq[sim_i, day] = np.int8(regime)
-            regime = int(rng.choice(n_states, p=transition_matrix[regime]))
+    seq[:, 0] = rng.choice(n_states, size=n_sims, p=stat).astype(np.int8)
+    cum_tm  = np.cumsum(transition_matrix, axis=1)          # (n_states, n_states)
+    uniform = rng.uniform(size=(n_sims, max_days - 1))      # (n_sims, max_days-1)
+    for day in range(max_days - 1):
+        current    = seq[:, day].astype(np.intp)            # (n_sims,)
+        thresholds = cum_tm[current, :-1]                   # (n_sims, n_states-1)
+        seq[:, day + 1] = np.sum(
+            uniform[:, day:day + 1] >= thresholds, axis=1
+        ).astype(np.int8)
     return seq
 
 
@@ -906,6 +913,9 @@ def run_propfirm_grid(
     seed: int = 42,
     n_workers: int = None,
     regime_labels: Optional[np.ndarray] = None,
+    _pnl_pts: Optional[np.ndarray] = None,
+    _sl_dists: Optional[np.ndarray] = None,
+    _trades_per_day: Optional[float] = None,
 ) -> dict:
     """
     Sweep scheme × eval_risk_pct × funded_risk_pct.
@@ -915,6 +925,15 @@ def run_propfirm_grid(
 
     n_workers: number of parallel workers. Default = min(n_schemes, cpu_count).
                Set to 1 to disable parallelism (useful for debugging).
+
+    Override parameters (bypass trade extraction):
+        _pnl_pts        : (n,) float32 array of signed P&L in points
+        _sl_dists       : (n,) float32 array of SL distances in points
+        _trades_per_day : pre-computed trades-per-day rate
+
+    When _pnl_pts and _sl_dists are provided, ``trades`` is ignored and
+    extraction is skipped entirely.  _trades_per_day overrides the
+    auto-estimated rate when provided.
     """
     if eval_risk_pcts is None:
         eval_risk_pcts = EVAL_RISK_PCT_OF_MLL
@@ -923,11 +942,21 @@ def run_propfirm_grid(
     if schemes is None:
         schemes = RISK_GEOMETRIES
 
-    pnl_pts, sl_dists = extract_normalised_trades(trades)
-    if len(pnl_pts) == 0:
-        raise ValueError("No trades to simulate")
+    # ── Trade data source ─────────────────────────────────────────────────────
+    if _pnl_pts is not None and _sl_dists is not None:
+        pnl_pts  = np.asarray(_pnl_pts,  dtype=np.float64)
+        sl_dists = np.asarray(_sl_dists, dtype=np.float64)
+        if len(pnl_pts) == 0:
+            raise ValueError("No trades to simulate (_pnl_pts is empty)")
+    else:
+        pnl_pts, sl_dists = extract_normalised_trades(trades)
+        if len(pnl_pts) == 0:
+            raise ValueError("No trades to simulate")
 
-    if hasattr(trades[0], "entry_bar"):
+    # ── trades_per_day ────────────────────────────────────────────────────────
+    if _trades_per_day is not None:
+        trades_per_day = float(_trades_per_day)
+    elif trades is not None and len(trades) > 0 and hasattr(trades[0], "entry_bar"):
         trades_per_day = max(0.5, len(trades) / max(1, _estimate_trading_days(trades)))
     else:
         trades_per_day = 1.0
