@@ -264,6 +264,25 @@ def main() -> None:
     print(f"Ensemble model saved -> {ENSEMBLE_MODEL_PATH}")
     print("Threshold = 0.0 (run run_ml_threshold_opt.py to find optimal threshold)")
 
+    # Feature importance breakdown — shows how much the model relies on config
+    # features (cfg_*) vs genuine trade-level signal. >50% cfg is a red flag.
+    try:
+        scores = ens_result.ensemble_model._model_a._model.get_booster().get_score(
+            importance_type='gain')
+        total     = sum(scores.values()) or 1.0
+        cfg_total = sum(v for k, v in scores.items() if k.startswith('cfg_'))
+        print(f"\nFeature importance (gain) — cfg_* vs trade-level:")
+        print(f"  cfg_* features : {cfg_total/total:>6.1%}"
+              + ("  *** HIGH — model may be learning param-region patterns" if cfg_total/total > 0.5 else ""))
+        print(f"  trade features : {(total - cfg_total)/total:>6.1%}")
+        top10 = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:10]
+        print("  Top-10 features:")
+        for feat, score in top10:
+            tag = "[cfg]" if feat.startswith("cfg_") else "     "
+            print(f"    {tag} {feat:<42} {score/total:.2%}")
+    except Exception:
+        pass
+
 
 if __name__ == "__main__":
     import time as _time
