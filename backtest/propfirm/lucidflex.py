@@ -401,6 +401,286 @@ def _eval_loop_nb(
 
 
 # ---------------------------------------------------------------------------
+# Multi-threshold Numba eval kernel
+# ---------------------------------------------------------------------------
+
+@njit(parallel=True, cache=True, fastmath=True)
+def _eval_loop_nb_multi(
+    pnl_2d:       np.ndarray,   # (n_thr, max_pool) float32
+    sl_2d:        np.ndarray,   # (n_thr, max_pool) float32
+    pool_sizes:   np.ndarray,   # (n_thr,) int32  — valid length per threshold
+    pnl_r0_2d: np.ndarray, pnl_r1_2d: np.ndarray, pnl_r2_2d: np.ndarray,
+    sl_r0_2d:  np.ndarray, sl_r1_2d:  np.ndarray, sl_r2_2d:  np.ndarray,
+    pool_r_sizes: np.ndarray,   # (n_thr, 3) int32  — valid regime-pool lengths
+    all_counts:   np.ndarray,   # (n_thr, n_sims, MAX_DAYS) int16
+    all_idx:      np.ndarray,   # (n_sims, MAX_DAYS, MAX_T) int32 — shared across thresholds
+    regime_seq:   np.ndarray,   # (n_sims, MAX_DAYS) int8    — shared
+    starting_balance: float,
+    mll_amount:       float,
+    profit_target:    float,
+    max_micros:       int,
+    risk_pct:         float,
+    scheme_code:      int,
+    point_value:      float,
+    max_t:            int,
+):
+    n_thr    = pnl_2d.shape[0]
+    n_sims   = all_counts.shape[1]
+    max_days = all_counts.shape[2]
+
+    passed_out  = np.zeros((n_thr, n_sims), dtype=np.bool_)
+    balance_out = np.full((n_thr, n_sims), np.float32(starting_balance))
+    days_out    = np.zeros((n_thr, n_sims), dtype=np.int32)
+
+    base      = np.float32(risk_pct * mll_amount)
+    base_frac = np.float32(base / starting_balance)
+
+    for total_i in prange(n_thr * n_sims):
+        thr_i = total_i // n_sims
+        sim_i = total_i % n_sims
+
+        n_pool = int(pool_sizes[thr_i])
+
+        balance      = np.float32(starting_balance)
+        mll_level    = np.float32(starting_balance - mll_amount)
+        peak_eod     = np.float32(starting_balance)
+        total_profit = np.float32(0.0)
+        max_day_pnl  = np.float32(0.0)
+        n_prof_days  = np.int32(0)
+        alive        = True
+        passed       = False
+        last_won     = True
+        prev_risk    = base
+        days_elapsed = np.int32(0)
+
+        for day in range(max_days):
+            if not alive:
+                break
+
+            n_today = int(all_counts[thr_i, sim_i, day])
+            if n_today == 0:
+                continue
+
+            regime = int(regime_seq[sim_i, day])
+            if regime == 0:
+                pool_pnl = pnl_r0_2d[thr_i]; pool_sl = sl_r0_2d[thr_i]
+                n_pool_r = int(pool_r_sizes[thr_i, 0])
+            elif regime == 1:
+                pool_pnl = pnl_r1_2d[thr_i]; pool_sl = sl_r1_2d[thr_i]
+                n_pool_r = int(pool_r_sizes[thr_i, 1])
+            else:
+                pool_pnl = pnl_r2_2d[thr_i]; pool_sl = sl_r2_2d[thr_i]
+                n_pool_r = int(pool_r_sizes[thr_i, 2])
+            if n_pool_r == 0:
+                pool_pnl = pnl_2d[thr_i]; pool_sl = sl_2d[thr_i]; n_pool_r = n_pool
+
+            remaining = max(np.float32(1.0), balance - mll_level)
+            if scheme_code == 0:
+                target = base
+            elif scheme_code == 1:
+                target = balance * base_frac
+            elif scheme_code == 2:
+                target = np.float32(remaining * risk_pct)
+            elif scheme_code == 3:
+                buf_ratio = remaining / np.float32(mll_amount)
+                scale = min(np.float32(2.0), max(np.float32(0.25), buf_ratio / np.float32(0.5)))
+                target = base * scale
+            elif scheme_code == 4:
+                target = np.float32(1e9)
+            else:
+                doubled = min(prev_risk * np.float32(2.0), base * np.float32(4.0))
+                target  = base if last_won else doubled
+
+            day_pnl = np.float32(0.0); cum_pnl = np.float32(0.0)
+            breached = False; last_trade_pnl = np.float32(0.0)
+
+            for t in range(n_today):
+                raw_idx = all_idx[sim_i, day, t] % n_pool_r
+                pnl_t   = pool_pnl[raw_idx]
+                sl_t    = max(np.float32(0.25), pool_sl[raw_idx])
+                raw_c   = target / (sl_t * np.float32(point_value))
+                n_c     = max(1, min(max_micros, int(raw_c)))
+                dollar  = pnl_t * np.float32(n_c) * np.float32(point_value)
+                cum_pnl += dollar; day_pnl += dollar; last_trade_pnl = dollar
+                if balance + cum_pnl <= mll_level:
+                    breached = True; break
+
+            last_won = last_trade_pnl > np.float32(0.0)
+            prev_risk = target
+
+            if breached:
+                alive = False; continue
+
+            balance += day_pnl
+            new_peak = max(peak_eod, balance); peak_eod = new_peak
+            new_mll  = peak_eod - np.float32(mll_amount)
+            if new_mll > mll_level:
+                mll_level = new_mll
+            if balance <= mll_level:
+                alive = False; continue
+
+            total_profit = balance - np.float32(starting_balance)
+            if day_pnl > np.float32(0.0):
+                n_prof_days += 1
+                if day_pnl > max_day_pnl:
+                    max_day_pnl = day_pnl
+            days_elapsed += 1
+
+            if not passed and total_profit >= np.float32(profit_target):
+                if (max_day_pnl <= total_profit * np.float32(0.5)) and (n_prof_days >= 2):
+                    passed = True; days_elapsed = day + 1; alive = False
+
+        passed_out[thr_i, sim_i]  = passed
+        balance_out[thr_i, sim_i] = balance
+        days_out[thr_i, sim_i]    = days_elapsed
+
+    return passed_out, balance_out, days_out
+
+
+# ---------------------------------------------------------------------------
+# Multi-threshold Numba funded kernel
+# ---------------------------------------------------------------------------
+
+@njit(parallel=True, cache=True, fastmath=True)
+def _funded_loop_nb_multi(
+    pnl_2d:       np.ndarray,   # (n_thr, max_pool) float32
+    sl_2d:        np.ndarray,   # (n_thr, max_pool) float32
+    pool_sizes:   np.ndarray,   # (n_thr,) int32
+    all_counts:   np.ndarray,   # (n_thr, n_sims, MAX_DAYS_F) int16
+    all_idx:      np.ndarray,   # (n_sims, MAX_DAYS_F, MAX_T) int32 — shared
+    starting_balance: float,
+    mll_amount:       float,
+    max_micros:       int,
+    risk_pct:         float,
+    scheme_code:      int,
+    point_value:      float,
+    max_t:            int,
+    max_pay:          int,
+    payout_cap:       float,
+    split:            float,
+):
+    n_thr    = pnl_2d.shape[0]
+    n_sims   = all_counts.shape[1]
+    MAX_DAYS = all_counts.shape[2]
+
+    total_w_out        = np.zeros((n_thr, n_sims), dtype=np.float32)
+    days_to_w_out      = np.full((n_thr, n_sims), np.nan)
+    n_payouts_out      = np.zeros((n_thr, n_sims), dtype=np.int32)
+    payout_days_out    = np.full((n_thr, n_sims, max_pay), np.nan)
+    payout_amounts_out = np.zeros((n_thr, n_sims, max_pay), dtype=np.float64)
+    funded_days_out    = np.zeros((n_thr, n_sims), dtype=np.float64)
+
+    base      = np.float32(risk_pct * mll_amount)
+    base_frac = np.float32(base / starting_balance)
+    start_mll = np.float32(starting_balance - mll_amount)
+
+    for total_i in prange(n_thr * n_sims):
+        thr_i = total_i // n_sims
+        sim_i = total_i % n_sims
+
+        n_pool    = int(pool_sizes[thr_i])
+        pool_pnl  = pnl_2d[thr_i]
+        pool_sl   = sl_2d[thr_i]
+
+        balance    = np.float32(starting_balance)
+        mll_level  = start_mll
+        peak_eod   = np.float32(starting_balance)
+        mll_locked = False
+        alive      = True
+        n_payouts  = np.int32(0)
+        total_w    = np.float32(0.0)
+        prof_days  = np.int32(0)
+        last_won   = True
+        prev_risk  = base
+
+        for day in range(MAX_DAYS):
+            if not alive:
+                break
+
+            funded_days_out[thr_i, sim_i] = np.float64(day + 1)
+
+            n_today     = int(all_counts[thr_i, sim_i, day])
+            n_today_cap = min(n_today, max_t)
+
+            remaining = max(np.float32(1.0), balance - mll_level)
+            if scheme_code == 0:
+                target = base
+            elif scheme_code == 1:
+                target = balance * base_frac
+            elif scheme_code == 2:
+                target = np.float32(remaining * risk_pct)
+            elif scheme_code == 3:
+                buf_ratio = remaining / np.float32(mll_amount)
+                scale = min(np.float32(2.0), max(np.float32(0.25), buf_ratio / np.float32(0.5)))
+                target = base * scale
+            elif scheme_code == 4:
+                target = np.float32(1e9)
+            else:
+                doubled = min(prev_risk * np.float32(2.0), base * np.float32(4.0))
+                target  = base if last_won else doubled
+
+            day_pnl = np.float32(0.0); cum_pnl = np.float32(0.0)
+            breached = False; last_trade_pnl = np.float32(0.0)
+
+            for t in range(n_today_cap):
+                raw_idx = all_idx[sim_i, day, t] % n_pool
+                pnl_t   = pool_pnl[raw_idx]
+                sl_t    = max(np.float32(0.25), pool_sl[raw_idx])
+                raw_c   = target / (sl_t * np.float32(point_value))
+                n_c     = max(1, min(max_micros, int(raw_c)))
+                dollar  = pnl_t * np.float32(n_c) * np.float32(point_value)
+                cum_pnl += dollar; day_pnl += dollar; last_trade_pnl = dollar
+                if balance + cum_pnl <= mll_level:
+                    breached = True; break
+
+            if n_today_cap > 0:
+                last_won  = last_trade_pnl > np.float32(0.0)
+                prev_risk = target
+
+            if breached:
+                alive = False; continue
+
+            balance += day_pnl
+            new_peak = max(peak_eod, balance); peak_eod = new_peak
+
+            if not mll_locked and balance >= np.float32(starting_balance):
+                mll_locked = True
+            if mll_locked:
+                mll_level = np.float32(starting_balance - 100.0)
+            else:
+                new_mll = peak_eod - np.float32(mll_amount)
+                if new_mll > mll_level:
+                    mll_level = new_mll
+
+            if balance <= mll_level:
+                alive = False; continue
+
+            if day_pnl > np.float32(0.0):
+                prof_days += 1
+
+            if prof_days >= 5 and n_payouts < max_pay:
+                profits = max(np.float32(0.0), balance - np.float32(starting_balance))
+                gross   = min(profits * np.float32(0.5), np.float32(payout_cap))
+                if gross >= np.float32(500.0):
+                    net = gross * np.float32(split)
+                    payout_days_out[thr_i, sim_i, n_payouts]    = np.float64(day + 1)
+                    payout_amounts_out[thr_i, sim_i, n_payouts] = np.float64(net)
+                    if n_payouts == 0:
+                        days_to_w_out[thr_i, sim_i] = np.float64(day + 1)
+                    balance   -= gross
+                    total_w   += net
+                    n_payouts  = n_payouts + 1
+                    prof_days  = 0
+                    if n_payouts >= max_pay:
+                        alive = False
+
+        total_w_out[thr_i, sim_i]   = total_w
+        n_payouts_out[thr_i, sim_i] = n_payouts
+
+    return total_w_out, days_to_w_out, n_payouts_out, payout_days_out, payout_amounts_out, funded_days_out
+
+
+# ---------------------------------------------------------------------------
 # Regime helpers
 # ---------------------------------------------------------------------------
 
@@ -1020,6 +1300,376 @@ def run_propfirm_grid(
 
     _add_stability_scores_3d(results, eval_risk_pcts, funded_risk_pcts, schemes)
     return results
+
+
+# ---------------------------------------------------------------------------
+# Multi-threshold sweep — helpers
+# ---------------------------------------------------------------------------
+
+def _pad_pools_2d(arrays: list[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Stack a list of 1D float32 arrays into a padded (n, max_len) matrix.
+    Returns (padded_2d, sizes) where sizes[i] = len(arrays[i]).
+    Padding value is 0.0 — never accessed because the kernel uses % sizes[i].
+    """
+    sizes = np.array([len(a) for a in arrays], dtype=np.int32)
+    max_len = int(sizes.max()) if len(sizes) > 0 else 1
+    out = np.zeros((len(arrays), max(max_len, 1)), dtype=np.float32)
+    for i, a in enumerate(arrays):
+        out[i, :len(a)] = a
+    return out, sizes
+
+
+def _build_multi_counts(
+    trades_per_day_arr: list[float],
+    n_sims: int,
+    max_days: int,
+    max_t: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Pre-generate per-threshold Poisson trade counts. Shape: (n_thr, n_sims, max_days)."""
+    n_thr = len(trades_per_day_arr)
+    out   = np.empty((n_thr, n_sims, max_days), dtype=np.int16)
+    for i, tpd in enumerate(trades_per_day_arr):
+        out[i] = rng.poisson(tpd, size=(n_sims, max_days)).clip(0, max_t).astype(np.int16)
+    return out
+
+
+def simulate_eval_batch_multi(
+    pnl_list:       list[np.ndarray],
+    sl_list:        list[np.ndarray],
+    tpd_list:       list[float],
+    account:        LucidFlexAccount,
+    risk_pct:       float,
+    scheme:         str,
+    rng:            np.random.Generator,
+    n_sims:         int,
+    regime_labels_list: list[Optional[np.ndarray]],
+    transition_matrix:  Optional[np.ndarray],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Run eval simulation for all thresholds simultaneously.
+    Returns (passed, balance, days) each shape (n_thr, n_sims).
+    """
+    n_thr   = len(pnl_list)
+    MAX_T   = min(30, max(3, int(max(tpd_list) * 4))) if tpd_list else 3
+    MAX_DAYS = 200
+
+    # Padded main pools
+    pnl_2d, pool_sizes = _pad_pools_2d(pnl_list)
+    sl_2d,  _          = _pad_pools_2d(sl_list)
+
+    # Padded regime-split pools per threshold
+    r0_pnl_list, r1_pnl_list, r2_pnl_list = [], [], []
+    r0_sl_list,  r1_sl_list,  r2_sl_list  = [], [], []
+    pool_r_sizes = np.zeros((n_thr, 3), dtype=np.int32)
+    for i, (pnl, sl, rl) in enumerate(zip(pnl_list, sl_list, regime_labels_list)):
+        p0, p1, p2, s0, s1, s2 = _build_regime_arrays(pnl, sl, rl)
+        r0_pnl_list.append(p0); r1_pnl_list.append(p1); r2_pnl_list.append(p2)
+        r0_sl_list.append(s0);  r1_sl_list.append(s1);  r2_sl_list.append(s2)
+        pool_r_sizes[i, 0] = len(p0)
+        pool_r_sizes[i, 1] = len(p1)
+        pool_r_sizes[i, 2] = len(p2)
+    pnl_r0_2d, _ = _pad_pools_2d(r0_pnl_list)
+    pnl_r1_2d, _ = _pad_pools_2d(r1_pnl_list)
+    pnl_r2_2d, _ = _pad_pools_2d(r2_pnl_list)
+    sl_r0_2d,  _ = _pad_pools_2d(r0_sl_list)
+    sl_r1_2d,  _ = _pad_pools_2d(r1_sl_list)
+    sl_r2_2d,  _ = _pad_pools_2d(r2_sl_list)
+
+    # Shared random draws
+    all_counts = _build_multi_counts(tpd_list, n_sims, MAX_DAYS, MAX_T, rng)
+    max_pool   = int(pool_sizes.max())
+    all_idx    = rng.integers(0, max(max_pool, 1), size=(n_sims, MAX_DAYS, MAX_T),
+                              dtype=np.int32)
+    regime_seq = _build_regime_seq(n_sims, MAX_DAYS, transition_matrix, rng)
+
+    passed, balance, days = _eval_loop_nb_multi(
+        pnl_2d, sl_2d, pool_sizes,
+        pnl_r0_2d, pnl_r1_2d, pnl_r2_2d,
+        sl_r0_2d,  sl_r1_2d,  sl_r2_2d,
+        pool_r_sizes,
+        all_counts, all_idx, regime_seq,
+        float(account.starting_balance), float(account.mll_amount),
+        float(account.profit_target), int(account.max_micros),
+        float(risk_pct), int(SCHEME_CODE.get(scheme, 0)),
+        float(MICRO_POINT_VALUE), int(MAX_T),
+    )
+    return passed, balance, days
+
+
+def simulate_funded_batch_multi(
+    pnl_list:   list[np.ndarray],
+    sl_list:    list[np.ndarray],
+    tpd_list:   list[float],
+    account:    LucidFlexAccount,
+    risk_pct:   float,
+    scheme:     str,
+    rng:        np.random.Generator,
+    n_sims:     int,
+) -> tuple:
+    """
+    Run funded simulation for all thresholds simultaneously.
+    Returns (total_w, days_to_w, n_payouts, payout_days, payout_amounts, funded_days)
+    each shape (n_thr, n_sims) except payout_days/amounts which are (n_thr, n_sims, 6).
+    """
+    MAX_T    = min(30, max(3, int(max(tpd_list) * 4))) if tpd_list else 3
+    MAX_DAYS = 500
+
+    pnl_2d, pool_sizes = _pad_pools_2d(pnl_list)
+    sl_2d,  _          = _pad_pools_2d(sl_list)
+
+    all_counts = _build_multi_counts(tpd_list, n_sims, MAX_DAYS, MAX_T, rng)
+    max_pool   = int(pool_sizes.max())
+    all_idx    = rng.integers(0, max(max_pool, 1), size=(n_sims, MAX_DAYS, MAX_T),
+                              dtype=np.int32)
+
+    return _funded_loop_nb_multi(
+        pnl_2d, sl_2d, pool_sizes,
+        all_counts, all_idx,
+        float(account.starting_balance), float(account.mll_amount),
+        int(account.max_micros), float(risk_pct),
+        int(SCHEME_CODE.get(scheme, 0)), float(MICRO_POINT_VALUE),
+        int(MAX_T), int(account.max_payouts),
+        float(account.payout_cap), float(account.split),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Propfirm grid — threshold sweep
+# ---------------------------------------------------------------------------
+
+def run_propfirm_grid_threshold_sweep(
+    pnl_list:       list[np.ndarray],
+    sl_list:        list[np.ndarray],
+    tpd_list:       list[float],
+    regime_labels_list: list[Optional[np.ndarray]],
+    account:        LucidFlexAccount,
+    n_sims:         int = 2_000,
+    eval_risk_pcts: list[float] = None,
+    funded_risk_pcts: list[float] = None,
+    schemes:        list[str] = None,
+    seed:           int = 42,
+    n_workers:      int = None,
+) -> list[dict]:
+    """
+    Run the full propfirm grid for all thresholds simultaneously.
+
+    pnl_list[i], sl_list[i], tpd_list[i], regime_labels_list[i] are the trade arrays
+    for threshold candidate i.
+
+    Returns a list of result dicts (one per threshold), each with the same structure
+    as run_propfirm_grid — {scheme: {erp: {frp: cell_dict}}}.
+
+    Uses multi-threshold Numba kernels so all thresholds are evaluated in a single
+    parallel kernel launch per (scheme, risk_pct) combination instead of N_thresholds
+    separate calls.
+    """
+    import os
+    from concurrent.futures import ThreadPoolExecutor
+
+    if eval_risk_pcts  is None: eval_risk_pcts  = EVAL_RISK_PCT_OF_MLL
+    if funded_risk_pcts is None: funded_risk_pcts = FUNDED_RISK_PCT_OF_MLL
+    if schemes         is None: schemes         = RISK_GEOMETRIES
+
+    n_thr = len(pnl_list)
+    BS    = 500
+
+    # ── Numba warmup ─────────────────────────────────────────────────────────
+    if _NUMBA_AVAILABLE:
+        _d  = np.zeros((2, 4), dtype=np.float32)
+        _ds = np.ones((2, 4),  dtype=np.float32)
+        _sz = np.array([4, 4], dtype=np.int32)
+        _rs = np.zeros((2, 3), dtype=np.int32)
+        _rs[:] = 4
+        _ac = np.ones((2, 2, 3), dtype=np.int16)
+        _ai = np.zeros((2, 3, 3), dtype=np.int32)
+        _rseq = np.zeros((2, 3), dtype=np.int8)
+        _eval_loop_nb_multi(
+            _d, _ds, _sz, _d, _d, _d, _ds, _ds, _ds, _rs,
+            _ac, _ai, _rseq,
+            25000.0, 1000.0, 1250.0, 20, 0.20, 0, 2.0, 3,
+        )
+        _fac = np.ones((2, 2, 5), dtype=np.int16)
+        _fai = np.zeros((2, 5, 3), dtype=np.int32)
+        _funded_loop_nb_multi(
+            _d, _ds, _sz, _fac, _fai,
+            25000.0, 1000.0, 20, 0.20, 0, 2.0, 3, 6, 1500.0, 0.90,
+        )
+
+    # ── Regime transition matrix (shared across thresholds) ──────────────────
+    # Compute from first non-None regime_labels — regime dynamics are market-level,
+    # independent of which trades pass the ML threshold.
+    transition_matrix = None
+    for rl in regime_labels_list:
+        if rl is not None and len(rl) > 0:
+            transition_matrix = _build_transition_matrix_from_labels(rl)
+            break
+
+    # ── Worker: run all thresholds for one (scheme, erp, frp) combo ──────────
+    def _sweep_scheme(scheme: str) -> tuple[str, dict]:
+        scheme_seed = seed + hash(scheme) % 10_000
+        rng = np.random.default_rng(scheme_seed)
+
+        # Cache eval results per eval_rpt
+        eval_cache: dict[float, tuple] = {}
+        for erp in eval_risk_pcts:
+            passed, _, days_eval = simulate_eval_batch_multi(
+                pnl_list, sl_list, tpd_list, account,
+                erp, scheme, rng, n_sims,
+                regime_labels_list, transition_matrix,
+            )
+            eval_cache[erp] = (passed, days_eval)
+
+        # Cache funded results per funded_rpt
+        funded_cache: dict[float, tuple] = {}
+        for frp in funded_risk_pcts:
+            funded_cache[frp] = simulate_funded_batch_multi(
+                pnl_list, sl_list, tpd_list, account,
+                frp, scheme, rng, n_sims,
+            )
+
+        # ── Assemble per-threshold result dicts ────────────────────────────
+        # scheme_results[thr_i][erp][frp] = cell_dict
+        thr_results: list[dict] = [{} for _ in range(n_thr)]
+
+        for erp in eval_risk_pcts:
+            passed_all, days_eval_all = eval_cache[erp]
+
+            for thr_i in range(n_thr):
+                passed    = passed_all[thr_i]
+                days_eval = days_eval_all[thr_i]
+                pass_rate = float(passed.mean())
+
+                if pass_rate > 0:
+                    e_cost = account.eval_fee + max(0, 1.0/pass_rate - 1) * account.reset_fee
+                else:
+                    e_cost = account.eval_fee + 10 * account.reset_fee
+
+                bs_idx   = rng.integers(0, n_sims, size=(BS, n_sims))
+                bs_pass  = np.median(passed.astype(np.float32)[bs_idx], axis=1)
+                pr_ci    = (float(np.percentile(bs_pass, 2.5)),
+                            float(np.percentile(bs_pass, 97.5)))
+                median_days_pass = (float(np.median(days_eval[passed]))
+                                    if passed.any() else 0.0)
+                failed_mask      = ~passed
+                median_days_fail = (float(np.median(days_eval[failed_mask]))
+                                    if failed_mask.any() else median_days_pass)
+                e_attempts        = 1.0 / pass_rate if pass_rate > 0 else 10.0
+                n_failed          = max(0.0, e_attempts - 1.0)
+                total_eval_days   = round(n_failed * median_days_fail + median_days_pass, 1)
+
+                thr_results[thr_i][erp] = {}
+
+                for frp in funded_risk_pcts:
+                    (w_all_t, dtw_all_t, n_pay_all_t,
+                     pday_all_t, pamt_all_t, fdays_all_t) = (
+                        funded_cache[frp][0][thr_i],
+                        funded_cache[frp][1][thr_i],
+                        funded_cache[frp][2][thr_i],
+                        funded_cache[frp][3][thr_i],
+                        funded_cache[frp][4][thr_i],
+                        funded_cache[frp][5][thr_i],
+                    )
+                    w_all    = w_all_t.astype(np.float64)
+                    dtw_all  = dtw_all_t
+                    n_pay_all = n_pay_all_t.astype(np.int32)
+                    payout_days_all   = pday_all_t
+                    payout_amounts_all = pamt_all_t
+                    funded_days_all   = fdays_all_t
+
+                    paid_mask     = w_all > 0
+                    survival_rate = float(paid_mask.mean())
+                    median_w      = (float(np.median(w_all[paid_mask]))
+                                     if paid_mask.any() else 0.0)
+                    mean_w_uncond = float(w_all.mean())
+                    net_ev_6cycle = pass_rate * mean_w_uncond - e_cost
+
+                    w_idx = rng.integers(0, n_sims, size=(BS, n_sims))
+                    bs_w  = w_all[w_idx].mean(axis=1)
+                    w_ci  = (float(np.percentile(bs_w, 2.5)),
+                             float(np.percentile(bs_w, 97.5)))
+
+                    valid_dtw     = dtw_all[~np.isnan(dtw_all) & (dtw_all > 0)]
+                    median_days_w = float(np.median(valid_dtw)) if len(valid_dtw) > 0 else 0.0
+
+                    last_col = payout_days_all[:, account.max_payouts - 1]
+                    valid_last = last_col[~np.isnan(last_col) & (last_col > 0)]
+                    median_funded_full_days = float(np.median(valid_last)) if len(valid_last) > 0 else None
+
+                    funded_full      = median_funded_full_days or 0.0
+                    total_cycle_days = total_eval_days + funded_full
+                    ev_per_day_6cycle = net_ev_6cycle / max(total_cycle_days, 1.0)
+
+                    per_k = []
+                    for k in range(1, account.max_payouts + 1):
+                        reached_k     = n_pay_all >= k
+                        p_reach_k     = float(reached_k.mean())
+                        mean_sum_k_u  = float(payout_amounts_all[:, :k].sum(axis=1).mean())
+                        funded_days_k = np.where(
+                            n_pay_all >= k, payout_days_all[:, k-1], funded_days_all
+                        )
+                        mean_funded_k = float(funded_days_k.mean())
+                        cycle_k = total_eval_days + mean_funded_k if mean_funded_k > 0 else None
+                        ev_k    = pass_rate * mean_sum_k_u - e_cost
+                        ev_pd_k = (ev_k / cycle_k) if cycle_k and cycle_k > 0 else None
+                        per_k.append({
+                            'k': k, 'p_reach': round(p_reach_k, 4),
+                            'mean_total_w': round(mean_sum_k_u, 2),
+                            'ev': round(ev_k, 2),
+                            'cycle_days': round(cycle_k, 1) if cycle_k else None,
+                            'ev_per_day': round(ev_pd_k, 4) if ev_pd_k else None,
+                        })
+
+                    valid_k  = [r for r in per_k if r['ev_per_day'] is not None]
+                    best_k   = max(valid_k, key=lambda r: r['ev_per_day']) if valid_k else per_k[-1]
+                    ev_per_day_opt = best_k['ev_per_day'] or ev_per_day_6cycle
+
+                    thr_results[thr_i][erp][frp] = {
+                        'pass_rate':            pass_rate,
+                        'pass_rate_ci':         pr_ci,
+                        'survival_rate':        survival_rate,
+                        'median_withdrawal':    median_w,
+                        'mean_withdrawal':      mean_w_uncond,
+                        'withdrawal_ci':        w_ci,
+                        'net_ev':               round(best_k['ev'], 2),
+                        'net_ev_6cycle':        round(net_ev_6cycle, 2),
+                        'ev_per_day':           round(ev_per_day_opt, 4),
+                        'optimal_k':            best_k['k'],
+                        'median_days_to_pass':  median_days_pass,
+                        'median_days_to_withdrawal': median_days_w,
+                        'total_eval_days':      round(total_eval_days, 1),
+                        'total_cycle_days':     round(total_cycle_days, 1),
+                        'per_k':                per_k,
+                    }
+
+        return scheme, thr_results
+
+    # ── Run schemes (serial or 2-worker thread pool) ───────────────────────
+    cpu_count  = os.cpu_count() or 1
+    if n_workers is None:
+        n_workers = min(len(schemes), max(1, cpu_count // 2))
+    n_workers = min(max(1, n_workers), 2)
+
+    scheme_data: dict[str, list[dict]] = {}
+    if n_workers == 1:
+        for scheme in schemes:
+            sname, thr_res = _sweep_scheme(scheme)
+            scheme_data[sname] = thr_res
+    else:
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            futures = {pool.submit(_sweep_scheme, s): s for s in schemes}
+            for fut in futures:
+                sname, thr_res = fut.result()
+                scheme_data[sname] = thr_res
+
+    # ── Merge into per-threshold result dicts ─────────────────────────────
+    results_per_thr: list[dict] = [{} for _ in range(n_thr)]
+    for scheme, thr_res_list in scheme_data.items():
+        for thr_i, thr_res in enumerate(thr_res_list):
+            results_per_thr[thr_i][scheme] = thr_res
+
+    return results_per_thr
 
 
 # ---------------------------------------------------------------------------
