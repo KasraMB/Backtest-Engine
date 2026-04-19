@@ -131,20 +131,30 @@ def _compute_daily_atr_rank_map(
     atr_pct = (atr / daily['close'] * 100.0).values
     dates_arr = list(daily.index)
 
-    rank_map: dict = {}
-    for i, d in enumerate(dates_arr):
-        val = atr_pct[i]
-        if not np.isfinite(val):
-            rank_map[d] = 0.5
-            continue
-        start = max(0, i - lookback)
-        prior = atr_pct[start:i]
-        prior = prior[np.isfinite(prior)]
-        if len(prior) == 0:
-            rank_map[d] = 0.5
-        else:
-            rank_map[d] = float(np.sum(prior < val) / len(prior))
+    n = len(atr_pct)
+    ranks = np.full(n, 0.5)
 
+    # Vectorised sliding-window rank using stride tricks
+    from numpy.lib.stride_tricks import sliding_window_view
+    # Replace NaN with -inf so they sort below any real value
+    safe = np.where(np.isfinite(atr_pct), atr_pct, -np.inf)
+    # For each position i (i >= 1): rank safe[i] against safe[max(0,i-lookback):i]
+    # Build windows of size (lookback+1); last element is the current day
+    win_size = lookback + 1
+    if n >= win_size:
+        windows = sliding_window_view(safe, win_size)  # shape (n - lookback, lookback+1)
+        prior_w = windows[:, :-1]                      # (n-lookback, lookback)
+        curr_w  = windows[:, -1:]                      # (n-lookback, 1)
+        valid   = prior_w > -np.inf                    # mask out padded -inf
+        n_valid = valid.sum(axis=1)                    # count of real prior values
+        n_below = ((prior_w < curr_w) & valid).sum(axis=1)  # only count real priors
+        # Avoid division by zero for windows with no valid prior
+        with np.errstate(invalid='ignore'):
+            w_ranks = np.where(n_valid > 0, n_below / n_valid, 0.5)
+        ranks[lookback:] = w_ranks
+
+    # Short head (fewer than lookback prior days): leave as 0.5 default
+    rank_map: dict = {d: float(ranks[i]) for i, d in enumerate(dates_arr)}
     return rank_map
 
 
