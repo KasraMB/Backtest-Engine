@@ -1123,6 +1123,7 @@ class ICTSMCStrategy(BaseStrategy):
     def __init__(self, params: dict = None) -> None:
         super().__init__(params)
         p = params or {}
+        self.params = p
 
         # Core strategy parameters
         self.swing_n:                     int   = p.get('swing_n', 1)
