@@ -93,9 +93,8 @@ CONFIG_FEATURE_NAMES: list[str] = [
     'cfg_cancel_pct_to_tp',
     'cfg_tick_offset',
     'cfg_order_expiry_bars',
-    # Sensitivity metadata (prevents the model from only seeing "good" configs)
-    'cfg_is_valid',               # 1 if config passed sensitivity filter, 0 otherwise
-    'cfg_base_metric',            # normalised Sortino of config on train data (0–1, 0.5 = metric 0)
+    # Rolling quality signal (prevents the model from only seeing "good" configs)
+    'cfg_base_metric',            # rolling Sortino of prior trades for this config (0–1, 0.5 = metric 0)
 ]
 
 # ---------------------------------------------------------------------------
@@ -257,8 +256,8 @@ def sample_configs(
 def normalize_config(
     params: dict[str, Any],
     ranges: dict[str, Any] | None = None,
-    is_valid: bool = True,
     base_metric: float = 0.0,
+    is_valid: bool = True,   # kept for call-site compatibility; ignored
 ) -> dict[str, float]:
     """
     Convert a params dict into normalised config features (0–1 range).
@@ -266,9 +265,8 @@ def normalize_config(
 
     Parameters
     ----------
-    is_valid    : whether this config passed the sensitivity filter
-    base_metric : Sortino of this config on the train split; clipped to [-2, 2]
-                  and mapped to [0, 1] so that metric=0 → 0.5.
+    base_metric : rolling Sortino of prior trades for this config; clipped to
+                  [-2, 2] and mapped to [0, 1] so that metric=0 → 0.5.
     """
     if ranges is None:
         ranges = PARAM_RANGES_V1
@@ -306,7 +304,6 @@ def normalize_config(
     feat['cfg_cancel_pct_to_tp']       = _norm('cancel_pct_to_tp',                 'cfg_cancel_pct_to_tp')
     feat['cfg_tick_offset']            = _norm('tick_offset_atr_mult',              'cfg_tick_offset')
     feat['cfg_order_expiry_bars']      = _norm('order_expiry_bars',                 'cfg_order_expiry_bars')
-    feat['cfg_is_valid']               = float(is_valid)
     feat['cfg_base_metric']            = float(np.clip(base_metric, -2.0, 2.0) / 4.0 + 0.5)
 
     return feat
