@@ -33,11 +33,15 @@ REGIME_CUTOFF = date.fromisoformat(VALIDATION_END)
 HIGH_VOL_LABEL = 2
 
 
+# HMM warmup ends here — all data before this date is used as warmup only.
+# Trades from 2019-01-01 onward get fully forward-safe regime labels.
+_WARMUP_END = date(2018, 12, 31)
+
+
 def compute_vol_regime_map(
     df_1m: pd.DataFrame,
     cutoff_date: date = REGIME_CUTOFF,
     n_states: int = 3,
-    train_ratio: float = 0.5,
     seed: int = 42,
 ) -> dict[date, float]:
     """
@@ -46,17 +50,18 @@ def compute_vol_regime_map(
     Method
     ------
     1. Compute RTH daily range (high - low, 9:30–16:00 ET) from 1m bars.
-    2. Fit a rolling Gaussian HMM on log(daily_range) — forward-safe,
-       expanding window, hard-stopped at cutoff_date.
-    3. For each day D: P(D = high_vol) = transition_matrix[regime(D-1), 2].
+    2. Fit a rolling Gaussian HMM on log(daily_range) with a pre-2019 warmup:
+       - Initial HMM trained on data up to _WARMUP_END (2018-12-31).
+       - From 2019-01-01 onward: expanding-window labels (forward-safe).
+    3. For each day D: P(D = high_vol) is computed via an expanding-window
+       transition count accumulator — no global transition matrix is used.
        First trading day gets the uninformative prior 1/n_states.
 
     Parameters
     ----------
-    df_1m : full 1m OHLCV DataFrame (tz-aware index)
+    df_1m : full 1m OHLCV DataFrame (tz-aware index, should include pre-2019)
     cutoff_date : hard stop — no data beyond this date is ever used
     n_states : HMM states (3 = low/mid/high vol)
-    train_ratio : fraction of cutoff-period data used for initial HMM fit
     seed : random seed for HMM
 
     Returns
@@ -90,7 +95,13 @@ def compute_vol_regime_map(
     dates      = list(daily.index)          # list[date], ascending
     log_ranges = np.log(daily['range'].values)
 
-    # ── 2. Fit rolling HMM ────────────────────────────────────────────────────
+    # ── 2. Fit rolling HMM — warmup on pre-2019 data ─────────────────────────
+    # Compute train_ratio so that the in-sample period ends at _WARMUP_END.
+    # Any dates before 2019 that are labelled in-sample are used as warmup
+    # only — trades in the ML dataset start from 2019 onward.
+    n_warmup = sum(1 for d in dates if d <= _WARMUP_END)
+    train_ratio = max(n_warmup / len(dates), 0.05)  # floor at 5% for safety
+
     regime_result = fit_regimes(
         log_ranges,
         dates,
@@ -100,18 +111,25 @@ def compute_vol_regime_map(
         seed        = seed,
     )
 
-    labels = regime_result.labels            # {date: 0/1/2}
-    trans  = regime_result.transition_matrix  # (n_states, n_states)
+    labels = regime_result.labels   # {date: 0/1/2}
 
-    # ── 3. Build date → P(high_vol) via lag-1 Markov ─────────────────────────
+    # ── 3. Build date → P(high_vol) via expanding-window Markov ─────────────
+    # Use per-step transition count accumulation so that P(D = high_vol) is
+    # computed from transition frequencies observed in days 0..D-2 only.
+    # Dirichlet prior (all-ones) prevents zero-probability rows.
     sorted_dates = sorted(dates)
     regime_map: dict[date, float] = {}
+    trans_counts = np.ones((n_states, n_states), dtype=np.float64)
 
     for i, d in enumerate(sorted_dates):
         if i == 0:
             regime_map[d] = 1.0 / n_states          # uninformative prior
         else:
-            prev_regime   = labels.get(sorted_dates[i - 1], 1)   # default neutral
-            regime_map[d] = float(trans[prev_regime, HIGH_VOL_LABEL])
+            prev = labels.get(sorted_dates[i - 1], 1)
+            regime_map[d] = float(
+                trans_counts[prev, HIGH_VOL_LABEL] / trans_counts[prev].sum()
+            )
+            curr = labels.get(d, 1)
+            trans_counts[prev, curr] += 1.0
 
     return regime_map

@@ -57,7 +57,7 @@ from backtest.regime.vol_regime import compute_vol_regime_map
 # Configuration — edit before each run
 # ---------------------------------------------------------------------------
 ROUND         = 1          # 1 = fresh broad LHS; 2+ = append tighter ranges
-N_CONFIGS     = 15        # configs to sample per round
+N_CONFIGS     = 150        # configs to sample per round
 LHS_SEED      = 42         # reproducibility
 
 SENSITIVITY_CFG = dict(
@@ -87,6 +87,66 @@ TRADES_CACHE      = ROOT / "cache" / "trades_cache.json"
 VAL_TRADES_CACHE  = ROOT / "cache" / "val_trades_cache.json"
 DATASET_OUT       = ROOT / "data" / "ml_dataset.parquet"
 VALID_CONFIGS_OUT = ROOT / "data" / "validated_configs.json"
+
+# ---------------------------------------------------------------------------
+# Daily ATR percentile rank map — forward-safe helper
+# ---------------------------------------------------------------------------
+
+def _compute_daily_atr_rank_map(
+    df_1m: pd.DataFrame,
+    lookback: int = 60,
+) -> dict:
+    """
+    For each trading day D, compute percentile rank of D's ATR vs prior
+    `lookback` days.  Reference ATR = 14-period Wilder ATR of daily ranges,
+    evaluated at market open (so signal-time data for day D is not used).
+
+    All values are in [0, 1] where 0 = lowest ATR day in lookback window.
+    Returns dict[date, float].  Days with insufficient history return 0.5.
+    """
+    from datetime import date as _date, time as _time
+    from backtest.ml.splits import VALIDATION_END
+
+    cutoff = _date.fromisoformat(VALIDATION_END)
+
+    # RTH daily OHLC (9:30–16:00 ET)
+    rth = df_1m[(df_1m.index.time >= _time(9, 30)) & (df_1m.index.time <= _time(16, 0))]
+    daily = rth.groupby(rth.index.date).agg(
+        high=('high', 'max'),
+        low=('low',   'min'),
+        close=('close', 'last'),
+    )
+    daily = daily[(daily.index <= cutoff) & (daily['close'] > 0)].copy()
+
+    # True range (simplified to H-L range for daily bars; prev close gap included)
+    prev_close = daily['close'].shift(1)
+    tr = pd.concat([
+        daily['high'] - daily['low'],
+        (daily['high'] - prev_close).abs(),
+        (daily['low']  - prev_close).abs(),
+    ], axis=1).max(axis=1)
+
+    # 14-period Wilder ATR (EWM with alpha=1/14, adjust=False)
+    atr = tr.ewm(alpha=1.0 / 14, min_periods=14, adjust=False).mean()
+    atr_pct = (atr / daily['close'] * 100.0).values
+    dates_arr = list(daily.index)
+
+    rank_map: dict = {}
+    for i, d in enumerate(dates_arr):
+        val = atr_pct[i]
+        if not np.isfinite(val):
+            rank_map[d] = 0.5
+            continue
+        start = max(0, i - lookback)
+        prior = atr_pct[start:i]
+        prior = prior[np.isfinite(prior)]
+        if len(prior) == 0:
+            rank_map[d] = 0.5
+        else:
+            rank_map[d] = float(np.sum(prior < val) / len(prior))
+
+    return rank_map
+
 
 # ---------------------------------------------------------------------------
 # Numba warmup — called in the main process before spawning workers so that
@@ -401,8 +461,8 @@ def main() -> None:
     if not pending_tasks:
         print("All configs already in cache.\n")
     else:
-        estimated = len(pending_tasks) / n_workers * 1150 / 3600
-        print(f"Estimated wall clock: ~{estimated:.1f} h  ({n_workers} workers)\n")
+        estimated_min = len(pending_tasks) / n_workers * 20 / 60
+        print(f"Estimated wall clock: ~{estimated_min:.0f} min  ({n_workers} workers)\n")
 
     # -----------------------------------------------------------------------
     # Run all tasks in one pool
@@ -658,8 +718,14 @@ def main() -> None:
                                 "config_features": cfg_feat})
         return result
 
-    def _build_rows(trade_list: list, df_1m_slice: "pd.DataFrame", regime_map: dict) -> list:
+    def _build_rows(
+        trade_list: list,
+        df_1m_slice: "pd.DataFrame",
+        regime_map: dict,
+        atr_rank_map: dict,
+    ) -> list:
         from collections import defaultdict
+        from datetime import date as _date
         from backtest.ml.evaluate import sortino_r as _sortino_r
 
         # Group by config so rolling features never cross config boundaries.
@@ -676,6 +742,10 @@ def main() -> None:
             consecutive_losses = 0
             day_counts: dict   = {}
             running_r: list    = []   # all prior R-multiples for this config
+            # Per-day session R accumulator (reset each day)
+            session_r_by_date: dict[_date, float] = {}
+            # Date of last winning trade for this config
+            last_win_date: _date | None = None
 
             for trade in sorted(config_trades, key=lambda t: t["entry_bar"]):
                 sf         = trade["signal_features"]
@@ -713,6 +783,18 @@ def main() -> None:
 
                 vol_p = regime_map.get(trade_date, 1.0 / 3.0) if trade_date is not None else 1.0 / 3.0
 
+                # atr_pct_rank — forward-safe daily percentile, 0.5 default
+                atr_rank = atr_rank_map.get(trade_date, 0.5) if trade_date is not None else 0.5
+
+                # session_r_so_far — cumulative R earned today BEFORE this trade
+                sess_r = session_r_by_date.get(trade_date, 0.0) if trade_date is not None else 0.0
+
+                # days_since_last_win — calendar days since last win, capped at 30
+                if last_win_date is None or trade_date is None:
+                    days_win = 30.0
+                else:
+                    days_win = float(min((trade_date - last_win_date).days, 30))
+
                 row = {
                     **sf,
                     **cfg_feat,
@@ -722,6 +804,9 @@ def main() -> None:
                     "consecutive_losses":     consecutive_losses,
                     "drawdown_pct":           0.0,
                     "vol_regime_p_high":      vol_p,
+                    "atr_pct_rank":           atr_rank,
+                    "session_r_so_far":       sess_r,
+                    "days_since_last_win":    days_win,
                     "r_multiple":             r_multiple,
                     "is_winner":              int(r_multiple > 0),
                     "date":                   trade_date,
@@ -740,6 +825,12 @@ def main() -> None:
                 history.append(r_multiple)
                 running_r.append(r_multiple)
                 consecutive_losses = consecutive_losses + 1 if r_multiple <= 0 else 0
+                # Update session accumulator AFTER recording (before = what we observed)
+                if trade_date is not None:
+                    session_r_by_date[trade_date] = sess_r + r_multiple
+                # Update last win date AFTER recording
+                if r_multiple > 0 and trade_date is not None:
+                    last_win_date = trade_date
 
         return all_rows
 
@@ -751,17 +842,24 @@ def main() -> None:
     regime_map = compute_vol_regime_map(df_1m_full)
     print(f"  Regime map computed for {len(regime_map)} trading days.")
 
+    # Compute daily ATR percentile rank map — forward-safe.
+    # For each day D: rank of that day's ATR vs prior 60 days (09:30 open bar,
+    # 14-period Wilder ATR of daily ranges). Uses only pre-cutoff data.
+    print("\n--- Computing daily ATR rank map ---")
+    atr_rank_map = _compute_daily_atr_rank_map(df_1m_full)
+    print(f"  ATR rank map computed for {len(atr_rank_map)} trading days.")
+
     # Train rows
     all_train_trades = _build_trade_list(new_trade_rows, "train", all_config_entries, validity_map)
     s_ts, e_ts = split_bounds("train")
     df_1m_train = df_1m_full[(df_1m_full.index >= s_ts) & (df_1m_full.index <= e_ts)]
-    train_rows = _build_rows(all_train_trades, df_1m_train, regime_map)
+    train_rows = _build_rows(all_train_trades, df_1m_train, regime_map, atr_rank_map)
 
     # Validation rows
     all_val_trades = _build_trade_list(val_trade_rows, "validation", all_config_entries, validity_map)
     s_ts, e_ts = split_bounds("validation")
     df_1m_val = df_1m_full[(df_1m_full.index >= s_ts) & (df_1m_full.index <= e_ts)]
-    val_rows = _build_rows(all_val_trades, df_1m_val, regime_map)
+    val_rows = _build_rows(all_val_trades, df_1m_val, regime_map, atr_rank_map)
 
     all_rows = train_rows + val_rows
 

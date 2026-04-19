@@ -64,6 +64,9 @@ CONTEXT_FEATURE_NAMES: list[str] = [
     'consecutive_losses',     # how many consecutive losing trades preceded this one
     'drawdown_pct',           # equity drawdown from peak at signal time (0.0 if unknown)
     'vol_regime_p_high',      # P(today = high-vol regime) via lag-1 Markov HMM on daily range
+    'atr_pct_rank',           # percentile rank of today's ATR vs prior 60 days (0=low, 1=high)
+    'session_r_so_far',       # cumulative R earned today for this config before this trade
+    'days_since_last_win',    # calendar days since last winning trade for this config (capped at 30)
 ]
 
 ALL_FEATURE_NAMES: list[str] = SIGNAL_FEATURE_NAMES + CONTEXT_FEATURE_NAMES + CONFIG_FEATURE_NAMES

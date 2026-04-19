@@ -17,12 +17,11 @@ import pandas as pd
 from backtest.ml.features import ALL_FEATURE_NAMES
 from backtest.ml.configs import normalize_config, CONFIG_FEATURE_NAMES
 
-# Phase 2 and metadata cfg_ keys — must NOT be overwritten by Phase 1 injection.
+# Phase 2 cfg_ keys — must NOT be overwritten by Phase 1 injection.
 _PHASE2_CFG_KEYS: frozenset[str] = frozenset({
     'cfg_cancel_pct_to_tp',
     'cfg_tick_offset',
     'cfg_order_expiry_bars',
-    'cfg_is_valid',
     'cfg_base_metric',
 })
 
@@ -330,6 +329,13 @@ class EnsembleMLModel:
                 if k in self._feature_names:
                     row[k] = v
         return row
+
+    def predict_r(self, X: pd.DataFrame) -> np.ndarray:
+        """Return ensemble score (pred_r × P(win)) for each row — drop-in for MLModel.predict_r."""
+        pred_r = self._model_a.predict_r(X)
+        X_arr  = X[self._feature_names].values.astype(float)
+        p_win  = self._model_b.predict_proba(X_arr)[:, 1]
+        return pred_r * p_win
 
     def score(
         self,
