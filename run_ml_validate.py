@@ -19,10 +19,7 @@ Usage
   # baseline (no ML)
   python run_ml_validate.py --mode baseline
 
-  # ensemble: auto-select top 3 configs by validation sortino
-  python run_ml_validate.py --mode ensemble --n_ensemble 3
-
-  # ensemble: specify exact config indices, unanimous vote
+  # ensemble: specify exact config indices (required), unanimous vote
   python run_ml_validate.py --mode ensemble --configs 0,5,12 --vote unanimous
 
   # single mode for a specific config only
@@ -152,8 +149,7 @@ def run_single(df_val: pd.DataFrame, model: MLModel | EnsembleMLModel,
 
 def run_ensemble(df_val: pd.DataFrame, model: MLModel,
                  config_indices: list[int] | None,
-                 vote_method: str,
-                 n_ensemble: int) -> None:
+                 vote_method: str) -> None:
     if 'config_idx' not in df_val.columns:
         print("ERROR: Dataset does not have a 'config_idx' column.")
         print("       Run run_ml_collect.py (multi-config) first.")
@@ -164,18 +160,15 @@ def run_ensemble(df_val: pd.DataFrame, model: MLModel,
           f"{'...' if len(available) > 20 else ''} ({len(available)} total)")
 
     # Resolve which configs to use
-    if config_indices:
-        missing = [c for c in config_indices if c not in available]
-        if missing:
-            print(f"WARNING: config indices {missing} not found in dataset — skipping them.")
-        indices = [c for c in config_indices if c in available]
-    else:
-        # Auto-select top N by per-config validation sortino
-        print(f"\nAuto-selecting top {n_ensemble} configs by validation sortino...")
-        cfg_stats = per_config_metrics(df_val, model)
-        cfg_stats_sorted = sorted(cfg_stats, key=lambda r: r['sortino'], reverse=True)
-        indices = [r['config_idx'] for r in cfg_stats_sorted[:n_ensemble]]
-        print(f"Selected: {indices}")
+    if not config_indices:
+        print("ERROR: --configs is required for ensemble mode.")
+        print("       Specify config indices from your training analysis, e.g. --configs 0,5,12")
+        print("       Auto-selecting by validation sortino is disabled (selection-on-val bias).")
+        return
+    missing = [c for c in config_indices if c not in available]
+    if missing:
+        print(f"WARNING: config indices {missing} not found in dataset — skipping them.")
+    indices = [c for c in config_indices if c in available]
 
     if not indices:
         print("No valid config indices. Aborting.")
@@ -231,8 +224,6 @@ def main() -> None:
     parser.add_argument('--vote', default='majority',
                         choices=['majority', 'unanimous', 'weighted'],
                         help="Ensemble vote method (default: majority)")
-    parser.add_argument('--n_ensemble', type=int, default=3,
-                        help="Number of top configs for auto-selection in ensemble mode (default: 3)")
     args = parser.parse_args()
 
     config_indices = None
@@ -280,7 +271,7 @@ def main() -> None:
     if args.mode == 'single':
         run_single(df_val, model, config_indices)
     elif args.mode == 'ensemble':
-        run_ensemble(df_val, model, config_indices, args.vote, args.n_ensemble)
+        run_ensemble(df_val, model, config_indices, args.vote)
 
 
 if __name__ == "__main__":
