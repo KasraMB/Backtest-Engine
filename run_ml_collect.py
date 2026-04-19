@@ -87,6 +87,39 @@ TRADES_CACHE      = ROOT / "cache" / "trades_cache.json"
 VAL_TRADES_CACHE  = ROOT / "cache" / "val_trades_cache.json"
 DATASET_OUT       = ROOT / "data" / "ml_dataset.parquet"
 VALID_CONFIGS_OUT = ROOT / "data" / "validated_configs.json"
+REGIME_MAP_CACHE  = ROOT / "cache" / "regime_map_cache.pkl"
+ATR_RANK_CACHE    = ROOT / "cache" / "atr_rank_map_cache.pkl"
+
+# ---------------------------------------------------------------------------
+# Map caching helpers — keyed by data file mtime+size and param fingerprint
+# ---------------------------------------------------------------------------
+
+import pickle as _pickle
+
+
+def _map_cache_key(path: Path, **params) -> str:
+    stat = path.stat()
+    parts = [str(stat.st_mtime), str(stat.st_size)] + [f"{k}={v}" for k, v in sorted(params.items())]
+    return "|".join(parts)
+
+
+def _load_map_cache(cache_path: Path, key: str):
+    if cache_path.exists():
+        try:
+            with open(cache_path, 'rb') as f:
+                entry = _pickle.load(f)
+            if entry.get('key') == key:
+                return entry['data']
+        except Exception:
+            pass
+    return None
+
+
+def _save_map_cache(cache_path: Path, key: str, data) -> None:
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(cache_path, 'wb') as f:
+        _pickle.dump({'key': key, 'data': data}, f)
+
 
 # ---------------------------------------------------------------------------
 # Daily ATR percentile rank map — forward-safe helper
@@ -848,16 +881,30 @@ def main() -> None:
 
     # Compute volatility regime map once — forward-safe, hard-stopped at VALIDATION_END.
     # Never reads test-period price data.
-    print("\n--- Computing volatility regime map ---")
-    regime_map = compute_vol_regime_map(df_1m_full)
-    print(f"  Regime map computed for {len(regime_map)} trading days.")
+    from backtest.ml.splits import VALIDATION_END as _VEND
+    from backtest.regime.vol_regime import _WARMUP_END as _WUE
+    _regime_key = _map_cache_key(CACHE_1M, validation_end=_VEND, warmup_end=str(_WUE), n_states=3, seed=42)
+    regime_map = _load_map_cache(REGIME_MAP_CACHE, _regime_key)
+    if regime_map is None:
+        print("\n--- Computing volatility regime map ---")
+        regime_map = compute_vol_regime_map(df_1m_full)
+        _save_map_cache(REGIME_MAP_CACHE, _regime_key, regime_map)
+        print(f"  Regime map computed for {len(regime_map)} trading days.")
+    else:
+        print(f"\n--- Regime map loaded from cache ({len(regime_map)} days) ---")
 
     # Compute daily ATR percentile rank map — forward-safe.
     # For each day D: rank of that day's ATR vs prior 60 days (09:30 open bar,
     # 14-period Wilder ATR of daily ranges). Uses only pre-cutoff data.
-    print("\n--- Computing daily ATR rank map ---")
-    atr_rank_map = _compute_daily_atr_rank_map(df_1m_full)
-    print(f"  ATR rank map computed for {len(atr_rank_map)} trading days.")
+    _atr_key = _map_cache_key(CACHE_1M, validation_end=_VEND, lookback=60)
+    atr_rank_map = _load_map_cache(ATR_RANK_CACHE, _atr_key)
+    if atr_rank_map is None:
+        print("\n--- Computing daily ATR rank map ---")
+        atr_rank_map = _compute_daily_atr_rank_map(df_1m_full)
+        _save_map_cache(ATR_RANK_CACHE, _atr_key, atr_rank_map)
+        print(f"  ATR rank map computed for {len(atr_rank_map)} trading days.")
+    else:
+        print(f"\n--- ATR rank map loaded from cache ({len(atr_rank_map)} days) ---")
 
     # Train rows
     all_train_trades = _build_trade_list(new_trade_rows, "train", all_config_entries, validity_map)
