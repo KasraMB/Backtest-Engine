@@ -38,9 +38,6 @@ N_SIMS    = 2_000
 RISK_PCTS = [0.10, 0.25, 0.50]
 ACCOUNTS  = list(LUCIDFLEX_ACCOUNTS.keys())
 
-# SL proxy in points (MNQ tick = 0.25 pt, 4 pts ≈ 16 ticks — typical tight SL)
-_SL_PROXY_PTS = 4.0
-
 
 def _count_val_trading_days(df_val: pd.DataFrame) -> int:
     dates = pd.to_datetime(df_val['date']).dt.date
@@ -56,7 +53,8 @@ def _build_threshold_arrays(
     For each threshold candidate build (pnl_pts, sl_dists, tpd, regime_labels).
     Returns four parallel lists.
     """
-    r_mult = df_val['r_multiple'].values.astype(np.float32)
+    r_mult  = df_val['r_multiple'].values.astype(np.float32)
+    sl_pts  = df_val['sl_pts'].values.astype(np.float32)
     has_regime = 'vol_regime_p_high' in df_val.columns
     regime_raw = (df_val['vol_regime_p_high'].values > 0.5).astype(np.int8) if has_regime else None
 
@@ -74,8 +72,8 @@ def _build_threshold_arrays(
             tpd_list.append(0.0)
             regime_list.append(None)
         else:
-            pnl_list.append((r_mult[mask] * _SL_PROXY_PTS).astype(np.float32))
-            sl_list.append(np.full(n, _SL_PROXY_PTS, dtype=np.float32))
+            pnl_list.append((r_mult[mask] * sl_pts[mask]).astype(np.float32))
+            sl_list.append(sl_pts[mask].copy())
             tpd_list.append(max(0.1, n / max(n_val_days, 1)))
             regime_list.append(regime_raw[mask] if regime_raw is not None else None)
 
@@ -131,6 +129,9 @@ def main() -> None:
         return
 
     df_full = pd.read_parquet(DATASET_PATH)
+    if 'sl_pts' not in df_full.columns:
+        print("ERROR: dataset missing sl_pts. Re-run run_ml_collect.py first.")
+        return
     df_full['date'] = pd.to_datetime(df_full['date'])
     df_val = df_full[
         (df_full['date'] >= '2023-01-01') & (df_full['date'] < '2024-01-01')

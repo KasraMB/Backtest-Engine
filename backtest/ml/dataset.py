@@ -44,8 +44,10 @@ def build_dataset(run_result: 'RunResult', data: 'MarketData') -> pd.DataFrame:
         Index: range index.
     """
     trades = [t for t in run_result.trades if t.signal_features]
+    _meta = ['date', 'entry_bar', 'exit_bar', 'r_multiple', 'is_winner',
+             'sl_pts', 'net_pnl_dollars', 'entry_price', 'exit_price']
     if not trades:
-        return pd.DataFrame(columns=ALL_FEATURE_NAMES + ['date', 'entry_bar', 'r_multiple', 'is_winner'])
+        return pd.DataFrame(columns=ALL_FEATURE_NAMES + _meta)
 
     # Build equity curve indexed by bar for drawdown lookup
     eq_arr = np.array(run_result.equity_curve, dtype=float)
@@ -100,12 +102,18 @@ def build_dataset(run_result: 'RunResult', data: 'MarketData') -> pd.DataFrame:
             if col not in row:
                 row[col] = 0
 
-        # Labels
+        # Labels + trade metadata
         r_mult = trade.r_multiple
-        row['r_multiple'] = float(r_mult) if r_mult is not None else 0.0
-        row['is_winner']  = int(trade.is_winner)
-        row['date']       = trade_date
-        row['entry_bar']  = entry_bar
+        row['r_multiple']      = float(r_mult) if r_mult is not None else 0.0
+        row['is_winner']       = int(trade.is_winner)
+        row['date']            = trade_date
+        row['entry_bar']       = entry_bar
+        row['exit_bar']        = trade.exit_bar
+        row['sl_pts']          = (float(abs(trade.entry_price - trade.initial_sl_price))
+                                  if trade.initial_sl_price is not None else 0.0)
+        row['net_pnl_dollars'] = float(trade.net_pnl_dollars)
+        row['entry_price']     = float(trade.entry_price)
+        row['exit_price']      = float(trade.exit_price)
 
         rows.append(row)
 
@@ -120,7 +128,7 @@ def build_dataset(run_result: 'RunResult', data: 'MarketData') -> pd.DataFrame:
     df = pd.DataFrame(rows)
 
     # Enforce column order
-    cols = ALL_FEATURE_NAMES + ['date', 'entry_bar', 'r_multiple', 'is_winner']
+    cols = ALL_FEATURE_NAMES + _meta
     for c in cols:
         if c not in df.columns:
             df[c] = 0

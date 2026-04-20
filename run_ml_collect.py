@@ -312,11 +312,20 @@ def _task_run_config(args: tuple) -> tuple:
         for t in result.trades:
             if not t.signal_features:
                 continue
+            sl_pts = (
+                float(abs(t.entry_price - t.initial_sl_price))
+                if t.initial_sl_price is not None else 0.0
+            )
             trades.append({
                 "signal_features": t.signal_features,
                 "r_multiple":      float(t.r_multiple) if t.r_multiple is not None else 0.0,
                 "is_winner":       int(t.is_winner),
                 "entry_bar":       t.entry_bar,
+                "exit_bar":        t.exit_bar,
+                "sl_pts":          sl_pts,
+                "net_pnl_dollars": float(t.net_pnl_dollars),
+                "entry_price":     float(t.entry_price),
+                "exit_price":      float(t.exit_price),
             })
 
     return h, key, metric, trades
@@ -436,6 +445,17 @@ def main() -> None:
     print(f"Sampling {N_CONFIGS} configs via LHS (Round {ROUND} ranges)\n")
 
     all_configs = sample_configs(N_CONFIGS, ranges, seed=LHS_SEED + ROUND - 1)
+
+    # Persist all LHS configs (including 0-trade ones) so tearsheet/threshold-opt
+    # can run the same universe without re-sampling.
+    LHS_CONFIGS_OUT = ROOT / "data" / "lhs_configs.json"
+    _lhs_to_save = [
+        {"config_idx": i, "config_hash": _hash_params(p),
+         "params": {k: v for k, v in p.items() if not callable(v)}}
+        for i, p in enumerate(all_configs)
+    ]
+    _save_json(LHS_CONFIGS_OUT, _lhs_to_save)
+    print(f"LHS manifest saved -> {LHS_CONFIGS_OUT}  ({len(all_configs)} configs)\n")
 
     # Load caches
     sens_runs_cache  = _load_json(SENS_RUNS_CACHE)   # {f"{h}:{key}": metric}
@@ -649,6 +669,17 @@ def main() -> None:
         else:
             existing_train_hashes = set(_edf["config_hash"])
 
+    # Schema migration: if sl_pts (or other new columns) are missing from the
+    # existing dataset, force re-collection so all rows get the new fields.
+    _new_required_cols = {"sl_pts", "exit_bar", "net_pnl_dollars", "entry_price", "exit_price"}
+    _force_schema_rebuild = False
+    if DATASET_OUT.exists():
+        _existing_cols = set(pd.read_parquet(DATASET_OUT, columns=[]).columns)
+        if not _new_required_cols.issubset(_existing_cols):
+            print("Schema update needed (new columns missing) — forcing re-collection.\n")
+            existing_train_hashes = set()   # triggers train re-collection
+            _force_schema_rebuild = True    # val_trades_cache cleared after it loads
+
     missing_trades = [
         (_hash_params(p), p)
         for p in all_config_entries
@@ -693,6 +724,8 @@ def main() -> None:
     # -----------------------------------------------------------------------
     print("\n--- Collecting validation split trades ---")
     val_trades_cache = _load_json(VAL_TRADES_CACHE)
+    if _force_schema_rebuild:
+        val_trades_cache = {}  # triggers re-collection of all val trades
 
     val_missing = [
         (_hash_params(p), p)
@@ -791,9 +824,14 @@ def main() -> None:
             last_win_date: _date | None = None
 
             for trade in sorted(config_trades, key=lambda t: t["entry_bar"]):
-                sf         = trade["signal_features"]
-                entry_bar  = trade["entry_bar"]
-                r_multiple = float(trade["r_multiple"])
+                sf               = trade["signal_features"]
+                entry_bar        = trade["entry_bar"]
+                exit_bar_val     = trade.get("exit_bar", -1)
+                sl_pts_val       = trade.get("sl_pts", 0.0)
+                net_pnl_val      = trade.get("net_pnl_dollars", 0.0)
+                entry_price_val  = trade.get("entry_price", 0.0)
+                exit_price_val   = trade.get("exit_price", 0.0)
+                r_multiple       = float(trade["r_multiple"])
                 # copy so we can override cfg_base_metric without mutating the source
                 cfg_feat   = dict(trade.get("config_features", {}))
 
@@ -854,6 +892,11 @@ def main() -> None:
                     "is_winner":              int(r_multiple > 0),
                     "date":                   trade_date,
                     "entry_bar":              entry_bar,
+                    "exit_bar":               exit_bar_val,
+                    "sl_pts":                 sl_pts_val,
+                    "net_pnl_dollars":        net_pnl_val,
+                    "entry_price":            entry_price_val,
+                    "exit_price":             exit_price_val,
                     "config_hash":            trade.get("config_hash", ""),
                     "config_idx":             trade.get("config_idx", -1),
                     "round":                  trade.get("round", ROUND),
@@ -920,7 +963,8 @@ def main() -> None:
 
     all_rows = train_rows + val_rows
 
-    meta_cols = ["date", "entry_bar", "r_multiple", "is_winner",
+    meta_cols = ["date", "entry_bar", "exit_bar", "r_multiple", "is_winner",
+                 "sl_pts", "net_pnl_dollars", "entry_price", "exit_price",
                  "config_hash", "config_idx", "round", "split"]
     cols = ALL_FEATURE_NAMES + meta_cols
 
