@@ -316,6 +316,10 @@ def _task_run_config(args: tuple) -> tuple:
                 float(abs(t.entry_price - t.initial_sl_price))
                 if t.initial_sl_price is not None else 0.0
             )
+            tp_pts = (
+                float(abs(t.entry_price - t.initial_tp_price))
+                if t.initial_tp_price is not None else 0.0
+            )
             trades.append({
                 "signal_features": t.signal_features,
                 "r_multiple":      float(t.r_multiple) if t.r_multiple is not None else 0.0,
@@ -323,6 +327,7 @@ def _task_run_config(args: tuple) -> tuple:
                 "entry_bar":       t.entry_bar,
                 "exit_bar":        t.exit_bar,
                 "sl_pts":          sl_pts,
+                "tp_pts":          tp_pts,
                 "net_pnl_dollars": float(t.net_pnl_dollars),
                 "entry_price":     float(t.entry_price),
                 "exit_price":      float(t.exit_price),
@@ -671,7 +676,7 @@ def main() -> None:
 
     # Schema migration: if sl_pts (or other new columns) are missing from the
     # existing dataset, force re-collection so all rows get the new fields.
-    _new_required_cols = {"sl_pts", "exit_bar", "net_pnl_dollars", "entry_price", "exit_price"}
+    _new_required_cols = {"sl_pts", "tp_pts", "exit_bar", "net_pnl_dollars", "entry_price", "exit_price"}
     _force_schema_rebuild = False
     if DATASET_OUT.exists():
         _existing_cols = set(pd.read_parquet(DATASET_OUT, columns=[]).columns)
@@ -828,6 +833,7 @@ def main() -> None:
                 entry_bar        = trade["entry_bar"]
                 exit_bar_val     = trade.get("exit_bar", -1)
                 sl_pts_val       = trade.get("sl_pts", 0.0)
+                tp_pts_val       = trade.get("tp_pts", 0.0)
                 net_pnl_val      = trade.get("net_pnl_dollars", 0.0)
                 entry_price_val  = trade.get("entry_price", 0.0)
                 exit_price_val   = trade.get("exit_price", 0.0)
@@ -894,6 +900,7 @@ def main() -> None:
                     "entry_bar":              entry_bar,
                     "exit_bar":               exit_bar_val,
                     "sl_pts":                 sl_pts_val,
+                    "tp_pts":                 tp_pts_val,
                     "net_pnl_dollars":        net_pnl_val,
                     "entry_price":            entry_price_val,
                     "exit_price":             exit_price_val,
@@ -964,7 +971,7 @@ def main() -> None:
     all_rows = train_rows + val_rows
 
     meta_cols = ["date", "entry_bar", "exit_bar", "r_multiple", "is_winner",
-                 "sl_pts", "net_pnl_dollars", "entry_price", "exit_price",
+                 "sl_pts", "tp_pts", "net_pnl_dollars", "entry_price", "exit_price",
                  "config_hash", "config_idx", "round", "split"]
     cols = ALL_FEATURE_NAMES + meta_cols
 

@@ -200,7 +200,9 @@ def _simulate_filtered_trades(
         entry_price = float(row['entry_price'])
         exit_price  = float(row['exit_price'])
         sl_pts      = float(row['sl_pts'])
+        tp_pts      = float(row['tp_pts'])
         sl_price    = round_to_tick(entry_price - direction * sl_pts)
+        tp_price    = round_to_tick(entry_price + direction * tp_pts)
         r_multiple  = float(row['r_multiple'])
 
         trade = Trade(
@@ -215,6 +217,8 @@ def _simulate_filtered_trades(
             exit_reason             = ExitReason.TP if r_multiple > 0 else ExitReason.SL,
             initial_sl_price        = sl_price,
             sl_price                = sl_price,
+            initial_tp_price        = tp_price,
+            tp_price                = tp_price,
         )
         trades.append(trade)
 
@@ -354,8 +358,8 @@ if __name__ == "__main__":
         raise SystemExit(1)
 
     df_dataset = pd.read_parquet(DATASET_PATH)
-    if 'sl_pts' not in df_dataset.columns:
-        print("ERROR: dataset missing sl_pts. Re-run run_ml_collect.py first.")
+    if 'sl_pts' not in df_dataset.columns or 'tp_pts' not in df_dataset.columns:
+        print("ERROR: dataset missing sl_pts/tp_pts. Re-run run_ml_collect.py first.")
         raise SystemExit(1)
     df_dataset['date'] = pd.to_datetime(df_dataset['date'])
 

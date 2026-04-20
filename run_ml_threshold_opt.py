@@ -129,8 +129,8 @@ def main() -> None:
         return
 
     df_full = pd.read_parquet(DATASET_PATH)
-    if 'sl_pts' not in df_full.columns:
-        print("ERROR: dataset missing sl_pts. Re-run run_ml_collect.py first.")
+    if 'sl_pts' not in df_full.columns or 'tp_pts' not in df_full.columns:
+        print("ERROR: dataset missing sl_pts/tp_pts. Re-run run_ml_collect.py first.")
         return
     df_full['date'] = pd.to_datetime(df_full['date'])
     df_val = df_full[
