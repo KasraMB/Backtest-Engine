@@ -1,40 +1,58 @@
 """
 Generate tearsheets for ML-filtered backtest runs.
 
+Loads the pre-collected dataset (data/ml_dataset.parquet), scores every trade
+with the ensemble model, then simulates a chronological equity curve that:
+  - processes signals in entry_bar order
+  - allows only one position at a time (enforced via exit_bar)
+  - at each bar picks the highest-scoring signal above threshold (if any)
+  - never peeks at future bars to decide whether to take a current signal
+
+This matches how the strategy would run live with all LHS configs active
+simultaneously, with the ML model acting as the real-time filter/arbiter.
+
 Outputs:
   tearsheet_val.html           — validation period only (2023)
   tearsheet_train_val.html     — train + validation period (2019–2023)
 """
+import json
 import os
 import time
+from datetime import time as dtime
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from datetime import time as dtime
 
 from backtest.data.loader import DataLoader
 from backtest.data.market_data import MarketData
-from backtest.runner.runner import run_backtest, reverse_trades
-from backtest.runner.config import RunConfig
+from backtest.ml.features import ALL_FEATURE_NAMES
+from backtest.ml.model import EnsembleMLModel
+from backtest.ml.splits import TRAIN_START, TRAIN_END, VALIDATION_START, VALIDATION_END, TZ
 from backtest.performance.engine import PerformanceEngine
 from backtest.performance.tearsheet import TearsheetRenderer
 from backtest.performance.trade_log import save_trade_log
-import json
-from pathlib import Path
-
-from backtest.ml.model import EnsembleMLModel
 from backtest.propfirm.lucidflex import LUCIDFLEX_ACCOUNTS, run_propfirm_grid
 from backtest.regime.hmm import fit_regimes
 from backtest.regime.analysis import run_regime_analysis
-from strategies.ict_smc import ICTSMCStrategy
+from backtest.runner.config import RunConfig
+from backtest.runner.runner import RunResult, reverse_trades
+from backtest.strategy.enums import ExitReason
+from backtest.strategy.update import Trade, round_to_tick
 
 
 CACHE_1M      = "data/NQ_1m.parquet"
 CACHE_5M      = "data/NQ_5m.parquet"
 CACHE_BAR_MAP = "data/NQ_bar_map.npy"
+DATASET_PATH  = Path("data/ml_dataset.parquet")
+
+STARTING_CAPITAL         = 100_000.0
+SLIPPAGE_POINTS          = 0.25
+COMMISSION_PER_CONTRACT  = 4.50
 
 RUNS = [
-    {"label": "val",       "date_from": "2023-01-01", "date_to": "2023-12-31",  "out": "tearsheet_val.html"},
-    {"label": "train_val", "date_from": "2019-01-01", "date_to": "2023-12-31",  "out": "tearsheet_train_val.html"},
+    {"label": "val",       "split": "validation",            "out": "tearsheet_val.html"},
+    {"label": "train_val", "split": ["train", "validation"], "out": "tearsheet_train_val.html"},
 ]
 
 
@@ -89,7 +107,7 @@ def filter_data(data, loader, date_from, date_to):
     df_1m_f = data.df_1m[mask_1m]
     df_5m_f = data.df_5m[mask_5m]
 
-    rth_mask_f    = (df_1m_f.index.time >= dtime(9,30)) & (df_1m_f.index.time <= dtime(16,0))
+    rth_mask_f      = (df_1m_f.index.time >= dtime(9,30)) & (df_1m_f.index.time <= dtime(16,0))
     trading_dates_f = sorted(set(df_1m_f[rth_mask_f].index.date))
     arrays_1m_f = {c: df_1m_f[c].to_numpy(dtype="float64") for c in ["open","high","low","close","volume"]}
     arrays_5m_f = {c: df_5m_f[c].to_numpy(dtype="float64") for c in ["open","high","low","close","volume"]}
@@ -108,104 +126,165 @@ def filter_data(data, loader, date_from, date_to):
     )
 
 
-def make_config(ml_model):
-    return RunConfig(
-        starting_capital=100_000,
-        slippage_points=0.5,
-        commission_per_contract=4.50,
-        eod_exit_time=dtime(17, 0),
-        params={
-            "contracts":                     1,
-            "cisd_min_series_candles":       2,
-            "cisd_min_body_ratio":           0.5,
-            "rb_min_wick_ratio":             0.3,
-            # Phase 1 params — all set to most permissive end of LHS range so the
-            # ML sees the full universe of signals across all training configs.
-            "confluence_tolerance_atr_mult":     0.28,   # LHS max (0.08–0.28)
-            "tp_confluence_tolerance_atr_mult":  0.28,   # LHS max (0.08–0.28)
-            "level_penetration_atr_mult":        0.75,   # LHS max (0.25–0.75)
-            "min_rr":                            2.0,    # LHS min (2.0–8.0)
-            "po3_atr_mult":                      1.3,    # LHS max (0.6–1.3)
-            "po3_band_pct":                      0.5,    # LHS max (0.15–0.5)
-            "po3_vol_sens":                      0.5,    # LHS min (0.5–2.0)
-            "po3_min_manipulation_size_atr_mult": 0.0,  # LHS min: no minimum leg size filter
-            "min_ote_size_atr_mult":             0.0,    # LHS min: no minimum OTE size filter
-            "swing_n":                           1,      # LHS min (1–3)
-            "manip_leg_timeframe":               '1m',  # more frequent swings → more legs
-            "manip_leg_swing_depth":             1,      # LHS min (1–2)
-            "max_ote_per_session":               3,      # LHS max (1–3)
-            "max_stdv_per_session":              3,      # LHS max (1–3)
-            "max_session_ote_per_session":       3,      # LHS max (1–3)
-            "max_trades_per_day":                10,     # ML is the gate
-            "entry_end_min":                     11 * 60,
-            # Non-LHS params — kept at defaults
-            "tick_offset_atr_mult":          0.035,
-            "order_expiry_bars":             10,
-            "session_level_validity_days":   2,
-            "po3_lookback":                  6,
-            "po3_atr_len":                   14,
-            "po3_max_r2":                    0.4,
-            "po3_min_dir_changes":           2,
-            "po3_min_candles":               3,
-            "po3_max_accum_gap_bars":        10,
-            "validation_timeframes": {
-                "OTE":         ['1m', '5m', '15m', '30m'],
-                "STDV":        ['5m', '15m', '30m'],
-                "SESSION_OTE": ['1m', '5m', '15m', '30m'],
-            },
-            "validation_poi_types": {
-                "OTE":         ['OB', 'BB', 'FVG', 'IFVG', 'RB',
-                                 'PDH', 'PDL',
-                                 'Asia_H', 'Asia_L', 'London_H', 'London_L',
-                                 'NYPre_H', 'NYPre_L', 'NYAM_H', 'NYAM_L',
-                                 'NYLunch_H', 'NYLunch_L', 'NYPM_H', 'NYPM_L',
-                                 'Daily_H', 'Daily_L', 'NDOG', 'NWOG'],
-                "STDV":        ['OB', 'BB', 'FVG', 'IFVG', 'RB',
-                                 'PDH', 'PDL',
-                                 'Asia_H', 'Asia_L', 'London_H', 'London_L',
-                                 'NYPre_H', 'NYPre_L', 'NYAM_H', 'NYAM_L',
-                                 'NYLunch_H', 'NYLunch_L', 'NYPM_H', 'NYPM_L',
-                                 'Daily_H', 'Daily_L', 'NDOG', 'NWOG'],
-                "SESSION_OTE": ['OB', 'BB', 'FVG', 'IFVG', 'RB',
-                                 'PDH', 'PDL',
-                                 'Asia_H', 'Asia_L', 'London_H', 'London_L',
-                                 'NYPre_H', 'NYPre_L', 'NYAM_H', 'NYAM_L',
-                                 'NYLunch_H', 'NYLunch_L', 'NYPM_H', 'NYPM_L',
-                                 'Daily_H', 'Daily_L', 'NDOG', 'NWOG'],
-            },
-            "session_ote_anchors": [
-                'PDH', 'PDL',
-                'Asia_H', 'Asia_L', 'London_H', 'London_L',
-                'NYPre_H', 'NYPre_L', 'NYAM_H', 'NYAM_L',
-            ],
-            "cancel_pct_to_tp":       1.0,
-            "allowed_setup_types":    ['OTE', 'STDV', 'SESSION_OTE'],
-            "stdv_reverse":           False,
-            "ml_model":               ml_model,
-        },
+def _simulate_filtered_trades(
+    df_split: pd.DataFrame,
+    ml_model: EnsembleMLModel,
+    data: MarketData,
+) -> tuple[list[Trade], list[float]]:
+    """
+    Score, threshold-filter, and chronologically simulate all trades in df_split.
+
+    Rules (matching live multi-config operation):
+      - Only one open position at a time; skip any signal whose entry_bar falls
+        before or at the current position's exit_bar.
+      - At each bar, if multiple signals pass the threshold, take the one with
+        the highest ML score. This is NOT lookahead — same-bar signals are
+        simultaneous.
+      - Never defer a current bar's signal because a higher-scoring future signal
+        exists (that would be lookahead).
+
+    Returns (trades_in_chronological_order, bar_resolution_equity_curve).
+    """
+    if df_split.empty:
+        n = len(data.df_1m)
+        return [], [STARTING_CAPITAL] * (n + 1)
+
+    X      = df_split[ALL_FEATURE_NAMES]
+    scores = ml_model.predict_r(X)
+
+    df = df_split.copy()
+    df['_score'] = scores
+
+    df = df[df['_score'] > ml_model.threshold].copy()
+    if df.empty:
+        n = len(data.df_1m)
+        return [], [STARTING_CAPITAL] * (n + 1)
+
+    # Sort: entry_bar ascending, score descending (same-bar tie-break: highest wins)
+    df = df.sort_values(['entry_bar', '_score'], ascending=[True, False]).reset_index(drop=True)
+
+    entry_bars = df['entry_bar'].values
+    exit_bars  = df['exit_bar'].values
+
+    taken_indices: list[int] = []
+    in_position_until = -1
+    i = 0
+    n = len(df)
+
+    while i < n:
+        eb = int(entry_bars[i])
+        if eb <= in_position_until:
+            i += 1
+            continue
+
+        # All same-bar entries follow; df is sorted score-desc within a bar,
+        # so index i is the best one at this bar.
+        j = i + 1
+        while j < n and int(entry_bars[j]) == eb:
+            j += 1
+
+        taken_indices.append(i)
+        in_position_until = int(exit_bars[i])
+        i = j
+
+    if not taken_indices:
+        n_bars = len(data.df_1m)
+        return [], [STARTING_CAPITAL] * (n_bars + 1)
+
+    df_taken = df.iloc[taken_indices]
+
+    # Build Trade objects from dataset rows
+    trades: list[Trade] = []
+    for _, row in df_taken.iterrows():
+        direction   = int(row['direction'])
+        entry_price = float(row['entry_price'])
+        exit_price  = float(row['exit_price'])
+        sl_pts      = float(row['sl_pts'])
+        sl_price    = round_to_tick(entry_price - direction * sl_pts)
+        r_multiple  = float(row['r_multiple'])
+
+        trade = Trade(
+            entry_bar               = int(row['entry_bar']),
+            exit_bar                = int(row['exit_bar']),
+            entry_price             = entry_price,
+            exit_price              = exit_price,
+            direction               = direction,
+            contracts               = 1.0,
+            slippage_points         = SLIPPAGE_POINTS,
+            commission_per_contract = COMMISSION_PER_CONTRACT,
+            exit_reason             = ExitReason.TP if r_multiple > 0 else ExitReason.SL,
+            initial_sl_price        = sl_price,
+            sl_price                = sl_price,
+        )
+        trades.append(trade)
+
+    # Build bar-resolution equity curve (step function at each exit)
+    n_bars = len(data.df_1m)
+    delta  = np.zeros(n_bars + 1, dtype=np.float64)
+    for trade in trades:
+        eb = min(trade.exit_bar, n_bars)
+        delta[eb] += trade.net_pnl_dollars
+    equity_curve = (STARTING_CAPITAL + np.cumsum(delta)).tolist()
+
+    return trades, equity_curve
+
+
+def _make_run_result(trades: list[Trade], equity_curve: list[float], label: str) -> RunResult:
+    config = RunConfig(
+        starting_capital        = STARTING_CAPITAL,
+        slippage_points         = SLIPPAGE_POINTS,
+        commission_per_contract = COMMISSION_PER_CONTRACT,
+        eod_exit_time           = dtime(17, 0),
+        params                  = {},
+    )
+    return RunResult(
+        trades        = trades,
+        equity_curve  = equity_curve,
+        config        = config,
+        strategy_name = f"ICTSMCStrategy_ML_{label}",
     )
 
 
-def run_one(label, date_from, date_to, out, full_data, loader, ml_model):
+def run_one(label, split, out, df_dataset, full_data, loader, ml_model):
     print(f"\n{'='*60}")
-    print(f"  Run: {label}  ({date_from} -> {date_to})")
+    print(f"  Run: {label}  (split={split})")
     print(f"{'='*60}\n")
 
+    is_combined = isinstance(split, list)
+
+    if is_combined:
+        # Combined train+val: 2019-01-01 → 2023-12-31
+        date_from = TRAIN_START
+        date_to   = VALIDATION_END
+        df_split  = df_dataset[df_dataset['split'].isin(split)].copy()
+
+        # Validation entry_bar / exit_bar are indexed from 2023-01-01 (bar 0 = first 2023 bar).
+        # Offset them so they're relative to the combined data start (2019-01-01).
+        train_start_ts = pd.Timestamp(TRAIN_START, tz=TZ)
+        train_end_ts   = pd.Timestamp(TRAIN_END,   tz=TZ) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+        n_train_bars   = int(((full_data.df_1m.index >= train_start_ts) &
+                              (full_data.df_1m.index <= train_end_ts)).sum())
+        val_mask = df_split['split'] == 'validation'
+        df_split.loc[val_mask, 'entry_bar'] += n_train_bars
+        df_split.loc[val_mask, 'exit_bar']  += n_train_bars
+    else:
+        df_split  = df_dataset[df_dataset['split'] == split].copy()
+        date_from = VALIDATION_START if split == 'validation' else TRAIN_START
+        date_to   = VALIDATION_END   if split == 'validation' else TRAIN_END
+
     data = filter_data(full_data, loader, date_from, date_to)
-    print(f"  {len(data.df_1m):,} 1m bars | {len(data.trading_dates):,} trading days\n")
+    print(f"  Dataset rows: {len(df_split):,}  |  {len(data.trading_dates):,} trading days\n")
 
-    config = make_config(ml_model)
+    with _step("Scoring and simulating ML-filtered trades"):
+        trades, equity_curve = _simulate_filtered_trades(df_split, ml_model, data)
 
-    with _step("Running backtest"):
-        result = run_backtest(ICTSMCStrategy, config, data)
+    result = _make_run_result(trades, equity_curve, label)
     result.print_summary()
 
     save_trade_log(result, data, f"trade_logs/ICTSMCStrategy_{label}.csv")
 
-    if result.uses_trailing_stop:
-        result_rev = None
-    else:
-        result_rev = reverse_trades(result)
+    # No trailing stops in this path
+    result_rev = reverse_trades(result)
 
     print("Computing performance metrics...")
     perf     = PerformanceEngine().compute(result, data)
@@ -214,7 +293,7 @@ def run_one(label, date_from, date_to, out, full_data, loader, ml_model):
     # Prop firm
     prop_firm_results = prop_firm_results_rev = None
     _trades_with_sl = sum(1 for t in result.trades if t.sl_price is not None)
-    if _trades_with_sl / max(1, len(result.trades)) >= 0.80:
+    if result.trades and _trades_with_sl / max(1, len(result.trades)) >= 0.80:
         import time as _t
         prop_firm_results = {}
         for acc_name, account in LUCIDFLEX_ACCOUNTS.items():
@@ -235,12 +314,12 @@ def run_one(label, date_from, date_to, out, full_data, loader, ml_model):
         import time as _t
         print("Computing regime analysis (HMM)...")
         t0 = _t.perf_counter()
-        rth_mask = (data.df_1m.index.time >= dtime(9,30)) & (data.df_1m.index.time <= dtime(16,0))
+        rth_mask    = (data.df_1m.index.time >= dtime(9,30)) & (data.df_1m.index.time <= dtime(16,0))
         df_rth      = data.df_1m[rth_mask]
         daily_close = df_rth["close"].resample("D").last().dropna()
         daily_log_ret = np.log(daily_close / daily_close.shift(1)).dropna()
-        daily_dates = [d.date() for d in daily_log_ret.index]
-        daily_rets  = daily_log_ret.values.astype(np.float64)
+        daily_dates   = [d.date() for d in daily_log_ret.index]
+        daily_rets    = daily_log_ret.values.astype(np.float64)
         if len(daily_rets) >= 20:
             regime_result = fit_regimes(
                 daily_returns=daily_rets, daily_dates=daily_dates,
@@ -269,9 +348,20 @@ def run_one(label, date_from, date_to, out, full_data, loader, ml_model):
 
 if __name__ == "__main__":
     _t0 = time.perf_counter()
+
+    if not DATASET_PATH.exists():
+        print(f"ERROR: {DATASET_PATH} not found. Run run_ml_collect.py first.")
+        raise SystemExit(1)
+
+    df_dataset = pd.read_parquet(DATASET_PATH)
+    if 'sl_pts' not in df_dataset.columns:
+        print("ERROR: dataset missing sl_pts. Re-run run_ml_collect.py first.")
+        raise SystemExit(1)
+    df_dataset['date'] = pd.to_datetime(df_dataset['date'])
+
     full_data, loader = load_full_data()
+
     ml_model = EnsembleMLModel.load("models/ict_smc_ensemble.pkl")
-    # Apply propfirm-EV-optimal threshold from run_ml_threshold_opt.py if available.
     _thr_path = Path("models/threshold_opt.json")
     if _thr_path.exists():
         _opt = json.load(open(_thr_path))
@@ -281,13 +371,13 @@ if __name__ == "__main__":
 
     for run in RUNS:
         run_one(
-            label=run["label"],
-            date_from=run["date_from"],
-            date_to=run["date_to"],
-            out=run["out"],
-            full_data=full_data,
-            loader=loader,
-            ml_model=ml_model,
+            label      = run["label"],
+            split      = run["split"],
+            out        = run["out"],
+            df_dataset = df_dataset,
+            full_data  = full_data,
+            loader     = loader,
+            ml_model   = ml_model,
         )
 
     print("\nDone. Tearsheets:")
