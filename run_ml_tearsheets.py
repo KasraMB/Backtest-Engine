@@ -362,11 +362,7 @@ if __name__ == "__main__":
     full_data, loader = load_full_data()
 
     ml_model = EnsembleMLModel.load("models/ict_smc_ensemble.pkl")
-    _thr_path = Path("models/threshold_opt.json")
-    if _thr_path.exists():
-        _opt = json.load(open(_thr_path))
-        if _opt:
-            ml_model.threshold = float(next(iter(_opt.values()))['threshold'])
+    ml_model.threshold = 0.0
     print(f"Ensemble model loaded  |  threshold: {ml_model.threshold:.4f}\n")
 
     for run in RUNS:
