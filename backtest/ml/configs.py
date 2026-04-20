@@ -53,6 +53,17 @@ PHASE1_PARAMS: list[str] = [
     'max_stdv_per_session',
     'max_session_ote_per_session',
     'max_trades_per_day',
+    # Previously fixed in BASE_PARAMS — now sampled
+    'cisd_min_series_candles',
+    'cisd_min_body_ratio',
+    'rb_min_wick_ratio',
+    'session_level_validity_days',
+    'po3_lookback',
+    'po3_atr_len',
+    'po3_max_r2',
+    'po3_min_dir_changes',
+    'po3_min_candles',
+    'po3_max_accum_gap_bars',
 ]
 
 # ---------------------------------------------------------------------------
@@ -95,6 +106,17 @@ CONFIG_FEATURE_NAMES: list[str] = [
     'cfg_order_expiry_bars',
     # Rolling quality signal (prevents the model from only seeing "good" configs)
     'cfg_base_metric',            # rolling Sortino of prior trades for this config (0–1, 0.5 = metric 0)
+    # Previously fixed BASE_PARAMS — now sampled
+    'cfg_cisd_min_series',
+    'cfg_cisd_min_body',
+    'cfg_rb_min_wick',
+    'cfg_session_level_validity',
+    'cfg_po3_lookback',
+    'cfg_po3_atr_len',
+    'cfg_po3_max_r2',
+    'cfg_po3_min_dir_changes',
+    'cfg_po3_min_candles',
+    'cfg_po3_max_accum_gap',
 ]
 
 # ---------------------------------------------------------------------------
@@ -102,16 +124,6 @@ CONFIG_FEATURE_NAMES: list[str] = [
 # ---------------------------------------------------------------------------
 BASE_PARAMS: dict[str, Any] = dict(
     contracts=1,
-    cisd_min_series_candles=2,
-    cisd_min_body_ratio=0.5,
-    rb_min_wick_ratio=0.3,
-    session_level_validity_days=2,
-    po3_lookback=6,
-    po3_atr_len=14,
-    po3_max_r2=0.4,
-    po3_min_dir_changes=2,
-    po3_min_candles=3,
-    po3_max_accum_gap_bars=10,
     allowed_setup_types=['OTE', 'STDV', 'SESSION_OTE'],
     ml_model=None,
 )
@@ -132,6 +144,9 @@ PARAM_RANGES_V1: dict[str, Any] = {
     'po3_vol_sens':                     (0.5,  2.0),
     'po3_min_manipulation_size_atr_mult': (0.0, 1.0),
     'min_ote_size_atr_mult':            (0.0,  0.5),
+    'cisd_min_body_ratio':              (0.2,  0.7),
+    'rb_min_wick_ratio':                (0.1,  0.6),
+    'po3_max_r2':                       (0.2,  0.7),
     # Phase 1 — integer
     'swing_n':                          (1,    3),
     'manip_leg_swing_depth':            (1,    2),
@@ -139,6 +154,13 @@ PARAM_RANGES_V1: dict[str, Any] = {
     'max_stdv_per_session':             (1,    3),
     'max_session_ote_per_session':      (1,    3),
     'max_trades_per_day':               (1,    4),
+    'cisd_min_series_candles':          (1,    4),
+    'session_level_validity_days':      (1,    5),
+    'po3_lookback':                     (3,    15),
+    'po3_atr_len':                      (7,    21),
+    'po3_min_dir_changes':              (1,    4),
+    'po3_min_candles':                  (2,    6),
+    'po3_max_accum_gap_bars':           (5,    25),
     # Phase 1 — categorical
     'manip_leg_timeframe':              ['1m', '5m'],
     # Phase 2 — continuous
@@ -164,6 +186,9 @@ _INTEGER_PARAMS: set[str] = {
     'swing_n', 'manip_leg_swing_depth',
     'max_ote_per_session', 'max_stdv_per_session', 'max_session_ote_per_session',
     'max_trades_per_day', 'order_expiry_bars',
+    'cisd_min_series_candles', 'session_level_validity_days',
+    'po3_lookback', 'po3_atr_len', 'po3_min_dir_changes',
+    'po3_min_candles', 'po3_max_accum_gap_bars',
 }
 
 # Categorical params (mapped from uniform [0,1] to discrete choices)
@@ -285,26 +310,36 @@ def normalize_config(
 
     feat: dict[str, float] = {k: 0.0 for k in CONFIG_FEATURE_NAMES}
 
-    feat['cfg_confluence_tol']         = _norm('confluence_tolerance_atr_mult',     'cfg_confluence_tol')
-    feat['cfg_tp_confluence_tol']      = _norm('tp_confluence_tolerance_atr_mult',  'cfg_tp_confluence_tol')
-    feat['cfg_min_rr']                 = _norm('min_rr',                            'cfg_min_rr')
-    feat['cfg_level_penetration']      = _norm('level_penetration_atr_mult',        'cfg_level_penetration')
-    feat['cfg_po3_atr_mult']           = _norm('po3_atr_mult',                      'cfg_po3_atr_mult')
-    feat['cfg_po3_band_pct']           = _norm('po3_band_pct',                      'cfg_po3_band_pct')
-    feat['cfg_po3_vol_sens']           = _norm('po3_vol_sens',                      'cfg_po3_vol_sens')
-    feat['cfg_po3_min_manip_size']     = _norm('po3_min_manipulation_size_atr_mult','cfg_po3_min_manip_size')
-    feat['cfg_min_ote_size']           = _norm('min_ote_size_atr_mult',             'cfg_min_ote_size')
-    feat['cfg_swing_n']                = _norm('swing_n',                           'cfg_swing_n')
-    feat['cfg_manip_leg_swing_depth']  = _norm('manip_leg_swing_depth',             'cfg_manip_leg_swing_depth')
-    feat['cfg_max_ote_per_session']    = _norm('max_ote_per_session',               'cfg_max_ote_per_session')
-    feat['cfg_max_stdv_per_session']   = _norm('max_stdv_per_session',              'cfg_max_stdv_per_session')
-    feat['cfg_max_session_ote_per_session'] = _norm('max_session_ote_per_session',  'cfg_max_session_ote_per_session')
-    feat['cfg_max_trades_per_day']     = _norm('max_trades_per_day',                'cfg_max_trades_per_day')
-    feat['cfg_manip_tf_is_1m']         = float(params.get('manip_leg_timeframe') == '1m')
-    feat['cfg_cancel_pct_to_tp']       = _norm('cancel_pct_to_tp',                 'cfg_cancel_pct_to_tp')
-    feat['cfg_tick_offset']            = _norm('tick_offset_atr_mult',              'cfg_tick_offset')
-    feat['cfg_order_expiry_bars']      = _norm('order_expiry_bars',                 'cfg_order_expiry_bars')
-    feat['cfg_base_metric']            = float(np.clip(base_metric, -2.0, 2.0) / 4.0 + 0.5)
+    feat['cfg_confluence_tol']              = _norm('confluence_tolerance_atr_mult',       'cfg_confluence_tol')
+    feat['cfg_tp_confluence_tol']           = _norm('tp_confluence_tolerance_atr_mult',    'cfg_tp_confluence_tol')
+    feat['cfg_min_rr']                      = _norm('min_rr',                              'cfg_min_rr')
+    feat['cfg_level_penetration']           = _norm('level_penetration_atr_mult',          'cfg_level_penetration')
+    feat['cfg_po3_atr_mult']                = _norm('po3_atr_mult',                        'cfg_po3_atr_mult')
+    feat['cfg_po3_band_pct']                = _norm('po3_band_pct',                        'cfg_po3_band_pct')
+    feat['cfg_po3_vol_sens']                = _norm('po3_vol_sens',                        'cfg_po3_vol_sens')
+    feat['cfg_po3_min_manip_size']          = _norm('po3_min_manipulation_size_atr_mult',  'cfg_po3_min_manip_size')
+    feat['cfg_min_ote_size']                = _norm('min_ote_size_atr_mult',               'cfg_min_ote_size')
+    feat['cfg_swing_n']                     = _norm('swing_n',                             'cfg_swing_n')
+    feat['cfg_manip_leg_swing_depth']       = _norm('manip_leg_swing_depth',               'cfg_manip_leg_swing_depth')
+    feat['cfg_max_ote_per_session']         = _norm('max_ote_per_session',                 'cfg_max_ote_per_session')
+    feat['cfg_max_stdv_per_session']        = _norm('max_stdv_per_session',                'cfg_max_stdv_per_session')
+    feat['cfg_max_session_ote_per_session'] = _norm('max_session_ote_per_session',         'cfg_max_session_ote_per_session')
+    feat['cfg_max_trades_per_day']          = _norm('max_trades_per_day',                  'cfg_max_trades_per_day')
+    feat['cfg_manip_tf_is_1m']              = float(params.get('manip_leg_timeframe') == '1m')
+    feat['cfg_cancel_pct_to_tp']            = _norm('cancel_pct_to_tp',                   'cfg_cancel_pct_to_tp')
+    feat['cfg_tick_offset']                 = _norm('tick_offset_atr_mult',                'cfg_tick_offset')
+    feat['cfg_order_expiry_bars']           = _norm('order_expiry_bars',                   'cfg_order_expiry_bars')
+    feat['cfg_base_metric']                 = float(np.clip(base_metric, -2.0, 2.0) / 4.0 + 0.5)
+    feat['cfg_cisd_min_series']             = _norm('cisd_min_series_candles',             'cfg_cisd_min_series')
+    feat['cfg_cisd_min_body']               = _norm('cisd_min_body_ratio',                 'cfg_cisd_min_body')
+    feat['cfg_rb_min_wick']                 = _norm('rb_min_wick_ratio',                   'cfg_rb_min_wick')
+    feat['cfg_session_level_validity']      = _norm('session_level_validity_days',         'cfg_session_level_validity')
+    feat['cfg_po3_lookback']                = _norm('po3_lookback',                        'cfg_po3_lookback')
+    feat['cfg_po3_atr_len']                 = _norm('po3_atr_len',                         'cfg_po3_atr_len')
+    feat['cfg_po3_max_r2']                  = _norm('po3_max_r2',                          'cfg_po3_max_r2')
+    feat['cfg_po3_min_dir_changes']         = _norm('po3_min_dir_changes',                 'cfg_po3_min_dir_changes')
+    feat['cfg_po3_min_candles']             = _norm('po3_min_candles',                     'cfg_po3_min_candles')
+    feat['cfg_po3_max_accum_gap']           = _norm('po3_max_accum_gap_bars',              'cfg_po3_max_accum_gap')
 
     return feat
 

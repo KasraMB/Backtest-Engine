@@ -57,7 +57,7 @@ from backtest.regime.vol_regime import compute_vol_regime_map
 # Configuration — edit before each run
 # ---------------------------------------------------------------------------
 ROUND         = 1          # 1 = fresh broad LHS; 2+ = append tighter ranges
-N_CONFIGS     = 150        # configs to sample per round
+N_CONFIGS     = 300        # configs to sample per round
 LHS_SEED      = 42         # reproducibility
 
 SENSITIVITY_CFG = dict(
@@ -676,7 +676,8 @@ def main() -> None:
 
     # Schema migration: if sl_pts (or other new columns) are missing from the
     # existing dataset, force re-collection so all rows get the new fields.
-    _new_required_cols = {"sl_pts", "tp_pts", "exit_bar", "net_pnl_dollars", "entry_price", "exit_price"}
+    _new_required_cols = {"sl_pts", "tp_pts", "exit_bar", "net_pnl_dollars", "entry_price", "exit_price",
+                          "cfg_rb_min_wick", "cfg_cisd_min_series"}
     _force_schema_rebuild = False
     if DATASET_OUT.exists():
         _existing_cols = set(pd.read_parquet(DATASET_OUT, columns=[]).columns)

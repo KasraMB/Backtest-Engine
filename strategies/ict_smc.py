@@ -2021,10 +2021,11 @@ class ICTSMCStrategy(BaseStrategy):
             for z in zones_rel]
 
         # ── Phase 1A cache lookup ─────────────────────────────────────────────
-        # session_pois, overnight window scalars, and POI lists depend only on
-        # BASE_PARAMS (rb_min_wick_ratio, session_level_validity_days — fixed).
-        # Safe to share across all LHS-sampled configs in the same worker process.
-        _ph1a = _PHASE1A_CACHE.get((id(data), tod_ord))
+        # session_pois, overnight window scalars, and POI lists depend on
+        # rb_min_wick_ratio (POI detection) and session_level_validity_days.
+        # Both are now LHS-sampled so the key includes them.
+        _ph1a_key = (id(data), tod_ord, self.rb_min_wick_ratio, self.session_level_validity_days)
+        _ph1a = _PHASE1A_CACHE.get(_ph1a_key)
 
         # Session levels + NDOG
         if _ph1a is not None:
@@ -2171,7 +2172,7 @@ class ICTSMCStrategy(BaseStrategy):
             self._poi_15m = _detect_all_pois(o15, h15, l15, c15, self.rb_min_wick_ratio) if len(c15) else []
             self._poi_30m = _detect_all_pois(o30, h30, l30, c30, self.rb_min_wick_ratio) if len(c30) else []
 
-            _PHASE1A_CACHE[(id(data), tod_ord)] = {
+            _PHASE1A_CACHE[_ph1a_key] = {
                 'session_pois':        session_pois,
                 'ndog':                ndog,
                 'nwog':                nwog,
@@ -2237,10 +2238,10 @@ class ICTSMCStrategy(BaseStrategy):
             )
 
         # Pre-build per-fib-type POI lists and numpy arrays once per day.
-        # validation_poi_types and validation_timeframes are BASE_PARAMS (not
-        # LHS axes), so the result is identical for every config on the same
-        # day.  Cache in _PHASE1B_ARRS_CACHE to save ~15s on warm configs 2+.
-        _ph1b_key = (id(data), tod_ord)
+        # POI lists come from Phase 1A (depend on rb_min_wick_ratio) and
+        # session_pois (depend on session_level_validity_days), so both are
+        # included in the key.
+        _ph1b_key = (id(data), tod_ord, self.rb_min_wick_ratio, self.session_level_validity_days)
         _ph1b = _PHASE1B_ARRS_CACHE.get(_ph1b_key)
         if _ph1b is not None:
             poi_by_fib      = _ph1b['poi_by_fib']
