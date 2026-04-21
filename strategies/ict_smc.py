@@ -43,24 +43,23 @@ except ImportError:
     _njit_nogil = lambda fn: fn
 
 # ---------------------------------------------------------------------------
-# Phase 1A cache — persists across config runs in the same worker process.
-# Key: date ordinal (int). Stores POI lists + session levels computed from
-# BASE_PARAMS only (rb_min_wick_ratio, session_level_validity_days — both
-# fixed across all LHS-sampled configs). Safe to share because POI objects
-# are never mutated after _run_phase1 returns.
-# ---------------------------------------------------------------------------
-_PHASE1A_CACHE: dict = {}
-
-# Phase 1B POI-array cache — persists across config runs in the same worker.
-# Key: (id(data), tod_ord).  Stores poi_arrs_by_fib (the pre-built numpy
-# arrays used for confluence matching) and poi_by_fib (the filtered [(tf,POI)]
-# lists, needed by _compute_session_ote_levels fallback).
+# Per-day sub-caches — replace the old monolithic _PHASE1A_CACHE / _PHASE1B.
+# Splitting by param-dependency lets each cache hit independently, so adding
+# continuous LHS params (rb_min_wick_ratio) no longer kills the hit rate.
 #
-# Safe to share because validation_poi_types and validation_timeframes are
-# BASE_PARAMS (not LHS axes) — identical across all configs in a worker.
-# Saves _build_poi_list + _poi_list_to_arrays (~15s/config in actual time)
-# for every warm config (configs 2+ per worker).
-_PHASE1B_ARRS_CACHE: dict = {}
+# _OVERNIGHT_CACHE  key (id(data), tod_ord) — param-free overnight scalars
+# _SESSION_POIS_CACHE key (id(data), tod_ord, session_level_validity_days)
+#                      — session POI lists; ~5 unique values → ~98% hit rate
+# _POI_RAW_CACHE    key (id(data), tod_ord) — POIs detected with wick ratio=0
+#                      (all RBs kept); filtered per-config with _filter_rbs()
+# _NONRB_ARRS_CACHE key (id(data), tod_ord, session_level_validity_days)
+#                      — pre-built numpy arrays for non-RB + session POIs;
+#                      RB arrays are built fresh per-config then concatenated
+# ---------------------------------------------------------------------------
+_OVERNIGHT_CACHE:   dict = {}
+_SESSION_POIS_CACHE: dict = {}
+_POI_RAW_CACHE:     dict = {}
+_NONRB_ARRS_CACHE:  dict = {}
 
 # Swing-array cache keyed by (id(data), tod_ord, swing_n).
 # swing_n is the only LHS param that affects swing detection; all other
@@ -172,7 +171,7 @@ class POI:
     __slots__ = (
         'kind', 'direction', 'near', 'mid', 'far',
         'wick_tip', 'wick_base', 'invalidated', 'created_bar',
-        'session_kind', 'levels',
+        'session_kind', 'levels', 'wick_body_ratio',
     )
 
     def __init__(
@@ -187,17 +186,19 @@ class POI:
         invalidated: bool = False,
         created_bar: int = -1,
         session_kind: str = '',
+        wick_body_ratio: float = 0.0,
     ) -> None:
-        self.kind         = kind
-        self.direction    = direction
-        self.near         = near
-        self.mid          = mid
-        self.far          = far
-        self.wick_tip     = wick_tip
-        self.wick_base    = wick_base
-        self.invalidated  = invalidated
-        self.created_bar  = created_bar
-        self.session_kind = session_kind
+        self.kind            = kind
+        self.direction       = direction
+        self.near            = near
+        self.mid             = mid
+        self.far             = far
+        self.wick_tip        = wick_tip
+        self.wick_base       = wick_base
+        self.invalidated     = invalidated
+        self.created_bar     = created_bar
+        self.session_kind    = session_kind
+        self.wick_body_ratio = wick_body_ratio
         self.levels: List[float] = [near, mid, far]
         if kind == 'RB':
             wr = abs(wick_base - wick_tip)
@@ -764,8 +765,16 @@ def _detect_fvg_vectorized(o: np.ndarray, h: np.ndarray,
         _detect_fvg_nb(o, h, l, c, rb_min_wick_ratio)
     pois: List[POI] = []
     for i in range(len(r_kind)):
+        kind_name = _FVG_KIND_NAMES[int(r_kind[i])]
+        if kind_name == 'RB':
+            cb_local = int(r_cb[i])
+            body_sz  = abs(o[cb_local] - c[cb_local])
+            wick_sz  = abs(float(r_wt[i]) - float(r_wb[i]))
+            wbr      = wick_sz / max(body_sz, 1e-9)
+        else:
+            wbr = 0.0
         pois.append(POI(
-            kind=_FVG_KIND_NAMES[int(r_kind[i])],
+            kind=kind_name,
             direction=int(r_dir[i]),
             near=float(r_near[i]),
             mid=float(r_mid[i]),
@@ -774,6 +783,7 @@ def _detect_fvg_vectorized(o: np.ndarray, h: np.ndarray,
             invalidated=bool(r_inv[i]),
             wick_tip=float(r_wt[i]),
             wick_base=float(r_wb[i]),
+            wick_body_ratio=wbr,
         ))
     return pois
 
@@ -885,6 +895,41 @@ def _detect_all_pois(o: np.ndarray, h: np.ndarray, l: np.ndarray,
     """Combine OB/BB and FVG/IFVG/RB detection."""
     return (_detect_ob_vectorized(o, h, l, c, bar_offset) +
             _detect_fvg_vectorized(o, h, l, c, rb_min_wick_ratio, bar_offset))
+
+
+def _detect_all_pois_raw(o: np.ndarray, h: np.ndarray, l: np.ndarray,
+                          c: np.ndarray, bar_offset: int = 0) -> List[POI]:
+    """Detect all POIs with rb_min_wick_ratio=0.0 (keep all RBs).
+    Used to populate _POI_RAW_CACHE; per-config RB filtering applied later
+    via _filter_rbs() using the stored wick_body_ratio attribute."""
+    return (_detect_ob_vectorized(o, h, l, c, bar_offset) +
+            _detect_fvg_vectorized(o, h, l, c, 0.0, bar_offset))
+
+
+def _filter_rbs(pois: List[POI], rb_min_wick_ratio: float) -> List[POI]:
+    """Return pois with RBs filtered to those whose wick_body_ratio exceeds threshold."""
+    if rb_min_wick_ratio <= 0.0:
+        return pois
+    return [p for p in pois if p.kind != 'RB' or p.wick_body_ratio > rb_min_wick_ratio]
+
+
+def _concat_poi_arrs(a: Optional[dict], b: Optional[dict]) -> Optional[dict]:
+    """Concatenate two _poi_list_to_arrays() result dicts (either may be None)."""
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return {
+        'levels':      np.concatenate([a['levels'],      b['levels']],      axis=0),
+        'direction':   np.concatenate([a['direction'],   b['direction']]),
+        'created_bar': np.concatenate([a['created_bar'], b['created_bar']]),
+        'invalidated': np.concatenate([a['invalidated'], b['invalidated']]),
+        'near':        np.concatenate([a['near'],        b['near']]),
+        'far':         np.concatenate([a['far'],         b['far']]),
+        'kind':        a['kind']         + b['kind'],
+        'session_kind': a['session_kind'] + b['session_kind'],
+        'tf':          a['tf']           + b['tf'],
+    }
 
 
 def _poi_matches_price(poi: POI, price: float, tol: float) -> bool:
@@ -1947,109 +1992,46 @@ class ICTSMCStrategy(BaseStrategy):
         if completed_5m < 0:
             return
 
-        # ATR at phase-1 bar — used for OTE size filter and tolerance scaling
-        _phase1_atr = _wilder_atr_scalar(data.high_1m, data.low_1m, data.close_1m, 14, bar_i)
-        self._session_atr = _phase1_atr
-
-        # Identify overnight 5m bar index range (prev-day 16:00 to today 09:30)
-        # Use searchsorted to avoid O(n_5m) mask over the full growing array.
-        prev_d = tod - 1
-        n5 = completed_5m + 1   # usable 5m bars
-        _s_prev = int(np.searchsorted(dates5, prev_d))
-        _e_prev = min(int(np.searchsorted(dates5, prev_d + 1)), n5)
-        _s_tod  = int(np.searchsorted(dates5, tod))
-        _e_tod  = min(int(np.searchsorted(dates5, tod + 1)), n5)
-        _ov_parts: List[int] = []
-        if _s_prev < _e_prev:
-            _t = times5[_s_prev:_e_prev]
-            _i = np.where(_t >= NYPM_END_MIN)[0]
-            if len(_i):
-                _ov_parts.extend((_s_prev + _i).tolist())
-        if _s_tod < _e_tod:
-            _t = times5[_s_tod:_e_tod]
-            _i = np.where(_t < SESSION_START_MIN)[0]
-            if len(_i):
-                _ov_parts.extend((_s_tod + _i).tolist())
-        if len(_ov_parts) < self.po3_min_candles:
-            return
-
-        overnight_start_5m = int(min(_ov_parts))
-        overnight_end_5m   = int(max(_ov_parts))
-
-        # Slice full 5m arrays up to completed bar (for POI detection).
-        # For swing/manip detection, we use a bounded window: start slightly
-        # before overnight_start so swing confirmation has history, but avoid
-        # the O(total_history) cost of passing the full growing prefix.
-        o5f = data.open_5m[:completed_5m + 1]
-        h5f = data.high_5m[:completed_5m + 1]
-        l5f = data.low_5m[:completed_5m + 1]
-        c5f = data.close_5m[:completed_5m + 1]
-
-        # Bounded window for swing / manip-leg detection — overnight period +
-        # a small pre-overnight buffer for swing confirmation (swing_n bars).
-        _manip_win_start = max(0, overnight_start_5m - max(self.swing_n * 4, 20))
-        o5_win = data.open_5m[_manip_win_start:completed_5m + 1]
-        h5_win = data.high_5m[_manip_win_start:completed_5m + 1]
-        l5_win = data.low_5m[_manip_win_start:completed_5m + 1]
-        c5_win = data.close_5m[_manip_win_start:completed_5m + 1]
-
-        # Overnight-only slices for accumulation zone detection
-        o5_ov = data.open_5m[overnight_start_5m:overnight_end_5m + 1]
-        h5_ov = data.high_5m[overnight_start_5m:overnight_end_5m + 1]
-        l5_ov = data.low_5m[overnight_start_5m:overnight_end_5m + 1]
-        c5_ov = data.close_5m[overnight_start_5m:overnight_end_5m + 1]
-
-        # ATR on extended window (for proper Wilder initialisation)
-        atr5_start = max(0, overnight_start_5m - self.po3_atr_len * 4)
-        atr5_ext = _wilder_atr(
-            data.high_5m[atr5_start:overnight_end_5m + 1],
-            data.low_5m[atr5_start:overnight_end_5m + 1],
-            data.close_5m[atr5_start:overnight_end_5m + 1],
-            self.po3_atr_len)
-        atr5_ov = atr5_ext[overnight_start_5m - atr5_start:]
-
-        # Detect accumulation zones (indices relative to overnight_start_5m)
-        zones_rel = self._detect_accum_zones(o5_ov, h5_ov, l5_ov, c5_ov, atr5_ov)
-        if not zones_rel:
-            return
-
-        # Convert relative indices to absolute 5m bar indices
-        abs_zones = [AccumZone(
-            start=z.start + overnight_start_5m,
-            end=z.end   + overnight_start_5m,
-            high=z.high, low=z.low)
-            for z in zones_rel]
-
-        # ── Phase 1A cache lookup ─────────────────────────────────────────────
-        # session_pois, overnight window scalars, and POI lists depend on
-        # rb_min_wick_ratio (POI detection) and session_level_validity_days.
-        # Both are now LHS-sampled so the key includes them.
-        _ph1a_key = (id(data), tod_ord, self.rb_min_wick_ratio, self.session_level_validity_days)
-        _ph1a = _PHASE1A_CACHE.get(_ph1a_key)
-
-        # Session levels + NDOG
-        if _ph1a is not None:
-            session_pois = _ph1a['session_pois']
-            ndog         = _ph1a['ndog']
-            nwog         = _ph1a['nwog']
-        else:
-            session_pois, ndog, nwog = self._compute_session_levels(data, bar_i)
-            if ndog is None:
-                ndog = 0.0
-
-        # Overnight 1m window — needed for manip legs (ndog) and SESSION_OTE below
         n_1m = bar_i + 1
-        if _ph1a is not None:
-            overnight_start_1m        = _ph1a['overnight_start_1m']
-            self._overnight_range_atr = _ph1a['overnight_range_atr']
-        else:
+
+        # ── Cache 1: param-free overnight data ───────────────────────────────
+        # All values here depend only on (data, tod_ord) — same for every config
+        # run on the same day in the same worker.  100% hit rate for configs 2+.
+        _ov_key = (id(data), tod_ord)
+        _ov = _OVERNIGHT_CACHE.get(_ov_key)
+        if _ov is None:
+            _phase1_atr = _wilder_atr_scalar(data.high_1m, data.low_1m, data.close_1m, 14, bar_i)
+
+            prev_d = tod - 1
+            n5 = completed_5m + 1
+            _s_prev = int(np.searchsorted(dates5, prev_d))
+            _e_prev = min(int(np.searchsorted(dates5, prev_d + 1)), n5)
+            _s_tod  = int(np.searchsorted(dates5, tod))
+            _e_tod  = min(int(np.searchsorted(dates5, tod + 1)), n5)
+            _ov_parts: List[int] = []
+            if _s_prev < _e_prev:
+                _t = times5[_s_prev:_e_prev]
+                _i = np.where(_t >= NYPM_END_MIN)[0]
+                if len(_i):
+                    _ov_parts.extend((_s_prev + _i).tolist())
+            if _s_tod < _e_tod:
+                _t = times5[_s_tod:_e_tod]
+                _i = np.where(_t < SESSION_START_MIN)[0]
+                if len(_i):
+                    _ov_parts.extend((_s_tod + _i).tolist())
+            _ov_n = len(_ov_parts)
+            if _ov_n > 0:
+                overnight_start_5m = int(min(_ov_parts))
+                overnight_end_5m   = int(max(_ov_parts))
+            else:
+                overnight_start_5m = 0
+                overnight_end_5m   = 0
+
+            # 1m overnight window
             dates1 = self._bar_dates_ord
             times1 = self._bar_times_min
-            # Use searchsorted to avoid O(n) mask over the full array.
-            # Part 1: bars on prev_d with times >= NYPM_END_MIN (after-hours)
             s1 = int(np.searchsorted(dates1, prev_d))
             e1 = min(int(np.searchsorted(dates1, prev_d + 1)), n_1m)
-            # Part 2: bars on tod with times < SESSION_START_MIN (pre-session)
             s2 = int(np.searchsorted(dates1, tod))
             e2 = min(int(np.searchsorted(dates1, tod + 1)), n_1m)
             ov_candidates: List[int] = []
@@ -2065,26 +2047,87 @@ class ICTSMCStrategy(BaseStrategy):
                     ov_candidates.append(int(s2 + idx2[0]))
             overnight_start_1m = int(min(ov_candidates)) if ov_candidates else 0
 
-            # Overnight range — used as an ML feature
-            if overnight_start_1m < n_1m:
+            if overnight_start_1m < n_1m and _ov_n > 0:
                 _ov_h = data.high_1m[overnight_start_1m:n_1m].max()
                 _ov_l = data.low_1m[overnight_start_1m:n_1m].min()
-                self._overnight_range_atr = float((_ov_h - _ov_l) / max(_phase1_atr, 1e-9))
+                overnight_range_atr = float((_ov_h - _ov_l) / max(_phase1_atr, 1e-9))
             else:
-                self._overnight_range_atr = 0.0
+                overnight_range_atr = 0.0
 
-        # Detect manipulation legs — timeframe determined by manip_leg_timeframe
+            _ov = {
+                'phase1_atr':       _phase1_atr,
+                'ov_n_parts':       _ov_n,
+                'overnight_start_5m': overnight_start_5m,
+                'overnight_end_5m':   overnight_end_5m,
+                'overnight_start_1m': overnight_start_1m,
+                'overnight_range_atr': overnight_range_atr,
+            }
+            _OVERNIGHT_CACHE[_ov_key] = _ov
+
+        _phase1_atr        = _ov['phase1_atr']
+        self._session_atr  = _phase1_atr
+        overnight_start_5m = _ov['overnight_start_5m']
+        overnight_end_5m   = _ov['overnight_end_5m']
+        overnight_start_1m = _ov['overnight_start_1m']
+        self._overnight_range_atr = _ov['overnight_range_atr']
+
+        # Per-config early-return: po3_min_candles varies across LHS configs
+        if _ov['ov_n_parts'] < self.po3_min_candles:
+            return
+
+        # 5m slices (param-free numpy slices — no caching needed)
+        o5f = data.open_5m[:completed_5m + 1]
+        h5f = data.high_5m[:completed_5m + 1]
+        l5f = data.low_5m[:completed_5m + 1]
+        c5f = data.close_5m[:completed_5m + 1]
+
+        _manip_win_start = max(0, overnight_start_5m - max(self.swing_n * 4, 20))
+        o5_win = data.open_5m[_manip_win_start:completed_5m + 1]
+        h5_win = data.high_5m[_manip_win_start:completed_5m + 1]
+        l5_win = data.low_5m[_manip_win_start:completed_5m + 1]
+        c5_win = data.close_5m[_manip_win_start:completed_5m + 1]
+
+        o5_ov = data.open_5m[overnight_start_5m:overnight_end_5m + 1]
+        h5_ov = data.high_5m[overnight_start_5m:overnight_end_5m + 1]
+        l5_ov = data.low_5m[overnight_start_5m:overnight_end_5m + 1]
+        c5_ov = data.close_5m[overnight_start_5m:overnight_end_5m + 1]
+
+        # ATR on extended window (param-dependent: po3_atr_len is LHS-sampled)
+        atr5_start = max(0, overnight_start_5m - self.po3_atr_len * 4)
+        atr5_ext = _wilder_atr(
+            data.high_5m[atr5_start:overnight_end_5m + 1],
+            data.low_5m[atr5_start:overnight_end_5m + 1],
+            data.close_5m[atr5_start:overnight_end_5m + 1],
+            self.po3_atr_len)
+        atr5_ov = atr5_ext[overnight_start_5m - atr5_start:]
+
+        zones_rel = self._detect_accum_zones(o5_ov, h5_ov, l5_ov, c5_ov, atr5_ov)
+        if not zones_rel:
+            return
+
+        abs_zones = [AccumZone(
+            start=z.start + overnight_start_5m,
+            end=z.end   + overnight_start_5m,
+            high=z.high, low=z.low)
+            for z in zones_rel]
+
+        # ── Cache 2: session levels (integer key → ~98% hit with sorted configs) ─
+        _sess_key = (id(data), tod_ord, self.session_level_validity_days)
+        _sess = _SESSION_POIS_CACHE.get(_sess_key)
+        if _sess is None:
+            session_pois, ndog, nwog = self._compute_session_levels(data, bar_i)
+            ndog = 0.0 if ndog is None else ndog
+            _sess = {'session_pois': session_pois, 'ndog': ndog, 'nwog': nwog}
+            _SESSION_POIS_CACHE[_sess_key] = _sess
+        session_pois = _sess['session_pois']
+        ndog         = _sess['ndog']
+
+        # Manip leg detection — param-dependent (swing_n, cisd_*, po3_*): always per-config
         if self.manip_leg_timeframe == '1m':
-            # Bounded window for 1m path — same idea as the 5m path below.
-            # 1 5m bar ≈ 5 1m bars, so multiply the 5m buffer by 5.
             _manip_win_start_1m = max(0, overnight_start_1m - max(self.swing_n * 20, 100))
             bm_full = data.bar_map[:n_1m]
             bm_win  = bm_full[_manip_win_start_1m:]
 
-            # Convert 5m zone boundaries to 1m space (relative to window start).
-            # bar_map[i] = last completed 5m bar at 1m bar i.
-            # The first 1m bar strictly after 5m zone.end completes is the first i
-            # where bar_map[i] > zone.end.
             abs_zones_1m = [
                 AccumZone(
                     start=int(np.searchsorted(bm_win, z.start, side='left')),
@@ -2099,14 +2142,11 @@ class ICTSMCStrategy(BaseStrategy):
                 abs_zones_1m, overnight_start_1m - _manip_win_start_1m, ndog,
                 bar_map=bm_win,
                 min_size=self.po3_min_manipulation_size_atr_mult * _phase1_atr)
-            # Shift returned ManipLeg indices back to absolute 1m space
             for _leg in legs:
                 _leg.swing_lo_idx += _manip_win_start_1m
                 _leg.swing_hi_idx += _manip_win_start_1m
                 _leg.cisd_bar_idx += _manip_win_start_1m
         else:
-            # Use bounded window (not full prefix) for swing detection.
-            # Zone and overnight indices must be shifted relative to window start.
             _ws = _manip_win_start
             abs_zones_win = [
                 AccumZone(start=z.start - _ws, end=z.end - _ws, high=z.high, low=z.low)
@@ -2116,28 +2156,17 @@ class ICTSMCStrategy(BaseStrategy):
                 o5_win, h5_win, l5_win, c5_win,
                 abs_zones_win, overnight_start_5m - _ws, ndog,
                 min_size=self.po3_min_manipulation_size_atr_mult * _phase1_atr)
-            # Shift returned ManipLeg indices back to absolute 5m space
             for _leg in legs:
                 _leg.swing_lo_idx += _ws
                 _leg.swing_hi_idx += _ws
                 _leg.cisd_bar_idx += _ws
 
-        # Detect POIs on all timeframes — use a bounded lookback window so
-        # cost stays O(poi_lookback_5m_bars) per day rather than O(total_history).
-        # Phase 1A cache: POI detection depends only on BASE_PARAMS (rb_min_wick_ratio,
-        # poi_lookback_5m_bars) which are fixed across all LHS configs, so results are
-        # identical for every config run on the same day within the same worker process.
-        if _ph1a is not None:
-            self._poi_1m  = _ph1a['poi_1m']
-            self._poi_5m  = _ph1a['poi_5m']
-            self._poi_15m = _ph1a['poi_15m']
-            self._poi_30m = _ph1a['poi_30m']
-            h15 = _ph1a['h15']
-            l15 = _ph1a['l15']
-            h30 = _ph1a['h30']
-            l30 = _ph1a['l30']
-        else:
-            n_1m = bar_i + 1
+        # ── Cache 3: raw POI detection (param-free, rb_min_wick_ratio=0.0) ──────
+        # Detected with all RBs kept; per-config RB filtering via _filter_rbs()
+        # using stored wick_body_ratio.  100% hit rate for configs 2+ per day.
+        _poi_key = (id(data), tod_ord)
+        _poi_raw = _POI_RAW_CACHE.get(_poi_key)
+        if _poi_raw is None:
             poi5_start = max(0, completed_5m + 1 - self.poi_lookback_5m_bars)
             poi1_start = max(0, n_1m - self.poi_lookback_5m_bars * 5)
 
@@ -2145,11 +2174,9 @@ class ICTSMCStrategy(BaseStrategy):
             h1r = data.high_1m[poi1_start:n_1m]
             l1r = data.low_1m[poi1_start:n_1m]
             c1r = data.close_1m[poi1_start:n_1m]
-            self._poi_1m = _detect_all_pois(o1r, h1r, l1r, c1r, self.rb_min_wick_ratio,
-                                             bar_offset=poi1_start)
-            # Convert 1m created_bar indices to 5m indices so temporal comparisons
-            # use the same scale as leg.swing_lo_idx / swing_hi_idx (both in 5m).
-            for _p in self._poi_1m:
+            poi_1m_raw = _detect_all_pois_raw(o1r, h1r, l1r, c1r, bar_offset=poi1_start)
+            # Convert 1m created_bar to 5m indices (scale matches manip leg indices)
+            for _p in poi_1m_raw:
                 if _p.created_bar >= 0:
                     _cb = min(_p.created_bar, len(data.bar_map) - 1)
                     _p.created_bar = data.bar_map[_cb]
@@ -2158,36 +2185,35 @@ class ICTSMCStrategy(BaseStrategy):
             h5r = data.high_5m[poi5_start:completed_5m + 1]
             l5r = data.low_5m[poi5_start:completed_5m + 1]
             c5r = data.close_5m[poi5_start:completed_5m + 1]
-            self._poi_5m = _detect_all_pois(o5r, h5r, l5r, c5r, self.rb_min_wick_ratio,
-                                             bar_offset=poi5_start)
+            poi_5m_raw = _detect_all_pois_raw(o5r, h5r, l5r, c5r, bar_offset=poi5_start)
 
-            # 15m and 30m via numpy resample — trim leading bars so groups align to
-            # real clock boundaries (:00/:15/:30/:45 for 15m; :00/:30 for 30m).
             start_min_5m = int(self._bar_times_5m_min[poi5_start])
             trim15 = (15 - (start_min_5m % 15)) % 15 // 5
             trim30 = (30 - (start_min_5m % 30)) % 30 // 5
             o15, h15, l15, c15 = _resample_5m_to_Nm(o5r[trim15:], h5r[trim15:], l5r[trim15:], c5r[trim15:], 3)
             o30, h30, l30, c30 = _resample_5m_to_Nm(o5r[trim30:], h5r[trim30:], l5r[trim30:], c5r[trim30:], 6)
 
-            self._poi_15m = _detect_all_pois(o15, h15, l15, c15, self.rb_min_wick_ratio) if len(c15) else []
-            self._poi_30m = _detect_all_pois(o30, h30, l30, c30, self.rb_min_wick_ratio) if len(c30) else []
+            poi_15m_raw = _detect_all_pois_raw(o15, h15, l15, c15) if len(c15) else []
+            poi_30m_raw = _detect_all_pois_raw(o30, h30, l30, c30) if len(c30) else []
 
-            _PHASE1A_CACHE[_ph1a_key] = {
-                'session_pois':        session_pois,
-                'ndog':                ndog,
-                'nwog':                nwog,
-                'overnight_start_1m':  overnight_start_1m,
-                'overnight_range_atr': self._overnight_range_atr,
-                'poi_1m':              self._poi_1m,
-                'poi_5m':              self._poi_5m,
-                'poi_15m':             self._poi_15m,
-                'poi_30m':             self._poi_30m,
-                'h15': h15, 'l15': l15,
-                'h30': h30, 'l30': l30,
+            _poi_raw = {
+                'poi_1m':  poi_1m_raw,  'poi_5m':  poi_5m_raw,
+                'poi_15m': poi_15m_raw, 'poi_30m': poi_30m_raw,
+                'h15': h15, 'l15': l15, 'h30': h30, 'l30': l30,
             }
+            _POI_RAW_CACHE[_poi_key] = _poi_raw
 
-        # Build swing caches — keyed by (id(data), tod_ord, swing_n) so configs
-        # with the same swing_n share results without recomputing for each day.
+        # Apply per-config RB filter using stored wick_body_ratio
+        self._poi_1m  = _filter_rbs(_poi_raw['poi_1m'],  self.rb_min_wick_ratio)
+        self._poi_5m  = _filter_rbs(_poi_raw['poi_5m'],  self.rb_min_wick_ratio)
+        self._poi_15m = _filter_rbs(_poi_raw['poi_15m'], self.rb_min_wick_ratio)
+        self._poi_30m = _filter_rbs(_poi_raw['poi_30m'], self.rb_min_wick_ratio)
+        h15 = _poi_raw['h15']
+        l15 = _poi_raw['l15']
+        h30 = _poi_raw['h30']
+        l30 = _poi_raw['l30']
+
+        # Build swing caches — keyed by (id(data), tod_ord, swing_n)
         _sw_key = (id(data), tod_ord, self.swing_n)
         _sw_cached = _SWING_CACHE.get(_sw_key)
 
@@ -2237,33 +2263,30 @@ class ICTSMCStrategy(BaseStrategy):
                 self._sw_lo_all, self._sw_hi_all,
             )
 
-        # Pre-build per-fib-type POI lists and numpy arrays once per day.
-        # POI lists come from Phase 1A (depend on rb_min_wick_ratio) and
-        # session_pois (depend on session_level_validity_days), so both are
-        # included in the key.
-        _ph1b_key = (id(data), tod_ord, self.rb_min_wick_ratio, self.session_level_validity_days)
-        _ph1b = _PHASE1B_ARRS_CACHE.get(_ph1b_key)
-        if _ph1b is not None:
-            poi_by_fib      = _ph1b['poi_by_fib']
-            poi_arrs_by_fib = _ph1b['poi_arrs_by_fib']
-        else:
-            _tf_to_pois = {
-                '1m':  self._poi_1m,
-                '5m':  self._poi_5m,
-                '15m': self._poi_15m,
-                '30m': self._poi_30m,
+        # ── Cache 4: non-RB POI arrays (integer key → ~98% hit with sorted configs) ─
+        # Stores pre-built numpy arrays for OB/BB/FVG/IFVG + session POIs.
+        # RB arrays are built fresh per-config (depend on rb_min_wick_ratio) then
+        # concatenated with the cached non-RB arrays via _concat_poi_arrs().
+        _nonrb_key = (id(data), tod_ord, self.session_level_validity_days)
+        _nonrb_arrs = _NONRB_ARRS_CACHE.get(_nonrb_key)
+        if _nonrb_arrs is None:
+            _tf_to_pois_nr = {
+                '1m':  [p for p in _poi_raw['poi_1m']  if p.kind != 'RB'],
+                '5m':  [p for p in _poi_raw['poi_5m']  if p.kind != 'RB'],
+                '15m': [p for p in _poi_raw['poi_15m'] if p.kind != 'RB'],
+                '30m': [p for p in _poi_raw['poi_30m'] if p.kind != 'RB'],
             }
-            _default_tfs     = ['1m', '5m', '15m', '30m']
-            _default_sources = (set(self.validation_poi_types.get('OTE', [])) |
-                                set(self.validation_poi_types.get('STDV', [])) |
-                                set(self.validation_poi_types.get('SESSION_OTE', [])))
+            _default_tfs_nr     = ['1m', '5m', '15m', '30m']
+            _default_sources_nr = (set(self.validation_poi_types.get('OTE', [])) |
+                                   set(self.validation_poi_types.get('STDV', [])) |
+                                   set(self.validation_poi_types.get('SESSION_OTE', [])))
 
-            def _build_poi_list(fib_type: str) -> List[Tuple[str, POI]]:
-                allowed: set = set(self.validation_poi_types.get(fib_type, list(_default_sources)))
-                tfs = self.validation_timeframes.get(fib_type, _default_tfs)
+            def _build_nonrb_list(fib_type: str) -> List[Tuple[str, POI]]:
+                allowed: set = set(self.validation_poi_types.get(fib_type, list(_default_sources_nr)))
+                tfs = self.validation_timeframes.get(fib_type, _default_tfs_nr)
                 result: List[Tuple[str, POI]] = []
                 for tf in tfs:
-                    for poi in _tf_to_pois.get(tf, []):
+                    for poi in _tf_to_pois_nr.get(tf, []):
                         if poi.kind in allowed:
                             result.append((tf, poi))
                 for poi in session_pois:
@@ -2271,13 +2294,65 @@ class ICTSMCStrategy(BaseStrategy):
                         result.append(('session', poi))
                 return result
 
-            poi_by_fib      = {ft: _build_poi_list(ft) for ft in ('OTE', 'STDV', 'SESSION_OTE')}
-            poi_arrs_by_fib = {ft: _poi_list_to_arrays(poi_by_fib[ft])
-                               for ft in ('OTE', 'STDV', 'SESSION_OTE')}
-            _PHASE1B_ARRS_CACHE[_ph1b_key] = {
-                'poi_by_fib':      poi_by_fib,
-                'poi_arrs_by_fib': poi_arrs_by_fib,
-            }
+            _nonrb_arrs = {ft: _poi_list_to_arrays(_build_nonrb_list(ft))
+                           for ft in ('OTE', 'STDV', 'SESSION_OTE')}
+            _NONRB_ARRS_CACHE[_nonrb_key] = _nonrb_arrs
+
+        # Build RB-only arrays for this config's rb_min_wick_ratio
+        _tf_to_rbs = {
+            '1m':  [p for p in self._poi_1m  if p.kind == 'RB'],
+            '5m':  [p for p in self._poi_5m  if p.kind == 'RB'],
+            '15m': [p for p in self._poi_15m if p.kind == 'RB'],
+            '30m': [p for p in self._poi_30m if p.kind == 'RB'],
+        }
+        _default_tfs_rb     = ['1m', '5m', '15m', '30m']
+        _default_sources_rb = (set(self.validation_poi_types.get('OTE', [])) |
+                               set(self.validation_poi_types.get('STDV', [])) |
+                               set(self.validation_poi_types.get('SESSION_OTE', [])))
+
+        def _build_rb_list(fib_type: str) -> List[Tuple[str, POI]]:
+            allowed: set = set(self.validation_poi_types.get(fib_type, list(_default_sources_rb)))
+            tfs = self.validation_timeframes.get(fib_type, _default_tfs_rb)
+            result: List[Tuple[str, POI]] = []
+            for tf in tfs:
+                for poi in _tf_to_rbs.get(tf, []):
+                    if poi.kind in allowed:
+                        result.append((tf, poi))
+            return result
+
+        _rb_arrs = {ft: _poi_list_to_arrays(_build_rb_list(ft))
+                    for ft in ('OTE', 'STDV', 'SESSION_OTE')}
+
+        poi_arrs_by_fib = {ft: _concat_poi_arrs(_nonrb_arrs.get(ft), _rb_arrs.get(ft))
+                           for ft in ('OTE', 'STDV', 'SESSION_OTE')}
+
+        # Build poi_by_fib from per-config filtered lists — cheap Python loop,
+        # used only as fallback in _compute_session_ote_levels when arr is None.
+        _tf_to_pois_full = {
+            '1m':  self._poi_1m,
+            '5m':  self._poi_5m,
+            '15m': self._poi_15m,
+            '30m': self._poi_30m,
+        }
+        _default_tfs     = ['1m', '5m', '15m', '30m']
+        _default_sources = (set(self.validation_poi_types.get('OTE', [])) |
+                            set(self.validation_poi_types.get('STDV', [])) |
+                            set(self.validation_poi_types.get('SESSION_OTE', [])))
+
+        def _build_poi_list(fib_type: str) -> List[Tuple[str, POI]]:
+            allowed: set = set(self.validation_poi_types.get(fib_type, list(_default_sources)))
+            tfs = self.validation_timeframes.get(fib_type, _default_tfs)
+            result: List[Tuple[str, POI]] = []
+            for tf in tfs:
+                for poi in _tf_to_pois_full.get(tf, []):
+                    if poi.kind in allowed:
+                        result.append((tf, poi))
+            for poi in session_pois:
+                if poi.session_kind in allowed:
+                    result.append(('session', poi))
+            return result
+
+        poi_by_fib = {ft: _build_poi_list(ft) for ft in ('OTE', 'STDV', 'SESSION_OTE')}
 
         tol = self.confluence_tolerance_atr_mult * _phase1_atr
         seen: set = set()

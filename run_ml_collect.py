@@ -450,6 +450,10 @@ def main() -> None:
     print(f"Sampling {N_CONFIGS} configs via LHS (Round {ROUND} ranges)\n")
 
     all_configs = sample_configs(N_CONFIGS, ranges, seed=LHS_SEED + ROUND - 1)
+    # Sort by session_level_validity_days (integer, ~5 values) so consecutive
+    # configs share the same integer key and maximise _SESSION_POIS_CACHE /
+    # _NONRB_ARRS_CACHE hit rates within each worker.
+    all_configs = sorted(all_configs, key=lambda p: p.get('session_level_validity_days', 1))
 
     # Persist all LHS configs (including 0-trade ones) so tearsheet/threshold-opt
     # can run the same universe without re-sampling.
