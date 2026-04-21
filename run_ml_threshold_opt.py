@@ -33,7 +33,7 @@ DATASET_PATH        = ROOT / "data"   / "ml_dataset.parquet"
 ENSEMBLE_MODEL_PATH = ROOT / "models" / "ict_smc_ensemble.pkl"
 OUTPUT_PATH         = ROOT / "models" / "threshold_opt.json"
 
-THRESHOLD_CANDIDATES = np.linspace(-0.5, 2.0, 20).tolist()
+N_THRESHOLD_CANDIDATES = 40
 N_SIMS    = 2_000
 RISK_PCTS = [0.10, 0.25, 0.50]
 ACCOUNTS  = list(LUCIDFLEX_ACCOUNTS.keys())
@@ -143,8 +143,6 @@ def main() -> None:
 
     n_val_days = _count_val_trading_days(df_val)
     print(f"Validation trading days: {n_val_days}", flush=True)
-    print(f"Threshold candidates:    {len(THRESHOLD_CANDIDATES)}"
-          f"  ({THRESHOLD_CANDIDATES[0]:.2f} -> {THRESHOLD_CANDIDATES[-1]:.2f})", flush=True)
     print(f"n_sims:                  {N_SIMS}", flush=True)
 
     # Pre-compute scores once
@@ -152,6 +150,17 @@ def main() -> None:
     pred_r = model._model_a.predict_r(X)
     p_win  = model._model_b.predict_proba(X.values.astype(float))[:, 1]
     scores = (pred_r * p_win).astype(np.float32)
+
+    # Build threshold range from the actual score distribution.
+    # Range = [p5, p95] of scores so candidates span the meaningful part of the
+    # distribution rather than a fixed [-0.5, 2.0] that wastes resolution on
+    # empty regions.
+    s_lo = float(np.percentile(scores, 5))
+    s_hi = float(np.percentile(scores, 95))
+    THRESHOLD_CANDIDATES = np.linspace(s_lo, s_hi, N_THRESHOLD_CANDIDATES).tolist()
+    print(f"Score range (p5→p95):    {s_lo:.4f} → {s_hi:.4f}", flush=True)
+    print(f"Threshold candidates:    {N_THRESHOLD_CANDIDATES}"
+          f"  step={( s_hi - s_lo) / (N_THRESHOLD_CANDIDATES - 1):.4f}", flush=True)
 
     # Build per-threshold arrays
     pnl_list, sl_list, tpd_list, regime_list = _build_threshold_arrays(
@@ -189,6 +198,28 @@ def main() -> None:
             _best_result_for_account(results_per_thr)
         )
         best_thr = float(THRESHOLD_CANDIDATES[best_idx])
+
+        # Print ev_per_day curve so we can verify the peak is well-resolved
+        print(f"\n  ev/day curve [{acc_name}]:")
+        for ti, thr in enumerate(THRESHOLD_CANDIDATES):
+            ev_at_thr = -np.inf
+            for thr_res in [results_per_thr[ti]]:
+                for scheme_dict in thr_res.values():
+                    if not isinstance(scheme_dict, dict):
+                        continue
+                    for erp_dict in scheme_dict.values():
+                        if not isinstance(erp_dict, dict):
+                            continue
+                        for cell in erp_dict.values():
+                            if isinstance(cell, dict):
+                                ev = cell.get('ev_per_day') or -np.inf
+                                if ev > ev_at_thr:
+                                    ev_at_thr = ev
+            marker = " <-- best" if ti == best_idx else ""
+            n_trades = int(pnl_list[ti].shape[0])
+            ev_str = f"{ev_at_thr:.4f}" if ev_at_thr > -np.inf else "   n/a"
+            print(f"    thr={thr:>7.4f}  n={n_trades:>4}  ev/day={ev_str}{marker}")
+        print()
         roi_str  = f"{best_roi:.2%}" if best_roi is not None else "n/a"
 
         print(f"{elapsed:.1f}s  ->  threshold={best_thr:.3f}  "
