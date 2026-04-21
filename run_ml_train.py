@@ -23,6 +23,7 @@ Data splits (defined in backtest/ml/splits.py)
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 from datetime import time as dtime
@@ -40,6 +41,9 @@ from backtest.ml.evaluate import sortino_r, profit_factor_r, search_threshold
 DATASET_PATH = ROOT / "data" / "ml_dataset.parquet"
 MODEL_PATH          = ROOT / "models" / "ict_smc.pkl"
 ENSEMBLE_MODEL_PATH = ROOT / "models" / "ict_smc_ensemble.pkl"
+
+MODEL_PATH_REVERSE          = ROOT / "models" / "ict_smc_reverse.pkl"
+ENSEMBLE_MODEL_PATH_REVERSE = ROOT / "models" / "ict_smc_ensemble_reverse.pkl"
 
 WALK_FORWARD_CONFIG = WalkForwardConfig(
     train_months=24,
@@ -138,15 +142,32 @@ def _collect_single_run() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    print("=== ICT/SMC ML Training ===\n")
+    parser = argparse.ArgumentParser(description="Train ICT/SMC ML model")
+    parser.add_argument(
+        "--reverse", action="store_true",
+        help="Train on reversed trades (TP↔SL swapped). Saves to *_reverse.pkl."
+    )
+    args = parser.parse_args()
+    reverse = args.reverse
+
+    suffix = " [REVERSED TRADES]" if reverse else ""
+    print(f"=== ICT/SMC ML Training{suffix} ===\n")
 
     # 1. Load dataset
     if DATASET_PATH.exists():
         print(f"Loading dataset from {DATASET_PATH}...")
         df_full = pd.read_parquet(DATASET_PATH)
-        print(f"  Total rows: {len(df_full):,}\n")
+        print(f"  Total rows: {len(df_full):,}")
+        if reverse:
+            from backtest.ml.dataset import reverse_ml_dataset
+            df_full = reverse_ml_dataset(df_full)
+            print(f"  Reversed:   {len(df_full):,} rows (TP↔SL swapped)")
+        print()
     else:
         df_full = _collect_single_run()
+        if reverse:
+            from backtest.ml.dataset import reverse_ml_dataset
+            df_full = reverse_ml_dataset(df_full)
         print()
 
     # 2. Split into train and validation — NEVER touch test here
@@ -242,9 +263,10 @@ def main() -> None:
     print()
 
     # 5. Save model
-    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-    wf_result.final_model.save(MODEL_PATH)
-    print(f"Model saved -> {MODEL_PATH}")
+    out_model_path = MODEL_PATH_REVERSE if reverse else MODEL_PATH
+    out_model_path.parent.mkdir(parents=True, exist_ok=True)
+    wf_result.final_model.save(out_model_path)
+    print(f"Model saved -> {out_model_path}")
     print(f"Skip threshold: {wf_result.final_model.threshold:.4f}")
 
     # --- Ensemble model ---
@@ -259,9 +281,10 @@ def main() -> None:
     print(f"  OOS expectancy R:     {ens_result.summary['oos_expectancy_r_taken']:.3f}")
     print()
 
-    ENSEMBLE_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-    ens_result.ensemble_model.save(ENSEMBLE_MODEL_PATH)
-    print(f"Ensemble model saved -> {ENSEMBLE_MODEL_PATH}")
+    out_ensemble_path = ENSEMBLE_MODEL_PATH_REVERSE if reverse else ENSEMBLE_MODEL_PATH
+    out_ensemble_path.parent.mkdir(parents=True, exist_ok=True)
+    ens_result.ensemble_model.save(out_ensemble_path)
+    print(f"Ensemble model saved -> {out_ensemble_path}")
     print("Threshold = 0.0 (run run_ml_threshold_opt.py to find optimal threshold)")
 
     # Feature importance breakdown — shows how much the model relies on config

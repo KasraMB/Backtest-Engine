@@ -133,3 +133,40 @@ def build_dataset(run_result: 'RunResult', data: 'MarketData') -> pd.DataFrame:
         if c not in df.columns:
             df[c] = 0
     return df[cols].reset_index(drop=True)
+
+
+def reverse_ml_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Transform an ML dataset into its "reversed trade" equivalent.
+
+    Each trade is flipped: SL placed at original TP level, TP at original SL.
+    This gives the model a dataset of trades that profit when the original
+    strategy loses and vice versa.
+
+    Transformations applied:
+      - direction      : flipped  (-1 ↔ 1)
+      - sl_risk_atr    : *= tp_r  (new risk = old TP distance)
+      - tp_r           : 1 / tp_r (new reward = old SL distance)
+      - tp_next_r      : set to -1 (no meaningful next candidate)
+      - n_tp_candidates: set to 1
+      - r_multiple     : -r / tp_r
+      - is_winner      : sign of new r_multiple
+      - sl_pts (meta)  : *= tp_r
+      - net_pnl_dollars: negated (approximate)
+    """
+    out = df.copy()
+    tp_r = df['tp_r'].values.copy()
+
+    # Guard: tp_r == 0 would divide by zero — shouldn't happen but clip to small positive
+    tp_r = np.where(tp_r == 0.0, 1e-6, tp_r)
+
+    out['direction']       = -df['direction']
+    out['sl_risk_atr']     = df['sl_risk_atr'] * tp_r
+    out['tp_r']            = 1.0 / tp_r
+    out['tp_next_r']       = -1.0
+    out['n_tp_candidates'] = 1
+    out['r_multiple']      = -df['r_multiple'].values / tp_r
+    out['is_winner']       = (out['r_multiple'] > 0).astype(int)
+    out['sl_pts']          = df['sl_pts'].values * tp_r
+    out['net_pnl_dollars'] = -df['net_pnl_dollars'].values
+    return out
