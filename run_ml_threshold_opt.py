@@ -48,6 +48,7 @@ def _build_threshold_arrays(
     df_val: pd.DataFrame,
     scores: np.ndarray,
     n_val_days: int,
+    threshold_candidates: list[float],
 ) -> tuple[list[np.ndarray], list[np.ndarray], list[float], list[np.ndarray | None]]:
     """
     For each threshold candidate build (pnl_pts, sl_dists, tpd, regime_labels).
@@ -63,7 +64,7 @@ def _build_threshold_arrays(
     tpd_list:    list[float]            = []
     regime_list: list[np.ndarray | None] = []
 
-    for thr in THRESHOLD_CANDIDATES:
+    for thr in threshold_candidates:
         mask = scores > thr
         n    = int(mask.sum())
         if n < 5:
@@ -164,7 +165,7 @@ def main() -> None:
 
     # Build per-threshold arrays
     pnl_list, sl_list, tpd_list, regime_list = _build_threshold_arrays(
-        df_val, scores, n_val_days,
+        df_val, scores, n_val_days, THRESHOLD_CANDIDATES,
     )
 
     counts_str = "  ".join(
