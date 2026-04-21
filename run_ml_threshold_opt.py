@@ -44,6 +44,45 @@ def _count_val_trading_days(df_val: pd.DataFrame) -> int:
     return int(dates.nunique())
 
 
+def _chronological_select(
+    entry_bars: np.ndarray,
+    exit_bars: np.ndarray,
+    scores: np.ndarray,
+    threshold: float,
+) -> np.ndarray:
+    """
+    Greedy one-position-at-a-time selection matching live/tearsheet logic.
+    Returns boolean mask of selected rows (already above threshold).
+    """
+    above = scores > threshold
+    if not above.any():
+        return np.zeros(len(scores), dtype=bool)
+
+    # Sort above-threshold indices by entry_bar asc, score desc (same-bar tie-break)
+    idxs = np.where(above)[0]
+    order = np.lexsort((-scores[idxs], entry_bars[idxs]))
+    idxs  = idxs[order]
+
+    selected = np.zeros(len(scores), dtype=bool)
+    in_position_until = -1
+    i = 0
+    n = len(idxs)
+    while i < n:
+        idx = idxs[i]
+        eb  = int(entry_bars[idx])
+        if eb <= in_position_until:
+            i += 1
+            continue
+        # Among same-bar signals, idxs is already score-desc, so idx is best
+        j = i + 1
+        while j < n and int(entry_bars[idxs[j]]) == eb:
+            j += 1
+        selected[idx] = True
+        in_position_until = int(exit_bars[idx])
+        i = j
+    return selected
+
+
 def _build_threshold_arrays(
     df_val: pd.DataFrame,
     scores: np.ndarray,
@@ -51,21 +90,23 @@ def _build_threshold_arrays(
     threshold_candidates: list[float],
 ) -> tuple[list[np.ndarray], list[np.ndarray], list[float], list[np.ndarray | None]]:
     """
-    For each threshold candidate build (pnl_pts, sl_dists, tpd, regime_labels).
-    Returns four parallel lists.
+    For each threshold candidate, run chronological one-position-at-a-time
+    selection (matching tearsheet/live logic) then build propfirm sim arrays.
     """
-    r_mult  = df_val['r_multiple'].values.astype(np.float32)
-    sl_pts  = df_val['sl_pts'].values.astype(np.float32)
-    has_regime = 'vol_regime_p_high' in df_val.columns
-    regime_raw = (df_val['vol_regime_p_high'].values > 0.5).astype(np.int8) if has_regime else None
+    r_mult      = df_val['r_multiple'].values.astype(np.float32)
+    sl_pts      = df_val['sl_pts'].values.astype(np.float32)
+    entry_bars  = df_val['entry_bar'].values.astype(np.int64)
+    exit_bars   = df_val['exit_bar'].values.astype(np.int64)
+    has_regime  = 'vol_regime_p_high' in df_val.columns
+    regime_raw  = (df_val['vol_regime_p_high'].values > 0.5).astype(np.int8) if has_regime else None
 
-    pnl_list:    list[np.ndarray]       = []
-    sl_list:     list[np.ndarray]       = []
-    tpd_list:    list[float]            = []
+    pnl_list:    list[np.ndarray]        = []
+    sl_list:     list[np.ndarray]        = []
+    tpd_list:    list[float]             = []
     regime_list: list[np.ndarray | None] = []
 
     for thr in threshold_candidates:
-        mask = scores > thr
+        mask = _chronological_select(entry_bars, exit_bars, scores, thr)
         n    = int(mask.sum())
         if n < 5:
             pnl_list.append(np.zeros(0, dtype=np.float32))
