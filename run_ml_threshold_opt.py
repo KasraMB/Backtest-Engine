@@ -152,16 +152,10 @@ def main() -> None:
     p_win  = model._model_b.predict_proba(X.values.astype(float))[:, 1]
     scores = (pred_r * p_win).astype(np.float32)
 
-    # Build threshold range from the actual score distribution.
-    # Range = [p5, p95] of scores so candidates span the meaningful part of the
-    # distribution rather than a fixed [-0.5, 2.0] that wastes resolution on
-    # empty regions.
-    s_lo = float(np.percentile(scores, 5))
-    s_hi = float(np.percentile(scores, 95))
-    THRESHOLD_CANDIDATES = np.linspace(s_lo, s_hi, N_THRESHOLD_CANDIDATES).tolist()
-    print(f"Score range (p5→p95):    {s_lo:.4f} → {s_hi:.4f}", flush=True)
+    THRESHOLD_CANDIDATES = np.linspace(-0.5, 2.0, N_THRESHOLD_CANDIDATES).tolist()
     print(f"Threshold candidates:    {N_THRESHOLD_CANDIDATES}"
-          f"  step={( s_hi - s_lo) / (N_THRESHOLD_CANDIDATES - 1):.4f}", flush=True)
+          f"  ({THRESHOLD_CANDIDATES[0]:.2f} → {THRESHOLD_CANDIDATES[-1]:.2f}"
+          f"  step={(2.5 / (N_THRESHOLD_CANDIDATES - 1)):.4f})", flush=True)
 
     # Build per-threshold arrays
     pnl_list, sl_list, tpd_list, regime_list = _build_threshold_arrays(
