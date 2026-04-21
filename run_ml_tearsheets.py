@@ -351,6 +351,12 @@ def run_one(label, split, out, df_dataset, full_data, loader, ml_model):
 
 
 if __name__ == "__main__":
+    import argparse as _argparse
+    _parser = _argparse.ArgumentParser()
+    _parser.add_argument("--reverse", action="store_true",
+                         help="Use reverse model and reversed dataset (TP↔SL swapped).")
+    _args = _parser.parse_args()
+
     _t0 = time.perf_counter()
 
     if not DATASET_PATH.exists():
@@ -363,13 +369,27 @@ if __name__ == "__main__":
         raise SystemExit(1)
     df_dataset['date'] = pd.to_datetime(df_dataset['date'])
 
+    if _args.reverse:
+        from backtest.ml.dataset import reverse_ml_dataset
+        df_dataset = reverse_ml_dataset(df_dataset)
+        print("Reversed dataset applied (TP↔SL swapped).\n")
+
     full_data, loader = load_full_data()
 
-    ml_model = EnsembleMLModel.load("models/ict_smc_ensemble.pkl")
+    _model_path = "models/ict_smc_ensemble_reverse.pkl" if _args.reverse else "models/ict_smc_ensemble.pkl"
+    ml_model = EnsembleMLModel.load(_model_path)
     ml_model.threshold = 0.0
-    print(f"Ensemble model loaded  |  threshold: {ml_model.threshold:.4f}\n")
+    print(f"Ensemble model loaded  ({_model_path})  |  threshold: {ml_model.threshold:.4f}\n")
 
-    for run in RUNS:
+    _runs = (
+        [
+            {"label": "val",       "split": "validation",            "out": "tearsheet_val_reverse.html"},
+            {"label": "train_val", "split": ["train", "validation"], "out": "tearsheet_train_val_reverse.html"},
+        ]
+        if _args.reverse else RUNS
+    )
+
+    for run in _runs:
         run_one(
             label      = run["label"],
             split      = run["split"],
@@ -381,6 +401,6 @@ if __name__ == "__main__":
         )
 
     print("\nDone. Tearsheets:")
-    for run in RUNS:
+    for run in _runs:
         print(f"  {run['out']}")
     print(f"\nTotal time: {time.perf_counter() - _t0:.1f}s")
