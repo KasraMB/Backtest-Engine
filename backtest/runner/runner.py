@@ -121,6 +121,9 @@ def reverse_trades(result: "RunResult") -> "RunResult":
         rt.tp_price         = t.sl_price
         rt.initial_sl_price = t.initial_tp_price
         rt.initial_tp_price = t.initial_sl_price
+        # MAE/MFE swap: adverse excursion for the reverse = favorable for the original
+        rt.mae_points = t.mfe_points
+        rt.mfe_points = t.mae_points
         rev_trades.append(rt)
 
     # Rebuild equity curve from reversed trade PnLs
