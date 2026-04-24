@@ -101,8 +101,11 @@ class SessionMeanRevStrategy(BaseStrategy):
         self.equity_mode       = str(p.get('equity_mode',       'dynamic'))
         self.starting_equity   = float(p.get('starting_equity', 100_000))
         self.point_value       = float(p.get('point_value',     POINT_VALUE))
-        self.require_bos       = bool(p.get('require_bos',      False))
-        self.max_trades_per_day = int(p.get('max_trades_per_day', 3))
+        self.require_bos        = bool(p.get('require_bos',         False))
+        self.max_trades_per_day = int(p.get('max_trades_per_day',  3))
+        self.disp_min_atr_mult  = float(p.get('disp_min_atr_mult', 0.0))
+        self.momentum_only      = bool(p.get('momentum_only',       False))
+        self._allowed_sessions  = frozenset(p.get('allowed_sessions', ['Asia', 'London', 'NY']))
 
         # Lazy-computed bar arrays (populated on first call to _setup)
         self._times_min: Optional[np.ndarray] = None
@@ -281,6 +284,13 @@ class SessionMeanRevStrategy(BaseStrategy):
             in_win = win_start <= t_min < win_end
             was_in = self._in_win[sidx]
 
+            # Daily trade counter resets at Asia open regardless of allowed_sessions
+            if sidx == _ASIA and in_win and not was_in:
+                self._trades_today = 0
+
+            if name not in self._allowed_sessions:
+                continue
+
             # ── Session transition handling ──────────────────────────────────
             if was_in and not in_win:
                 # Session just ended (or gap jumped past it)
@@ -288,9 +298,6 @@ class SessionMeanRevStrategy(BaseStrategy):
                 continue
 
             if in_win and not was_in:
-                # Session just opened
-                if sidx == _ASIA:
-                    self._trades_today = 0   # new trading day
                 self._capture_rc(data, i, sidx, rc_min)
                 self._in_win[sidx] = True
 
@@ -323,7 +330,7 @@ class SessionMeanRevStrategy(BaseStrategy):
             true_p = self._true_p[sidx]
 
             # ── Bullish displacement → long signal ───────────────────────────
-            if self._bullish_disp(op_bar, hi, lo, cl, prev_hi):
+            if self._bullish_disp(op_bar, hi, lo, cl, prev_hi) and (hi - lo) >= self.disp_min_atr_mult * atr:
                 if cl == true_p:
                     pass  # spec: skip if cl == true_price
                 else:
@@ -336,6 +343,8 @@ class SessionMeanRevStrategy(BaseStrategy):
                         trade_type = 'momentum_long' if cl > true_p else 'reversion_long'
                         # Reversion validity: TP must not overshoot True Price
                         skip = (trade_type == 'reversion_long' and tp_price > true_p)
+                        if self.momentum_only and trade_type == 'reversion_long':
+                            skip = True
 
                         if not skip:
                             sl_dist = cl - sl_price
@@ -357,7 +366,7 @@ class SessionMeanRevStrategy(BaseStrategy):
                                     )
 
             # ── Bearish displacement → short signal ──────────────────────────
-            if self._bearish_disp(op_bar, hi, lo, cl, prev_lo):
+            if self._bearish_disp(op_bar, hi, lo, cl, prev_lo) and (hi - lo) >= self.disp_min_atr_mult * atr:
                 if cl == true_p:
                     pass
                 else:
@@ -369,6 +378,8 @@ class SessionMeanRevStrategy(BaseStrategy):
 
                         trade_type = 'momentum_short' if cl < true_p else 'reversion_short'
                         skip = (trade_type == 'reversion_short' and tp_price < true_p)
+                        if self.momentum_only and trade_type == 'reversion_short':
+                            skip = True
 
                         if not skip:
                             sl_dist = sl_price - cl
