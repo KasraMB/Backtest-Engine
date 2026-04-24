@@ -46,10 +46,11 @@ from strategies.vwap_band_reversion             import VWAPBandMeanReversion
 from strategies.double_session_sweep            import DoubleSessionSweep
 from strategies.ibs_mean_reversion              import IBSMeanReversion
 from strategies.ict_smc                         import ICTSMCStrategy
+from strategies.session_mean_rev                import SessionMeanRevStrategy
 
 # ── Active strategy ────────────────────────────────────────────────────────
 # Change this one line to switch strategies:
-STRATEGY = ICTSMCStrategy
+STRATEGY = SessionMeanRevStrategy
 
 def _step(label):
     """Context manager that prints step name and elapsed time."""
@@ -70,8 +71,8 @@ if __name__ == "__main__":
 
     # ── Date range filter ──────────────────────────────────────────────────────
     # Set to None to use all available data, or "YYYY-MM-DD" to restrict the range.
-    DATE_FROM = "2025-06-01"   # e.g. "2020-01-01"
-    DATE_TO   = None   # e.g. "2023-12-31"
+    DATE_FROM = "2019-01-01"   # 5-year backtest
+    DATE_TO   = "2023-12-31"
 
     # ── Regime / HMM config ────────────────────────────────────────────────────
     # HMM_ENABLED      : run regime detection and add regime section to tearsheet
@@ -180,109 +181,21 @@ if __name__ == "__main__":
     #   range_filter_mult = 2.0 -> skip if Asia range > 2.0× 30-day median range
     config = RunConfig(
         starting_capital=100_000,
-        slippage_points=0.5,
+        slippage_points=0.25,
         commission_per_contract=4.50,
-        eod_exit_time=dtime(17, 0),   # let active trades run to conclusion; entries/orders gated at 11:00 in strategy
+        eod_exit_time=dtime(23, 59),   # strategy handles its own session exits
         params={
-            # ICT/SMC core params (spec defaults)
-            "contracts":                     1,
-            "swing_n":                       1,
-            "cisd_min_series_candles":       2,
-            "cisd_min_body_ratio":           0.5,
-            "rb_min_wick_ratio":             0.3,
-            "confluence_tolerance_atr_mult":  0.18,
-            "level_penetration_atr_mult":    0.5,
-            "min_rr":                        5.0,
-            "tick_offset_atr_mult":          0.035,
-            "order_expiry_bars":             10,
-            "session_level_validity_days":   2,
-            # PO3 / accumulation params
-            "po3_lookback":                  6,
-            "po3_atr_mult":                  0.95,
-            "po3_atr_len":                   14,
-            "po3_band_pct":                  0.3,
-            "po3_vol_sens":                  1.0,
-            "po3_max_r2":                    0.4,
-            "po3_min_dir_changes":           2,
-            "po3_min_candles":               3,
-            "po3_max_accum_gap_bars":        10,
-            "po3_min_manipulation_size_atr_mult": 0.0,
-            "max_trades_per_day":            2,
-
-            # ── Manipulation leg ──────────────────────────────────────────────
-            # manip_leg_timeframe: timeframe for swing detection and CISD
-            #   options: '5m' | '1m'
-            "manip_leg_timeframe":           '5m',
-            # manip_leg_swing_depth: which prior swing anchors the opposite end
-            #   1 = nearest prior swing, 2 = second prior, 3 = third prior, …
-            "manip_leg_swing_depth":         1,
-
-            # ── Validation timeframes (candle-based POIs only) ────────────────
-            # Per setup type, which timeframes are searched for OB/BB/FVG/IFVG/RB.
-            # Session POIs (PDH, Asia, etc.) are unaffected by this setting.
-            #   timeframe options per list: '1m', '5m', '15m', '30m'
-            "validation_timeframes": {
-                "OTE":         ['1m', '5m', '15m', '30m'],
-                "STDV":        ['5m', '15m', '30m'],        # default: no 1m for STDV
-                "SESSION_OTE": ['1m', '5m', '15m', '30m'],
-            },
-
-            # ── Validation POI types ──────────────────────────────────────────
-            # Per setup type, which POI kinds and session level names are allowed.
-            # Candle kinds:  'OB', 'BB', 'FVG', 'IFVG', 'RB'
-            # Session kinds: 'PDH', 'PDL',
-            #                'Asia_H', 'Asia_L', 'London_H', 'London_L',
-            #                'NYPre_H', 'NYPre_L', 'NYAM_H', 'NYAM_L',
-            #                'NYLunch_H', 'NYLunch_L', 'NYPM_H', 'NYPM_L',
-            #                'Daily_H', 'Daily_L', 'NDOG', 'NWOG'
-            "validation_poi_types": {
-                "OTE":         ['OB', 'BB', 'FVG', 'IFVG', 'RB',
-                                 'PDH', 'PDL',
-                                 'Asia_H', 'Asia_L', 'London_H', 'London_L',
-                                 'NYPre_H', 'NYPre_L', 'NYAM_H', 'NYAM_L',
-                                 'NYLunch_H', 'NYLunch_L', 'NYPM_H', 'NYPM_L',
-                                 'Daily_H', 'Daily_L', 'NDOG', 'NWOG'],
-                "STDV":        ['OB', 'BB', 'FVG', 'IFVG', 'RB',
-                                 'PDH', 'PDL',
-                                 'Asia_H', 'Asia_L', 'London_H', 'London_L',
-                                 'NYPre_H', 'NYPre_L', 'NYAM_H', 'NYAM_L',
-                                 'NYLunch_H', 'NYLunch_L', 'NYPM_H', 'NYPM_L',
-                                 'Daily_H', 'Daily_L', 'NDOG', 'NWOG'],
-                "SESSION_OTE": ['OB', 'BB', 'FVG', 'IFVG', 'RB',
-                                 'PDH', 'PDL',
-                                 'Asia_H', 'Asia_L', 'London_H', 'London_L',
-                                 'NYPre_H', 'NYPre_L', 'NYAM_H', 'NYAM_L',
-                                 'NYLunch_H', 'NYLunch_L', 'NYPM_H', 'NYPM_L',
-                                 'Daily_H', 'Daily_L', 'NDOG', 'NWOG'],
-            },
-
-            # ── SESSION_OTE anchors ───────────────────────────────────────────
-            # Which session level kinds act as the first anchor for SESSION_OTE fibs.
-            # 100% = anchor level, 0% = overnight extreme (min for highs, max for lows).
-            # Options: 'PDH', 'PDL',
-            #          'Asia_H', 'Asia_L', 'London_H', 'London_L',
-            #          'NYPre_H', 'NYPre_L', 'NYAM_H', 'NYAM_L',
-            #          'NYLunch_H', 'NYLunch_L', 'NYPM_H', 'NYPM_L',
-            #          'Daily_H', 'Daily_L'
-            "session_ote_anchors": [
-                'PDH', 'PDL',
-                'Asia_H', 'Asia_L', 'London_H', 'London_L',
-                'NYPre_H', 'NYPre_L', 'NYAM_H', 'NYAM_L',
-            ],
-
-            # ── Order cancellation / OTE size filter ─────────────────────────
-            # cancel_pct_to_tp: fraction of entry→TP distance that price must NOT
-            #   reach before the limit fills.  1.0 = cancel only at TP (default).
-            #   0.5 = cancel if price moves halfway from entry to TP.
-            "cancel_pct_to_tp":       0.75,
-            # min_ote_size_atr_mult: minimum OTE span (0%→100%) as a multiple of ATR.
-            #   Applies to OTE and SESSION_OTE levels.  0.0 = no filter (default).
-            "min_ote_size_atr_mult":  10,
-            "allowed_setup_types": ['STDV', 'SESSION_OTE'],
-            # stdv_reverse: True  = reversal at extension (original behaviour)
-            #               False = continuation with distribution leg
-            "stdv_reverse":           False,
-            # "ml_model": MLModel.load("models/ict_smc.pkl")
+            # SessionMeanRevStrategy spec defaults
+            "atr_period":          14,
+            "wick_threshold":      0.15,
+            "rr_ratio":            1.5,
+            "sl_atr_multiplier":   1.0,
+            "risk_per_trade":      0.01,
+            "equity_mode":         "dynamic",
+            "starting_equity":     100_000,
+            "point_value":         20.0,
+            "require_bos":         False,
+            "max_trades_per_day":  3,
         },
     )
 
