@@ -401,6 +401,149 @@ def _eval_loop_nb(
 
 
 # ---------------------------------------------------------------------------
+# Single-threshold Numba funded kernel
+# ---------------------------------------------------------------------------
+
+@njit(parallel=False, cache=True, fastmath=True)
+def _funded_loop_nb(
+    pnl_pts:    np.ndarray,   # (max_pool,) float32
+    sl_dists:   np.ndarray,   # (max_pool,) float32
+    pool_size:  int,
+    all_counts: np.ndarray,   # (n_sims, MAX_DAYS) int16
+    all_idx:    np.ndarray,   # (n_sims, MAX_DAYS, MAX_T) int32
+    starting_balance: float,
+    mll_amount:       float,
+    max_micros:       int,
+    risk_pct:         float,
+    scheme_code:      int,
+    point_value:      float,
+    max_t:            int,
+    max_pay:          int,
+    payout_cap:       float,
+    split:            float,
+):
+    n_sims   = all_counts.shape[0]
+    MAX_DAYS = all_counts.shape[1]
+
+    total_w_out        = np.zeros(n_sims, dtype=np.float32)
+    days_to_w_out      = np.full(n_sims, np.nan)
+    n_payouts_out      = np.zeros(n_sims, dtype=np.int32)
+    payout_days_out    = np.full((n_sims, max_pay), np.nan)
+    payout_amounts_out = np.zeros((n_sims, max_pay), dtype=np.float64)
+    funded_days_out    = np.zeros(n_sims, dtype=np.float64)
+
+    base      = np.float32(risk_pct * mll_amount)
+    base_frac = np.float32(base / starting_balance)
+    start_mll = np.float32(starting_balance - mll_amount)
+
+    for sim_i in range(n_sims):
+        balance    = np.float32(starting_balance)
+        mll_level  = start_mll
+        peak_eod   = np.float32(starting_balance)
+        mll_locked = False
+        alive      = True
+        n_payouts  = np.int32(0)
+        total_w    = np.float32(0.0)
+        prof_days  = np.int32(0)
+        last_won   = True
+        prev_risk  = base
+
+        for day in range(MAX_DAYS):
+            if not alive:
+                break
+
+            funded_days_out[sim_i] = np.float64(day + 1)
+
+            n_today     = int(all_counts[sim_i, day])
+            n_today_cap = min(n_today, max_t)
+
+            remaining = max(np.float32(1.0), balance - mll_level)
+            if scheme_code == 0:
+                target = base
+            elif scheme_code == 1:
+                target = balance * base_frac
+            elif scheme_code == 2:
+                target = np.float32(remaining * risk_pct)
+            elif scheme_code == 3:
+                buf_ratio = remaining / np.float32(mll_amount)
+                scale = min(np.float32(2.0), max(np.float32(0.25), buf_ratio / np.float32(0.5)))
+                target = base * scale
+            elif scheme_code == 4:
+                target = np.float32(1e9)
+            else:
+                doubled = min(prev_risk * np.float32(2.0), base * np.float32(4.0))
+                target  = base if last_won else doubled
+
+            day_pnl        = np.float32(0.0)
+            cum_pnl        = np.float32(0.0)
+            breached       = False
+            last_trade_pnl = np.float32(0.0)
+
+            for t in range(n_today_cap):
+                raw_idx = all_idx[sim_i, day, t] % pool_size
+                pnl_t   = pnl_pts[raw_idx]
+                sl_t    = max(np.float32(0.25), sl_dists[raw_idx])
+                raw_c   = target / (sl_t * np.float32(point_value))
+                n_c     = max(1, min(max_micros, int(raw_c)))
+                dollar  = pnl_t * np.float32(n_c) * np.float32(point_value)
+                cum_pnl += dollar
+                day_pnl += dollar
+                last_trade_pnl = dollar
+                if balance + cum_pnl <= mll_level:
+                    breached = True
+                    break
+
+            if n_today_cap > 0:
+                last_won  = last_trade_pnl > np.float32(0.0)
+                prev_risk = target
+
+            if breached:
+                alive = False
+                continue
+
+            balance += day_pnl
+            new_peak = max(peak_eod, balance)
+            peak_eod = new_peak
+
+            if not mll_locked and balance >= np.float32(starting_balance):
+                mll_locked = True
+            if mll_locked:
+                mll_level = np.float32(starting_balance - 100.0)
+            else:
+                new_mll = peak_eod - np.float32(mll_amount)
+                if new_mll > mll_level:
+                    mll_level = new_mll
+
+            if balance <= mll_level:
+                alive = False
+                continue
+
+            if day_pnl > np.float32(0.0):
+                prof_days += 1
+
+            if prof_days >= 5 and n_payouts < max_pay:
+                profits = max(np.float32(0.0), balance - np.float32(starting_balance))
+                gross   = min(profits * np.float32(0.5), np.float32(payout_cap))
+                if gross >= np.float32(500.0):
+                    net = gross * np.float32(split)
+                    payout_days_out[sim_i, n_payouts]    = np.float64(day + 1)
+                    payout_amounts_out[sim_i, n_payouts] = np.float64(net)
+                    if n_payouts == 0:
+                        days_to_w_out[sim_i] = np.float64(day + 1)
+                    balance   -= gross
+                    total_w   += net
+                    n_payouts  = n_payouts + 1
+                    prof_days  = 0
+                    if n_payouts >= max_pay:
+                        alive = False
+
+        total_w_out[sim_i]   = total_w
+        n_payouts_out[sim_i] = n_payouts
+
+    return total_w_out, days_to_w_out, n_payouts_out, payout_days_out, payout_amounts_out, funded_days_out
+
+
+# ---------------------------------------------------------------------------
 # Multi-threshold Numba eval kernel
 # ---------------------------------------------------------------------------
 
@@ -832,11 +975,32 @@ def simulate_funded_batch(
         empty = np.array([])
         return empty, empty, empty, np.full((0, 6), np.nan), np.full((0, 6), 0.0), empty
 
-    MAX_DAYS  = 500
-    MAX_T     = min(30, max(3, int(trades_per_day * 4)))
-    n_pool    = len(pnl_pts)
-    max_pay   = account.max_payouts   # 6
+    MAX_DAYS = 500
+    MAX_T    = min(30, max(3, int(trades_per_day * 4)))
+    n_pool   = len(pnl_pts)
+    max_pay  = account.max_payouts
 
+    all_counts = rng.poisson(trades_per_day, size=(n, MAX_DAYS)).clip(0, MAX_T).astype(np.int16)
+    all_idx    = rng.integers(0, n_pool, size=(n, MAX_DAYS, MAX_T), dtype=np.int32)
+
+    if _NUMBA_AVAILABLE:
+        return _funded_loop_nb(
+            pnl_pts.astype(np.float32), sl_dists.astype(np.float32),
+            n_pool,
+            all_counts, all_idx,
+            float(starting_balances[0]),
+            float(account.mll_amount),
+            int(account.max_micros),
+            float(risk_pct),
+            int(SCHEME_CODE.get(scheme, 0)),
+            float(MICRO_POINT_VALUE),
+            int(MAX_T),
+            int(max_pay),
+            float(account.payout_cap),
+            float(account.split),
+        )
+
+    # ── Fallback: pure NumPy path (Numba unavailable) ────────────────────────
     balance    = starting_balances.copy().astype(np.float32)
     mll_level  = np.full(n, account.starting_balance - account.mll_amount, dtype=np.float32)
     peak_eod   = starting_balances.copy().astype(np.float32)
@@ -848,24 +1012,15 @@ def simulate_funded_batch(
     last_won   = np.ones(n, dtype=bool)
     prev_risk  = np.full(n, risk_pct * account.mll_amount, dtype=np.float32)
 
-    # Track day of each payout: shape (n, max_payouts), NaN = not reached
     payout_days    = np.full((n, max_pay), np.nan, dtype=np.float64)
     payout_amounts = np.zeros((n, max_pay), dtype=np.float64)
-    # Keep first-payout shorthand for backward compat
-    days_to_w   = np.full(n, np.nan, dtype=np.float64)
-    # Last trading day each sim was alive (unconditional denominator for per-K ev/day)
+    days_to_w      = np.full(n, np.nan, dtype=np.float64)
     funded_days_elapsed = np.zeros(n, dtype=np.float64)
-
-    # Pre-generate all random variates — eliminates per-iteration Python RNG overhead.
-    all_counts = rng.poisson(trades_per_day, size=(n, MAX_DAYS)).clip(0, MAX_T).astype(np.int16)
-    all_idx    = rng.integers(0, n_pool, size=(n, MAX_DAYS, MAX_T), dtype=np.int32)
 
     for day in range(MAX_DAYS):
         if not alive.any():
             break
 
-        # Record last active day before any breach/payout checks so that sims
-        # killed this day still count their day toward the denominator.
         funded_days_elapsed = np.where(alive, float(day + 1), funded_days_elapsed)
 
         n_today = all_counts[:, day].astype(np.int32)
@@ -879,7 +1034,7 @@ def simulate_funded_batch(
         target   = compute_target_risk_vec(
             scheme, risk_pct, account, balance, mll_level, last_won, prev_risk
         )
-        n_c      = resolve_contracts_vec(target[:, None], t_sl, account.max_micros, sizing_mode)
+        n_c        = resolve_contracts_vec(target[:, None], t_sl, account.max_micros, sizing_mode)
         dollar_pnl = t_pnl * n_c * MICRO_POINT_VALUE
         trade_mask = np.arange(max_t)[None, :] < n_today[:, None]
         dollar_pnl = np.where(trade_mask, dollar_pnl, 0.0)
@@ -889,7 +1044,7 @@ def simulate_funded_batch(
         ).any(axis=1)
 
         day_pnl    = dollar_pnl.sum(axis=1)
-        last_trade = (np.arange(max_t)[None, :] == (n_today-1).clip(0)[:, None])
+        last_trade = (np.arange(max_t)[None, :] == (n_today - 1).clip(0)[:, None])
         last_won   = np.where(alive, (dollar_pnl * last_trade).sum(axis=1) > 0, last_won)
         prev_risk  = np.where(alive, target, prev_risk)
 
@@ -897,8 +1052,8 @@ def simulate_funded_batch(
         balance    = np.where(apply_mask, balance + day_pnl, balance)
         alive      = alive & ~intra_breach
 
-        new_peak   = np.maximum(peak_eod, balance)
-        peak_eod   = np.where(alive, new_peak, peak_eod)
+        new_peak = np.maximum(peak_eod, balance)
+        peak_eod = np.where(alive, new_peak, peak_eod)
 
         just_locked = alive & ~mll_locked & (balance >= account.starting_balance)
         mll_locked  = mll_locked | just_locked
@@ -912,15 +1067,13 @@ def simulate_funded_batch(
         eod_breach = alive & (balance <= mll_level)
         alive      = alive & ~eod_breach
 
-        # Payout cycle
-        prof_days = np.where(alive & (day_pnl > 0), prof_days + 1, prof_days)
+        prof_days  = np.where(alive & (day_pnl > 0), prof_days + 1, prof_days)
         can_payout = alive & (prof_days >= 5)
         if can_payout.any():
             profits = np.maximum(0.0, balance - account.starting_balance)
             gross   = np.minimum(profits * 0.50, account.payout_cap)
             do_pay  = can_payout & (gross >= 500) & (n_payouts < max_pay)
 
-            # Record day and withdrawal amount of each payout by index
             for p_idx in range(max_pay):
                 this_pay = do_pay & (n_payouts == p_idx)
                 if this_pay.any():
@@ -931,13 +1084,13 @@ def simulate_funded_batch(
                         this_pay, gross * account.split, payout_amounts[:, p_idx]
                     )
 
-            first_pay  = do_pay & (n_payouts == 0)
-            days_to_w  = np.where(first_pay, day + 1, days_to_w)
-            balance    = np.where(do_pay, balance - gross, balance)
-            total_w    = np.where(do_pay, total_w + gross * account.split, total_w)
-            n_payouts  = np.where(do_pay, n_payouts + 1, n_payouts)
-            prof_days  = np.where(do_pay, 0, prof_days)
-            alive      = alive & (n_payouts < max_pay)
+            first_pay = do_pay & (n_payouts == 0)
+            days_to_w = np.where(first_pay, day + 1, days_to_w)
+            balance   = np.where(do_pay, balance - gross, balance)
+            total_w   = np.where(do_pay, total_w + gross * account.split, total_w)
+            n_payouts = np.where(do_pay, n_payouts + 1, n_payouts)
+            prof_days = np.where(do_pay, 0, prof_days)
+            alive     = alive & (n_payouts < max_pay)
 
     return total_w, days_to_w, n_payouts, payout_days, payout_amounts, funded_days_elapsed
 
@@ -960,6 +1113,9 @@ def _run_scheme_worker(args: tuple) -> tuple[str, dict]:
     # Each worker gets its own RNG seeded deterministically per scheme
     scheme_seed = seed + hash(scheme) % 10_000
     rng = np.random.default_rng(scheme_seed)
+
+    # Pre-generate bootstrap index matrix once — reused for all (erp, frp) CIs.
+    bs_idx = rng.integers(0, n_sims, size=(BS, n_sims))
 
     scheme_results = {}
 
@@ -998,8 +1154,7 @@ def _run_scheme_worker(args: tuple) -> tuple[str, dict]:
         else:
             e_cost = account.eval_fee + 10 * account.reset_fee
 
-        idx     = rng.integers(0, n_sims, size=(BS, n_sims))
-        bs_pass = np.median(passed.astype(np.float32)[idx], axis=1)
+        bs_pass = np.median(passed.astype(np.float32)[bs_idx], axis=1)
         pr_ci   = (float(np.percentile(bs_pass, 2.5)),
                    float(np.percentile(bs_pass, 97.5)))
 
@@ -1035,8 +1190,7 @@ def _run_scheme_worker(args: tuple) -> tuple[str, dict]:
             net_ev_6cycle = pass_rate * mean_w_uncond - e_cost
 
             # Bootstrap CI on unconditional mean withdrawal
-            w_idx = rng.integers(0, n_sims, size=(BS, n_sims))
-            bs_w  = w_all[w_idx].mean(axis=1)
+            bs_w  = w_all[bs_idx].mean(axis=1)
             w_ci  = (float(np.percentile(bs_w, 2.5)),
                      float(np.percentile(bs_w, 97.5)))
 
@@ -1250,7 +1404,7 @@ def run_propfirm_grid(
 
     # ── Numba warmup ─────────────────────────────────────────────────────────
     if _NUMBA_AVAILABLE:
-        _dummy = np.zeros(4, dtype=np.float32)
+        _dummy    = np.zeros(4, dtype=np.float32)
         _dummy_sl = np.ones(4, dtype=np.float32)
         _eval_loop_nb(
             _dummy, _dummy_sl,
@@ -1263,15 +1417,20 @@ def run_propfirm_grid(
             25000.0, 1000.0, 1250.0, 20,
             0.20, 0, 2.0, 3,
         )
+        _funded_loop_nb(
+            _dummy, _dummy_sl, 4,
+            np.ones((2, 5), dtype=np.int16),
+            np.zeros((2, 5, 3), dtype=np.int32),
+            25000.0, 1000.0, 20, 0.20, 0, 2.0, 3, 6, 1500.0, 0.90,
+        )
 
     BS = 500
 
     # ── Determine worker count ────────────────────────────────────────────────
     import os
-    from concurrent.futures import ProcessPoolExecutor, as_completed
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     cpu_count  = os.cpu_count() or 1
-    # Use physical cores (cpu_count // 2) to avoid hyperthreading overhead on
-    # numpy-heavy workloads. Cap at number of schemes.
+    # Cap at physical cores to avoid oversubscription with Numba inner prange.
     phys_cores = max(1, cpu_count // 2)
     if n_workers is None:
         n_workers = min(len(schemes), phys_cores)
@@ -1288,12 +1447,11 @@ def run_propfirm_grid(
     # ── Run in parallel (or serial if n_workers=1) ────────────────────────────
     results: dict = {}
     if n_workers == 1:
-        # Serial path — avoids process spawn overhead for small jobs
         for args in worker_args:
             scheme, scheme_results = _run_scheme_worker(args)
             results[scheme] = scheme_results
     else:
-        with ProcessPoolExecutor(max_workers=n_workers) as pool:
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
             futures = {pool.submit(_run_scheme_worker, args): args[0]
                        for args in worker_args}
             for future in as_completed(futures):
