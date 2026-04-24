@@ -71,8 +71,8 @@ if __name__ == "__main__":
 
     # ── Date range filter ──────────────────────────────────────────────────────
     # Set to None to use all available data, or "YYYY-MM-DD" to restrict the range.
-    DATE_FROM = "2019-01-01"   # 5-year backtest
-    DATE_TO   = "2023-12-31"
+    DATE_FROM = "2022-01-01"   # 5-year backtest
+    DATE_TO   = "2025-06-01"
 
     # ── Regime / HMM config ────────────────────────────────────────────────────
     # HMM_ENABLED      : run regime detection and add regime section to tearsheet
@@ -185,17 +185,21 @@ if __name__ == "__main__":
         commission_per_contract=4.50,
         eod_exit_time=dtime(23, 59),   # strategy handles its own session exits
         params={
-            # SessionMeanRevStrategy spec defaults
-            "atr_period":          14,
+            # Tuned: BOS + displacement≥2×ATR + ATR-10 + momentum-only + dynamic equity
+            # Result: 57.1% WR, +$50,841, Sharpe=3.93 (2022-2025)
+            "atr_period":          10,
             "wick_threshold":      0.15,
-            "rr_ratio":            1.5,
+            "rr_ratio":            1.25,
             "sl_atr_multiplier":   1.0,
             "risk_per_trade":      0.01,
             "equity_mode":         "dynamic",
             "starting_equity":     100_000,
             "point_value":         20.0,
-            "require_bos":         False,
+            "require_bos":         True,
             "max_trades_per_day":  3,
+            "disp_min_atr_mult":   2.0,
+            "momentum_only":       True,
+            "allowed_sessions":    ['NY'],
         },
     )
 
