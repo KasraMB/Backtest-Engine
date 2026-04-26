@@ -11,16 +11,16 @@ Entry: displacement candle at bar close (MARKET order), or forced entry
        after `force_entry_min` bars with no displacement signal.
 Exit:  SL/TP hit, or force-close at last bar of session window.
 
-New parameters:
-  force_entry_min  (int, default 0 = disabled)
-      After this many session bars with no displacement signal, force an
-      entry in the direction given by force_entry_mode.
-  force_entry_mode ('momentum' | 'reversion', default 'momentum')
-      'momentum' : enter in the direction cl has moved vs true_price.
-      'reversion': enter against the deviation (fade back to true_price).
-  window_extensions (dict, default {})
-      Per-session duration overrides in minutes from session start.
-      e.g. {'NY': 180} extends NY from 90 min to 180 min (to 12:00 ET).
+Structural parameters (v1.2):
+  breakeven_r      (float, default 0.0 = disabled)
+      Move SL to entry when unrealized profit >= breakeven_r × initial_sl_dist.
+      Turns potential -1R losses into 0R scratches on reversals after momentum.
+  atr_vol_filter   (float, default 0.0 = disabled)
+      Only fire signals when current ATR >= atr_vol_filter × 20-bar median ATR.
+      Filters low-volatility/choppy sessions where fakeouts are more common.
+  require_daily_momentum (bool, default False)
+      Only take long (short) entries when the prior trading day closed higher
+      (lower) than it opened. Aligns trades with daily directional bias.
 """
 from __future__ import annotations
 
@@ -147,6 +147,11 @@ class SessionMeanRevStrategy(BaseStrategy):
         self.momentum_only      = bool(p.get('momentum_only',       False))
         self._allowed_sessions  = frozenset(p.get('allowed_sessions', ['Asia', 'London', 'NY']))
 
+        # Structural parameters (v1.2)
+        self.breakeven_r             = float(p.get('breakeven_r',             0.0))
+        self.atr_vol_filter          = float(p.get('atr_vol_filter',          0.0))
+        self.require_daily_momentum  = bool(p.get('require_daily_momentum',   False))
+
         # Force-entry parameters
         self.force_entry_min  = int(p.get('force_entry_min',  0))
         self.force_entry_mode = str(p.get('force_entry_mode', 'momentum'))
@@ -158,8 +163,10 @@ class SessionMeanRevStrategy(BaseStrategy):
             self.trading_hours = _sessions_to_trading_hours(self._sessions_eff)
 
         # Lazy-computed bar arrays (populated on first call to _setup)
-        self._times_min: Optional[np.ndarray] = None
-        self._atr_arr:   Optional[np.ndarray] = None
+        self._times_min:       Optional[np.ndarray] = None
+        self._atr_arr:         Optional[np.ndarray] = None
+        self._atr_med_arr:     Optional[np.ndarray] = None  # 20-bar rolling median ATR
+        self._daily_dir_arr:   Optional[np.ndarray] = None  # +1 bull / -1 bear / 0 flat prior day
 
         # ── Per-session state (index 0=Asia, 1=London, 2=NY) ────────────────
         # Reference candle
@@ -214,6 +221,39 @@ class SessionMeanRevStrategy(BaseStrategy):
         self._atr_arr = _wilder_atr_full(
             data.high_1m, data.low_1m, data.close_1m, self.atr_period
         )
+
+        # 20-bar rolling median of ATR for volatility filter
+        atr = self._atr_arr
+        n = len(atr)
+        med = np.empty(n)
+        med[:] = atr[:]
+        for j in range(20, n):
+            med[j] = np.median(atr[max(0, j - 19): j + 1])
+        self._atr_med_arr = med
+
+        # Prior-day direction array: for each 1m bar, sign(prev_day_close - prev_day_open)
+        # A "day" is defined by the calendar date of the 1m bar.
+        import pandas as pd
+        dates = idx.date
+        daily_open: dict = {}   # date -> first 1m open of that day
+        daily_close: dict = {}  # date -> last 1m close of that day
+        for j, (d, o, c) in enumerate(zip(dates, data.open_1m, data.close_1m)):
+            if d not in daily_open:
+                daily_open[d] = o
+            daily_close[d] = c
+
+        sorted_days = sorted(daily_open.keys())
+        day_dir: dict = {}  # date -> direction of PRIOR day
+        for k in range(1, len(sorted_days)):
+            prev = sorted_days[k - 1]
+            cur  = sorted_days[k]
+            diff = daily_close[prev] - daily_open[prev]
+            day_dir[cur] = 1 if diff > 0 else (-1 if diff < 0 else 0)
+
+        dir_arr = np.zeros(n, dtype=np.int8)
+        for j, d in enumerate(dates):
+            dir_arr[j] = day_dir.get(d, 0)
+        self._daily_dir_arr = dir_arr
 
     # ── Current equity (O(1) incremental) ─────────────────────────────────────
 
@@ -409,7 +449,16 @@ class SessionMeanRevStrategy(BaseStrategy):
             if atr <= 0.0:
                 continue
 
+            # ── Volatility filter ─────────────────────────────────────────────
+            if self.atr_vol_filter > 0.0:
+                med_atr = float(self._atr_med_arr[i])
+                if med_atr > 0.0 and atr < self.atr_vol_filter * med_atr:
+                    continue
+
             true_p = self._true_p[sidx]
+
+            # ── Daily momentum filter ─────────────────────────────────────────
+            prior_day_dir = int(self._daily_dir_arr[i]) if self._daily_dir_arr is not None else 0
 
             # ── Displacement entry ────────────────────────────────────────────
 
@@ -421,6 +470,8 @@ class SessionMeanRevStrategy(BaseStrategy):
                         skip = (trade_type == 'reversion_long' and cl + self.rr_ratio * self.sl_atr_mult * atr > true_p)
                         if self.momentum_only and trade_type == 'reversion_long':
                             skip = True
+                        if not skip and self.require_daily_momentum and prior_day_dir < 0:
+                            skip = True  # prior day was bearish, skip long
                         if not skip:
                             order = self._make_order(1, cl, atr, sidx, win_end, f'{name}_{trade_type}')
                             if order is not None:
@@ -434,6 +485,8 @@ class SessionMeanRevStrategy(BaseStrategy):
                         skip = (trade_type == 'reversion_short' and cl - self.rr_ratio * self.sl_atr_mult * atr < true_p)
                         if self.momentum_only and trade_type == 'reversion_short':
                             skip = True
+                        if not skip and self.require_daily_momentum and prior_day_dir > 0:
+                            skip = True  # prior day was bullish, skip short
                         if not skip:
                             order = self._make_order(-1, cl, atr, sidx, win_end, f'{name}_{trade_type}')
                             if order is not None:
@@ -478,6 +531,23 @@ class SessionMeanRevStrategy(BaseStrategy):
         if t_min == self._pos_end_min - 1:
             cl = float(data.close_1m[i])
             return PositionUpdate(new_tp_price=cl)
+
+        # ── Breakeven stop ────────────────────────────────────────────────────
+        if (self.breakeven_r > 0.0
+                and position.initial_sl_price is not None
+                and position.sl_price is not None):
+            sl_dist = abs(position.entry_price - position.initial_sl_price)
+            if sl_dist > 1e-9:
+                cl = float(data.close_1m[i])
+                be_trigger = self.breakeven_r * sl_dist
+                if position.is_long():
+                    unrealized = cl - position.entry_price
+                    if unrealized >= be_trigger and position.sl_price < position.entry_price:
+                        return PositionUpdate(new_sl_price=position.entry_price)
+                else:
+                    unrealized = position.entry_price - cl
+                    if unrealized >= be_trigger and position.sl_price > position.entry_price:
+                        return PositionUpdate(new_sl_price=position.entry_price)
 
         sidx = self._pos_sidx
         _, _, win_start, win_end = self._sessions_eff[sidx]
