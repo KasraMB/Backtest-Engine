@@ -222,37 +222,25 @@ class SessionMeanRevStrategy(BaseStrategy):
             data.high_1m, data.low_1m, data.close_1m, self.atr_period
         )
 
-        # 20-bar rolling median of ATR for volatility filter
-        atr = self._atr_arr
-        n = len(atr)
-        med = np.empty(n)
-        med[:] = atr[:]
-        for j in range(20, n):
-            med[j] = np.median(atr[max(0, j - 19): j + 1])
-        self._atr_med_arr = med
+        # 20-bar rolling median of ATR — vectorized via pandas
+        import pandas as _pd
+        atr_s = _pd.Series(self._atr_arr)
+        self._atr_med_arr = atr_s.rolling(20, min_periods=1).median().to_numpy()
 
-        # Prior-day direction array: for each 1m bar, sign(prev_day_close - prev_day_open)
-        # A "day" is defined by the calendar date of the 1m bar.
-        import pandas as pd
+        # Prior-day direction: sign(prev_day_close - prev_day_open) broadcast to 1m bars
+        # Vectorized: groupby calendar date, take first open / last close, shift by 1 day.
+        s_open  = _pd.Series(data.open_1m,  index=idx)
+        s_close = _pd.Series(data.close_1m, index=idx)
+        daily_open  = s_open.groupby(idx.date).first()
+        daily_close = s_close.groupby(idx.date).last()
+        daily_diff  = daily_close - daily_open
+        daily_dir   = daily_diff.shift(1).apply(
+            lambda x: 0 if _pd.isna(x) else (1 if x > 0 else (-1 if x < 0 else 0))
+        )
+        # Map each 1m bar's date to the prior-day direction
+        date_to_dir = daily_dir.to_dict()
         dates = idx.date
-        daily_open: dict = {}   # date -> first 1m open of that day
-        daily_close: dict = {}  # date -> last 1m close of that day
-        for j, (d, o, c) in enumerate(zip(dates, data.open_1m, data.close_1m)):
-            if d not in daily_open:
-                daily_open[d] = o
-            daily_close[d] = c
-
-        sorted_days = sorted(daily_open.keys())
-        day_dir: dict = {}  # date -> direction of PRIOR day
-        for k in range(1, len(sorted_days)):
-            prev = sorted_days[k - 1]
-            cur  = sorted_days[k]
-            diff = daily_close[prev] - daily_open[prev]
-            day_dir[cur] = 1 if diff > 0 else (-1 if diff < 0 else 0)
-
-        dir_arr = np.zeros(n, dtype=np.int8)
-        for j, d in enumerate(dates):
-            dir_arr[j] = day_dir.get(d, 0)
+        dir_arr = np.array([date_to_dir.get(d, 0) for d in dates], dtype=np.int8)
         self._daily_dir_arr = dir_arr
 
     # ── Current equity (O(1) incremental) ─────────────────────────────────────
