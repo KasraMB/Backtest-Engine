@@ -18,6 +18,22 @@
 
 **How to apply:** Don't chase frequency. A positive avgR with 300-500 high-quality trades beats 1000+ lower-quality trades for propfirm EV/day. Propfirm EV is positive even when total net PnL is negative (due to commissions on NQ minis vs propfirm using MNQ micros).
 
+## 5. Structural filters overfit — atr_vol_filter and require_daily_momentum
+
+**Rule:** atr_vol_filter (ATR > N×median) and require_daily_momentum (prior-day direction) appear to improve IS EV/day significantly but are overfit. They reduce OOS trade count severely (48→8 in 2025) making OOS metrics noise, and often collapse OOS EV/day by 70-90%.
+
+**Why:** These filters select a subset of IS data that happens to be high-quality, but the selection criteria don't generalize. The 2025 OOS had a different volatility and direction regime than IS 2019-2024. With only 8 OOS trades vs 108 IS trades/6yr, the "improvement" is entirely explained by sample selection on IS data.
+
+**How to apply:** Treat any filter that cuts IS trades by >40% as overfit risk. Always check OOS trade count alongside OOS EV/day. Min 30 OOS trades required for a meaningful propfirm EV estimate. The 15% IS→OOS EV drift filter must use both IS and OOS metrics, not just EV/day.
+
+## 6. rr=0.75 + sl=1.5 is regime-dependent, not structurally strong
+
+**Rule:** rr=0.75, sl_atr_multiplier=1.5 shows IS $18-20/day but collapses to $2-4/day in 2025 OOS. Do not use for propfirm.
+
+**Why:** 2025 was not a favorable year for low-RR/wide-SL displacement trades. The strategy takes profits quickly (0.75R) with a wide SL, which works in choppy IS years but underperforms when 2025 needed wider targets to capture directional moves. IS 2019-2024 had several range-bound years that rewarded quick exits.
+
+**How to apply:** Low RR configs need to demonstrate OOS stability. Always check IS performance year-by-year — if good IS years are skewed toward range-bound periods, OOS in trending regimes will underperform.
+
 ## 4. Sweep2 fine-tuning results (SessionMeanRevStrategy, 2019-2024 IS)
 
 **Rule:** The most IS/OOS-stable config after sweep2 fine-tuning is rr=1.0, sl_mult=1.25, wick=0.15, atr=10 (IS: $16.30/day, OOS 2025: $16.65/day). The rr=1.5, sl_mult=0.75 combo gives huge OOS ($45.33/day) but is probably 2025-trend-specific.
