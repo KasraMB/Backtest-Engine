@@ -1,0 +1,43 @@
+{
+  "_note": "Best stable config as of sweep1+sweep2. IS and OOS performance nearly identical — low overfit risk.",
+  "_commit": "dbb5a66aa6a0cb32211a8b3149cb3b454c33558a",
+  "_strategy": "SessionMeanRevStrategy",
+  "_data_splits": {
+    "IS": "2019-01-01 to 2024-12-31",
+    "OOS": "2025-01-01 to 2025-12-31",
+    "reserved": "2026-01-01 onward (never touch)"
+  },
+  "params": {
+    "allowed_sessions": ["NY"],
+    "rr_ratio": 1.0,
+    "require_bos": true,
+    "momentum_only": true,
+    "disp_min_atr_mult": 2.0,
+    "atr_period": 10,
+    "wick_threshold": 0.15,
+    "sl_atr_multiplier": 1.25,
+    "risk_per_trade": 0.01,
+    "equity_mode": "dynamic",
+    "starting_equity": 100000,
+    "point_value": 20.0,
+    "max_trades_per_day": 3
+  },
+  "performance": {
+    "IS_ev_per_day": 16.30,
+    "IS_win_rate": 0.5738,
+    "IS_avg_r": 0.1547,
+    "IS_n_trades_6yr": 366,
+    "IS_best_account": "150K",
+    "IS_best_scheme": "pct_balance",
+    "OOS_2025_ev_per_day": 15.55,
+    "OOS_2025_win_rate": 0.5625,
+    "OOS_2025_avg_r": 0.125,
+    "OOS_2025_n_trades": 48,
+    "OOS_2025_pass_rate": 0.4036,
+    "OOS_2025_net_ev": 1017.79,
+    "OOS_2025_total_cost": 573.98,
+    "OOS_2025_roi": 1.7732,
+    "OOS_2025_best_account": "150K",
+    "OOS_2025_best_scheme": "fixed_dollar"
+  }
+}
