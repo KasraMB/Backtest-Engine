@@ -194,6 +194,8 @@ def _run_propfirm(pnl_pts: np.ndarray, sl_dists: np.ndarray, tpd: float) -> tupl
                             "ev_per_day": ev,
                             "pass_rate": cell.get("pass_rate"),
                             "net_ev": cell.get("net_ev"),
+                            "total_cost": cell.get("total_cost"),
+                            "roi": cell.get("roi"),
                         }
     return best_ev, best_info
 
@@ -246,6 +248,7 @@ def main() -> None:
                 "label": label, "n_trades": n_trades,
                 "win_rate": None, "avg_r": None,
                 "ev_per_day_2025": None, "pass_rate": None,
+                "net_ev": None, "total_cost": None, "roi": None,
                 "account": None, "scheme": None,
             })
             continue
@@ -263,7 +266,11 @@ def main() -> None:
         best_ev, best_info = _run_propfirm(pnl_pts, sl_dists, tpd)
         pf_time = time.perf_counter() - t_pf
 
+        total_cost = best_info.get("total_cost") or 0
+        net_ev     = best_info.get("net_ev") or 0
+        roi        = best_info.get("roi")
         print(f"  EV/day(2025)=${best_ev:.2f}  pass={best_info.get('pass_rate',0):.1%}  "
+              f"net_ev=${net_ev:.0f}  cost=${total_cost:.0f}  ROI={roi:.2f}x  "
               f"account={best_info.get('account','')}  scheme={best_info.get('scheme','')}  [{pf_time:.1f}s]")
 
         rows.append({
@@ -273,6 +280,9 @@ def main() -> None:
             "avg_r": round(avg_r, 4),
             "ev_per_day_2025": round(best_ev, 4),
             "pass_rate": round(best_info.get("pass_rate", 0), 4),
+            "net_ev": round(net_ev, 2),
+            "total_cost": round(total_cost, 2),
+            "roi": round(roi, 4) if roi is not None else None,
             "account": best_info.get("account", ""),
             "scheme": best_info.get("scheme", ""),
         })
