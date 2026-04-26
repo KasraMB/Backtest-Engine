@@ -1,0 +1,213 @@
+Loading data 2019-01-01 -> 2024-12-31...
+  2,036,515 bars | 1,549 days  (3.3s)
+
+Total combos: 40  |  Already done: 27
+
+[ 28/40] be=0.75  vol=0.85  dm=Y  
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+n= 163 WR=55.8% avgR=+0.118 ev/d=   $10.39 pass=  46%  [15.2s + 1.0s]
+  ETA: 3.2m  (1 done, 12 left)
+[ 29/40] be=0.75  vol=1.00  dm=N  
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+n= 345 WR=57.4% avgR=+0.153 ev/d=   $14.60 pass=  38%  [13.1s + 0.9s]
+  ETA: 2.8m  (2 done, 11 left)
+[ 30/40] be=0.75  vol=1.00  dm=Y  
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+n= 154 WR=55.2% avgR=+0.101 ev/d=    $8.63 pass=  44%  [13.4s + 0.9s]
+  ETA: 2.5m  (3 done, 10 left)
+[ 31/40] be=0.75  vol=1.15  dm=N  
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+n= 237 WR=58.2% avgR=+0.163 ev/d=   $19.93 pass=  46%  [13.5s + 0.9s]
+  ETA: 2.2m  (4 done, 9 left)
+[ 32/40] be=0.75  vol=1.15  dm=Y  
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+n= 108 WR=60.2% avgR=+0.196 ev/d=   $23.87 pass=  70%  [13.2s + 0.9s]
+  ETA: 1.9m  (5 done, 8 left)
+[ 33/40] be=1.00  vol=0.00  dm=N  
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+n= 366 WR=57.4% avgR=+0.155 ev/d=   $14.84 pass=  44%  [13.6s + 0.9s]
+  ETA: 1.7m  (6 done, 7 left)
+[ 34/40] be=1.00  vol=0.00  dm=Y  
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+n= 163 WR=55.8% avgR=+0.118 ev/d=   $10.39 pass=  46%  [13.1s + 0.9s]
+  ETA: 1.4m  (7 done, 6 left)
+[ 35/40] be=1.00  vol=0.85  dm=N  
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+n= 366 WR=57.4% avgR=+0.155 ev/d=   $14.84 pass=  44%  [13.6s + 0.9s]
+  ETA: 1.2m  (8 done, 5 left)
+[ 36/40] be=1.00  vol=0.85  dm=Y  
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+n= 163 WR=55.8% avgR=+0.118 ev/d=   $10.39 pass=  46%  [13.6s + 0.9s]
+  ETA: 1.0m  (9 done, 4 left)
+[ 37/40] be=1.00  vol=1.00  dm=N  
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+n= 345 WR=57.4% avgR=+0.153 ev/d=   $14.60 pass=  38%  [13.4s + 0.9s]
+  ETA: 0.7m  (10 done, 3 left)
+[ 38/40] be=1.00  vol=1.00  dm=Y  
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+n= 154 WR=55.2% avgR=+0.101 ev/d=    $8.63 pass=  44%  [13.5s + 0.9s]
+  ETA: 0.5m  (11 done, 2 left)
+[ 39/40] be=1.00  vol=1.15  dm=N  
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+n= 237 WR=58.2% avgR=+0.163 ev/d=   $19.93 pass=  46%  [13.4s + 0.9s]
+  ETA: 0.2m  (12 done, 1 left)
+[ 40/40] be=1.00  vol=1.15  dm=Y  
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+n= 108 WR=60.2% avgR=+0.196 ev/d=   $23.87 pass=  70%  [13.4s + 0.9s]
+
+================================================================================
+Valid: 40/40  |  Positive EV: 40
+
+TOP 20:
+    breakeven_r  atr_vol_filter  require_daily_momentum  n_trades  win_rate   avg_r  best_ev_per_day best_account  best_pass_rate
+1          0.75            1.15                    True       108    0.6019  0.1963          23.8659         150K           0.700
+2          1.00            1.15                    True       108    0.6019  0.1963          23.8659         150K           0.700
+3          0.00            1.15                    True       108    0.6019  0.1963          22.1836         150K           0.677
+4          0.30            1.15                    True       108    0.6019  0.1963          22.1836         150K           0.677
+5          0.50            1.15                    True       108    0.6019  0.1963          22.1836         150K           0.677
+6          0.75            1.15                   False       237    0.5823  0.1629          19.9337         150K           0.456
+7          1.00            1.15                   False       237    0.5823  0.1629          19.9337         150K           0.456
+8          0.00            1.15                   False       237    0.5823  0.1629          18.0422         150K           0.459
+9          0.50            1.15                   False       237    0.5823  0.1629          18.0422         150K           0.459
+10         0.30            1.15                   False       237    0.5823  0.1629          18.0422         150K           0.459
+11         0.50            0.85                   False       366    0.5738  0.1547          14.8399         150K           0.382
+12         0.50            0.00                   False       366    0.5738  0.1547          14.8399         150K           0.382
+13         0.00            0.85                   False       366    0.5738  0.1547          14.8399         150K           0.382
+14         0.00            0.00                   False       366    0.5738  0.1547          14.8399         150K           0.382
+15         0.75            0.85                   False       366    0.5738  0.1547          14.8399         150K           0.382
+16         0.75            0.00                   False       366    0.5738  0.1547          14.8399         150K           0.382
+17         0.30            0.00                   False       366    0.5738  0.1547          14.8399         150K           0.382
+18         0.30            0.85                   False       366    0.5738  0.1547          14.8399         150K           0.382
+19         1.00            0.00                   False       366    0.5738  0.1547          14.8371         150K           0.441
+20         1.00            0.85                   False       366    0.5738  0.1547          14.8371         150K           0.441
+
+Running full propfirm grid (n_sims=5000) on top 10...
+  [ 1] be=0.75 vol=1.15 dm=Y  (screen=$23.87)  full_ev=$25.41  [47.0s]
+  [ 2] be=1.00 vol=1.15 dm=Y  (screen=$23.87)  full_ev=$25.41  [48.5s]
+  [ 3] be=0.00 vol=1.15 dm=Y  (screen=$22.18)  full_ev=$25.41  [49.0s]
+  [ 4] be=0.30 vol=1.15 dm=Y  (screen=$22.18)  full_ev=$25.41  [49.1s]
+  [ 5] be=0.50 vol=1.15 dm=Y  (screen=$22.18)  full_ev=$25.41  [49.6s]
+  [ 6] be=0.75 vol=1.15 dm=N  (screen=$19.93)  full_ev=$19.52  [49.3s]
+  [ 7] be=1.00 vol=1.15 dm=N  (screen=$19.93)  full_ev=$19.52  [49.9s]
+  [ 8] be=0.00 vol=1.15 dm=N  (screen=$18.04)  full_ev=$19.52  [49.3s]
+  [ 9] be=0.50 vol=1.15 dm=N  (screen=$18.04)  full_ev=$19.52  [49.4s]
+  [10] be=0.30 vol=1.15 dm=N  (screen=$18.04)  full_ev=$19.52  [49.8s]
+
+Done. Results in sweep_results3

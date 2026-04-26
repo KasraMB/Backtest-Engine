@@ -42,96 +42,47 @@ N_SIMS     = 5_000
 
 # Configs to verify: top results from sweep1 + sweep2
 # Format: (label, params_dict)
+_BASE = {"allowed_sessions": ["NY"], "require_bos": True, "momentum_only": True,
+         "disp_min_atr_mult": 2.0, "atr_period": 10, "wick_threshold": 0.15,
+         "risk_per_trade": 0.01, "equity_mode": "dynamic",
+         "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
+         "breakeven_r": 0.0, "atr_vol_filter": 0.0, "require_daily_momentum": False}
+
 CONFIGS_TO_VERIFY = [
-    # --- Sweep 1 top configs ---
-    ("S1-rank1: NY rr1.25 BOS mom disp2", {
-        "allowed_sessions": ["NY"], "rr_ratio": 1.25, "require_bos": True,
-        "momentum_only": True, "disp_min_atr_mult": 2.0,
-        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 1.0,
-        "risk_per_trade": 0.01, "equity_mode": "dynamic",
-        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
-    }),
-    ("S1-rank2: NY rr1.00 BOS mom disp2", {
-        "allowed_sessions": ["NY"], "rr_ratio": 1.00, "require_bos": True,
-        "momentum_only": True, "disp_min_atr_mult": 2.0,
-        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 1.0,
-        "risk_per_trade": 0.01, "equity_mode": "dynamic",
-        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
-    }),
-    ("S1-rank3: NY rr0.75 BOS mom disp2", {
-        "allowed_sessions": ["NY"], "rr_ratio": 0.75, "require_bos": True,
-        "momentum_only": True, "disp_min_atr_mult": 2.0,
-        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 1.0,
-        "risk_per_trade": 0.01, "equity_mode": "dynamic",
-        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
-    }),
-    ("S1-rank4: NY rr1.25 BOS rev disp2", {
-        "allowed_sessions": ["NY"], "rr_ratio": 1.25, "require_bos": True,
-        "momentum_only": False, "disp_min_atr_mult": 2.0,
-        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 1.0,
-        "risk_per_trade": 0.01, "equity_mode": "dynamic",
-        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
-    }),
-    ("S1-rank5: NY rr1.50 BOS mom disp2", {
-        "allowed_sessions": ["NY"], "rr_ratio": 1.50, "require_bos": True,
-        "momentum_only": True, "disp_min_atr_mult": 2.0,
-        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 1.0,
-        "risk_per_trade": 0.01, "equity_mode": "dynamic",
-        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
-    }),
-    # --- Sweep 2 top configs (rr=1.0/1.25/1.5 × sl_mult × wick × atr fine-tune) ---
-    ("S2-rank1: rr1.00 sl1.25 wick0.15 atr10", {
-        "allowed_sessions": ["NY"], "rr_ratio": 1.00, "require_bos": True,
-        "momentum_only": True, "disp_min_atr_mult": 2.0,
-        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 1.25,
-        "risk_per_trade": 0.01, "equity_mode": "dynamic",
-        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
-    }),
-    ("S2-rank2: rr1.00 sl1.25 wick0.10 atr7", {
-        "allowed_sessions": ["NY"], "rr_ratio": 1.00, "require_bos": True,
-        "momentum_only": True, "disp_min_atr_mult": 2.0,
-        "atr_period": 7, "wick_threshold": 0.10, "sl_atr_multiplier": 1.25,
-        "risk_per_trade": 0.01, "equity_mode": "dynamic",
-        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
-    }),
-    ("S2-rank3: rr1.00 sl1.50 wick0.15 atr10", {
-        "allowed_sessions": ["NY"], "rr_ratio": 1.00, "require_bos": True,
-        "momentum_only": True, "disp_min_atr_mult": 2.0,
-        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 1.50,
-        "risk_per_trade": 0.01, "equity_mode": "dynamic",
-        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
-    }),
-    ("S2-rank4: rr1.00 sl1.00 wick0.15 atr7", {
-        "allowed_sessions": ["NY"], "rr_ratio": 1.00, "require_bos": True,
-        "momentum_only": True, "disp_min_atr_mult": 2.0,
-        "atr_period": 7, "wick_threshold": 0.15, "sl_atr_multiplier": 1.00,
-        "risk_per_trade": 0.01, "equity_mode": "dynamic",
-        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
-    }),
-    ("S2-rank5: rr1.25 sl1.00 wick0.15 atr10", {
-        "allowed_sessions": ["NY"], "rr_ratio": 1.25, "require_bos": True,
-        "momentum_only": True, "disp_min_atr_mult": 2.0,
-        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 1.00,
-        "risk_per_trade": 0.01, "equity_mode": "dynamic",
-        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
-    }),
-    ("S2-rank6: rr1.25 sl1.25 wick0.10 atr7", {
-        "allowed_sessions": ["NY"], "rr_ratio": 1.25, "require_bos": True,
-        "momentum_only": True, "disp_min_atr_mult": 2.0,
-        "atr_period": 7, "wick_threshold": 0.10, "sl_atr_multiplier": 1.25,
-        "risk_per_trade": 0.01, "equity_mode": "dynamic",
-        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
-    }),
-    ("S2-rank7: rr1.50 sl0.75 wick0.15 atr10", {
-        "allowed_sessions": ["NY"], "rr_ratio": 1.50, "require_bos": True,
-        "momentum_only": True, "disp_min_atr_mult": 2.0,
-        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 0.75,
-        "risk_per_trade": 0.01, "equity_mode": "dynamic",
-        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
-    }),
+    # Stable baseline (best IS/OOS from sweep2, no structural filters)
+    ("S2-stable: rr1.00 sl1.25 baseline",
+     {**_BASE, "rr_ratio": 1.00, "sl_atr_multiplier": 1.25}),
+
+    # Sweep3 winner: vol filter + daily momentum (IS $23.87, 108 trades/6yr)
+    ("S3-dm+vol: rr1.00 sl1.25 be0.75 vol1.15 dm=Y",
+     {**_BASE, "rr_ratio": 1.00, "sl_atr_multiplier": 1.25,
+      "breakeven_r": 0.75, "atr_vol_filter": 1.15, "require_daily_momentum": True}),
+
+    # Sweep3 vol-only (no daily momentum, IS $18.04, 237 trades/6yr)
+    ("S3-vol: rr1.00 sl1.25 vol1.15 dm=N",
+     {**_BASE, "rr_ratio": 1.00, "sl_atr_multiplier": 1.25,
+      "atr_vol_filter": 1.15, "require_daily_momentum": False}),
+
+    # Sweep4 winner: rr=0.75 wide sl with vol filter (IS $19.92, 342 trades/6yr)
+    ("S4-rr0.75: sl1.50 vol1.0",
+     {**_BASE, "rr_ratio": 0.75, "sl_atr_multiplier": 1.50, "atr_vol_filter": 1.0}),
+
+    # Sweep4 alt: rr=0.75 wide sl no filter (IS $18.84, 364 trades/6yr)
+    ("S4-rr0.75: sl1.50 no-filter",
+     {**_BASE, "rr_ratio": 0.75, "sl_atr_multiplier": 1.50}),
+
+    # Previous OOS star (IS $12.53 -> OOS $47.72, for reference)
+    ("S2-rank7: rr1.50 sl0.75 (OOS star)",
+     {**_BASE, "rr_ratio": 1.50, "sl_atr_multiplier": 0.75}),
+
+    # Sweep3 daily-momentum + vol, no breakeven (IS $22.18)
+    ("S3-dm+vol-nobe: rr1.00 sl1.25 vol1.15 dm=Y",
+     {**_BASE, "rr_ratio": 1.00, "sl_atr_multiplier": 1.25,
+      "atr_vol_filter": 1.15, "require_daily_momentum": True}),
 ]
 
-# Sweep2 top configs added directly (full-grid PKL not generated due to OOM during n_sims=5000 phase)
+# IS EV/day reference: S2-stable=$16.30, S3-dm+vol=$23.87, S3-vol=$18.04,
+#                      S4-rr0.75-vol=$19.92, S4-rr0.75=$18.84, S2-rank7=$12.53
 
 
 def _load_data() -> MarketData:
@@ -201,23 +152,7 @@ def _run_propfirm(pnl_pts: np.ndarray, sl_dists: np.ndarray, tpd: float) -> tupl
 
 
 def main() -> None:
-    # Add sweep2 top configs if available
     configs = list(CONFIGS_TO_VERIFY)
-    sweep2_summ = "sweep_results2/summary.txt"
-    if os.path.exists("sweep_results2/pkl"):
-        for fname in sorted(os.listdir("sweep_results2/pkl")):
-            if not fname.startswith("rank0"):
-                continue
-            with open(os.path.join("sweep_results2/pkl", fname), "rb") as f:
-                p = pickle.load(f)
-            rank = p.get("rank", "?")
-            label = (f"S2-rank{rank}: rr={p['params']['rr_ratio']:.2f} "
-                     f"sl={p['params']['sl_atr_multiplier']:.2f} "
-                     f"wick={p['params']['wick_threshold']:.2f} "
-                     f"atr={p['params']['atr_period']}")
-            configs.append((label, p["params"]))
-            if len(configs) >= 10:   # cap at 10 total
-                break
 
     print(f"Loading 2025 OOS data ({DATE_FROM} -> {DATE_TO})...", flush=True)
     t0   = time.perf_counter()

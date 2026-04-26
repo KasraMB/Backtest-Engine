@@ -1,0 +1,139 @@
+Loading 2025 OOS data (2025-01-01 -> 2025-12-31)...
+  337,989 bars | 257 trading days  (1.3s)
+
+  Period: 2025-01-02 -> 2025-12-31
+
+
+======================================================================
+Config: S2-stable: rr1.00 sl1.25 baseline
+
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+  Trades: 48  [4.2s]
+  WR=56.2%  avgR=+0.125  net_pnl=$3,319  trades/day=0.500
+  EV/day(2025)=$15.68  pass=40.9%  net_ev=$1009  cost=$566  ROI=1.78x  account=150K  scheme=fixed_dollar  [48.6s]
+
+======================================================================
+Config: S3-dm+vol: rr1.00 sl1.25 be0.75 vol1.15 dm=Y
+
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+  Trades: 8  [6.2s]
+  WR=62.5%  avgR=+0.250  net_pnl=$1,439  trades/day=0.500
+  EV/day(2025)=$53.71  pass=64.7%  net_ev=$3988  cost=$364  ROI=10.95x  account=150K  scheme=fixed_dollar  [85.6s]
+
+======================================================================
+Config: S3-vol: rr1.00 sl1.25 vol1.15 dm=N
+
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+  Trades: 36  [5.4s]
+  WR=52.8%  avgR=+0.056  net_pnl=$1,090  trades/day=0.500
+  EV/day(2025)=$5.51  pass=40.0%  net_ev=$275  cost=$288  ROI=0.96x  account=50K  scheme=fixed_dollar  [71.7s]
+
+======================================================================
+Config: S4-rr0.75: sl1.50 vol1.0
+
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+  Trades: 41  [8.6s]
+  WR=58.5%  avgR=+0.024  net_pnl=$569  trades/day=0.500
+  EV/day(2025)=$2.41  pass=35.3%  net_ev=$78  cost=$180  ROI=0.43x  account=25K  scheme=martingale  [131.9s]
+
+======================================================================
+Config: S4-rr0.75: sl1.50 no-filter
+
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+  Trades: 44  [9.5s]
+  WR=59.1%  avgR=+0.034  net_pnl=$968  trades/day=0.500
+  EV/day(2025)=$3.53  pass=36.6%  net_ev=$117  cost=$174  ROI=0.67x  account=25K  scheme=martingale  [150.2s]
+
+======================================================================
+Config: S2-rank7: rr1.50 sl0.75 (OOS star)
+
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+  Trades: 53  [9.5s]
+  WR=54.7%  avgR=+0.369  net_pnl=$16,793  trades/day=0.500
+  EV/day(2025)=$46.73  pass=78.7%  net_ev=$4574  cost=$303  ROI=15.12x  account=150K  scheme=fixed_dollar  [122.8s]
+
+======================================================================
+Config: S3-dm+vol-nobe: rr1.00 sl1.25 vol1.15 dm=Y
+
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+  Trades: 8  [3.3s]
+  WR=62.5%  avgR=+0.250  net_pnl=$1,439  trades/day=0.500
+  EV/day(2025)=$53.71  pass=64.7%  net_ev=$3988  cost=$364  ROI=10.95x  account=150K  scheme=fixed_dollar  [76.5s]
+
+
+================================================================================
+2025 OOS VERIFICATION SUMMARY
+================================================================================
+                                          label  n_trades  win_rate   avg_r  ev_per_day_2025  pass_rate   net_ev  total_cost      roi account        scheme
+1  S3-dm+vol: rr1.00 sl1.25 be0.75 vol1.15 dm=Y         8    0.6250  0.2500          53.7074     0.6472  3988.24      364.15  10.9521    150K  fixed_dollar
+2    S3-dm+vol-nobe: rr1.00 sl1.25 vol1.15 dm=Y         8    0.6250  0.2500          53.7074     0.6472  3988.24      364.15  10.9521    150K  fixed_dollar
+3            S2-rank7: rr1.50 sl0.75 (OOS star)        53    0.5472  0.3689          46.7350     0.7866  4574.46      302.54  15.1201    150K  fixed_dollar
+4             S2-stable: rr1.00 sl1.25 baseline        48    0.5625  0.1250          15.6811     0.4094  1009.00      566.08   1.7824    150K  fixed_dollar
+5            S3-vol: rr1.00 sl1.25 vol1.15 dm=N        36    0.5278  0.0556           5.5081     0.3998   274.97      287.63   0.9560     50K  fixed_dollar
+6                   S4-rr0.75: sl1.50 no-filter        44    0.5909  0.0337           3.5278     0.3664   116.90      173.76   0.6728     25K    martingale
+7                      S4-rr0.75: sl1.50 vol1.0        41    0.5854  0.0240           2.4098     0.3530    78.01      179.97   0.4335     25K    martingale
+
+Saved -> verify_2025_results.csv
