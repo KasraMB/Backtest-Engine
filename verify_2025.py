@@ -1,0 +1,295 @@
+# -*- coding: utf-8 -*-
+"""
+verify_2025.py
+--------------
+Runs the top configs from sweep1 + sweep2 on 2025 OOS data.
+Checks whether propfirm EV/day holds out-of-sample.
+
+Output: printed table + verify_2025_results.csv
+"""
+from __future__ import annotations
+
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
+import csv
+import os
+import pickle
+import time
+from datetime import time as dtime
+
+import numpy as np
+import pandas as pd
+
+from backtest.data.loader import DataLoader
+from backtest.data.market_data import MarketData
+from backtest.propfirm.lucidflex import (
+    LUCIDFLEX_ACCOUNTS,
+    _estimate_trading_days,
+    extract_normalised_trades,
+    run_propfirm_grid,
+)
+from backtest.runner.config import RunConfig
+from backtest.runner.runner import run_backtest
+from strategies.session_mean_rev import SessionMeanRevStrategy
+
+DATE_FROM  = "2025-01-01"
+DATE_TO    = "2025-12-31"    # full 2025 (whatever data exists)
+N_SIMS     = 5_000
+
+# Configs to verify: top results from sweep1 + sweep2
+# Format: (label, params_dict)
+CONFIGS_TO_VERIFY = [
+    # --- Sweep 1 top configs ---
+    ("S1-rank1: NY rr1.25 BOS mom disp2", {
+        "allowed_sessions": ["NY"], "rr_ratio": 1.25, "require_bos": True,
+        "momentum_only": True, "disp_min_atr_mult": 2.0,
+        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 1.0,
+        "risk_per_trade": 0.01, "equity_mode": "dynamic",
+        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
+    }),
+    ("S1-rank2: NY rr1.00 BOS mom disp2", {
+        "allowed_sessions": ["NY"], "rr_ratio": 1.00, "require_bos": True,
+        "momentum_only": True, "disp_min_atr_mult": 2.0,
+        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 1.0,
+        "risk_per_trade": 0.01, "equity_mode": "dynamic",
+        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
+    }),
+    ("S1-rank3: NY rr0.75 BOS mom disp2", {
+        "allowed_sessions": ["NY"], "rr_ratio": 0.75, "require_bos": True,
+        "momentum_only": True, "disp_min_atr_mult": 2.0,
+        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 1.0,
+        "risk_per_trade": 0.01, "equity_mode": "dynamic",
+        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
+    }),
+    ("S1-rank4: NY rr1.25 BOS rev disp2", {
+        "allowed_sessions": ["NY"], "rr_ratio": 1.25, "require_bos": True,
+        "momentum_only": False, "disp_min_atr_mult": 2.0,
+        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 1.0,
+        "risk_per_trade": 0.01, "equity_mode": "dynamic",
+        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
+    }),
+    ("S1-rank5: NY rr1.50 BOS mom disp2", {
+        "allowed_sessions": ["NY"], "rr_ratio": 1.50, "require_bos": True,
+        "momentum_only": True, "disp_min_atr_mult": 2.0,
+        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 1.0,
+        "risk_per_trade": 0.01, "equity_mode": "dynamic",
+        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
+    }),
+    # --- Sweep 2 top configs (rr=1.0/1.25/1.5 × sl_mult × wick × atr fine-tune) ---
+    ("S2-rank1: rr1.00 sl1.25 wick0.15 atr10", {
+        "allowed_sessions": ["NY"], "rr_ratio": 1.00, "require_bos": True,
+        "momentum_only": True, "disp_min_atr_mult": 2.0,
+        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 1.25,
+        "risk_per_trade": 0.01, "equity_mode": "dynamic",
+        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
+    }),
+    ("S2-rank2: rr1.00 sl1.25 wick0.10 atr7", {
+        "allowed_sessions": ["NY"], "rr_ratio": 1.00, "require_bos": True,
+        "momentum_only": True, "disp_min_atr_mult": 2.0,
+        "atr_period": 7, "wick_threshold": 0.10, "sl_atr_multiplier": 1.25,
+        "risk_per_trade": 0.01, "equity_mode": "dynamic",
+        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
+    }),
+    ("S2-rank3: rr1.00 sl1.50 wick0.15 atr10", {
+        "allowed_sessions": ["NY"], "rr_ratio": 1.00, "require_bos": True,
+        "momentum_only": True, "disp_min_atr_mult": 2.0,
+        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 1.50,
+        "risk_per_trade": 0.01, "equity_mode": "dynamic",
+        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
+    }),
+    ("S2-rank4: rr1.00 sl1.00 wick0.15 atr7", {
+        "allowed_sessions": ["NY"], "rr_ratio": 1.00, "require_bos": True,
+        "momentum_only": True, "disp_min_atr_mult": 2.0,
+        "atr_period": 7, "wick_threshold": 0.15, "sl_atr_multiplier": 1.00,
+        "risk_per_trade": 0.01, "equity_mode": "dynamic",
+        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
+    }),
+    ("S2-rank5: rr1.25 sl1.00 wick0.15 atr10", {
+        "allowed_sessions": ["NY"], "rr_ratio": 1.25, "require_bos": True,
+        "momentum_only": True, "disp_min_atr_mult": 2.0,
+        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 1.00,
+        "risk_per_trade": 0.01, "equity_mode": "dynamic",
+        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
+    }),
+    ("S2-rank6: rr1.25 sl1.25 wick0.10 atr7", {
+        "allowed_sessions": ["NY"], "rr_ratio": 1.25, "require_bos": True,
+        "momentum_only": True, "disp_min_atr_mult": 2.0,
+        "atr_period": 7, "wick_threshold": 0.10, "sl_atr_multiplier": 1.25,
+        "risk_per_trade": 0.01, "equity_mode": "dynamic",
+        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
+    }),
+    ("S2-rank7: rr1.50 sl0.75 wick0.15 atr10", {
+        "allowed_sessions": ["NY"], "rr_ratio": 1.50, "require_bos": True,
+        "momentum_only": True, "disp_min_atr_mult": 2.0,
+        "atr_period": 10, "wick_threshold": 0.15, "sl_atr_multiplier": 0.75,
+        "risk_per_trade": 0.01, "equity_mode": "dynamic",
+        "starting_equity": 100_000, "point_value": 20.0, "max_trades_per_day": 3,
+    }),
+]
+
+# Sweep2 top configs added directly (full-grid PKL not generated due to OOM during n_sims=5000 phase)
+
+
+def _load_data() -> MarketData:
+    loader = DataLoader()
+    df_1m   = pd.read_parquet("data/NQ_1m.parquet")
+    df_5m   = pd.read_parquet("data/NQ_5m.parquet")
+
+    start_ts = pd.Timestamp(DATE_FROM, tz="America/New_York")
+    end_ts   = (pd.Timestamp(DATE_TO, tz="America/New_York")
+                + pd.Timedelta(days=1) - pd.Timedelta(seconds=1))
+
+    mask_1m = (df_1m.index >= start_ts) & (df_1m.index <= end_ts)
+    mask_5m = (df_5m.index >= start_ts) & (df_5m.index <= end_ts)
+    df_1m_f, df_5m_f = df_1m[mask_1m], df_5m[mask_5m]
+
+    if df_1m_f.empty:
+        raise ValueError(f"No 2025 data found in cache. Check data/NQ_1m.parquet coverage.")
+
+    rth_f           = (df_1m_f.index.time >= dtime(9, 30)) & (df_1m_f.index.time <= dtime(16, 0))
+    trading_dates_f = sorted(set(df_1m_f[rth_f].index.date))
+    arrays_1m_f     = {c: df_1m_f[c].to_numpy(dtype="float64") for c in ["open","high","low","close","volume"]}
+    arrays_5m_f     = {c: df_5m_f[c].to_numpy(dtype="float64") for c in ["open","high","low","close","volume"]}
+    bar_map_f       = loader._build_bar_map(df_1m_f, df_5m_f)
+
+    return MarketData(
+        df_1m=df_1m_f, df_5m=df_5m_f,
+        open_1m=arrays_1m_f["open"], high_1m=arrays_1m_f["high"],
+        low_1m=arrays_1m_f["low"],   close_1m=arrays_1m_f["close"],
+        volume_1m=arrays_1m_f["volume"],
+        open_5m=arrays_5m_f["open"], high_5m=arrays_5m_f["high"],
+        low_5m=arrays_5m_f["low"],   close_5m=arrays_5m_f["close"],
+        volume_5m=arrays_5m_f["volume"],
+        bar_map=bar_map_f, trading_dates=trading_dates_f,
+    )
+
+
+def _run_propfirm(pnl_pts: np.ndarray, sl_dists: np.ndarray, tpd: float) -> tuple[float, dict]:
+    """Run full propfirm grid, return (best_ev_per_day, best_info)."""
+    best_ev, best_info = -np.inf, {}
+    for acc_name, account in LUCIDFLEX_ACCOUNTS.items():
+        grid = run_propfirm_grid(
+            trades=None, account=account, n_sims=N_SIMS, sizing_mode="micros",
+            _pnl_pts=pnl_pts, _sl_dists=sl_dists, _trades_per_day=tpd,
+        )
+        for scheme in grid:
+            if scheme == "optimal_funded_rp":
+                continue
+            for erp, erp_data in grid[scheme].items():
+                if not isinstance(erp_data, dict):
+                    continue
+                for frp, cell in erp_data.items():
+                    if not isinstance(cell, dict):
+                        continue
+                    ev = cell.get("ev_per_day")
+                    if ev is not None and ev > best_ev:
+                        best_ev = ev
+                        best_info = {
+                            "account": acc_name, "scheme": scheme,
+                            "eval_risk": erp, "funded_risk": frp,
+                            "ev_per_day": ev,
+                            "pass_rate": cell.get("pass_rate"),
+                            "net_ev": cell.get("net_ev"),
+                        }
+    return best_ev, best_info
+
+
+def main() -> None:
+    # Add sweep2 top configs if available
+    configs = list(CONFIGS_TO_VERIFY)
+    sweep2_summ = "sweep_results2/summary.txt"
+    if os.path.exists("sweep_results2/pkl"):
+        for fname in sorted(os.listdir("sweep_results2/pkl")):
+            if not fname.startswith("rank0"):
+                continue
+            with open(os.path.join("sweep_results2/pkl", fname), "rb") as f:
+                p = pickle.load(f)
+            rank = p.get("rank", "?")
+            label = (f"S2-rank{rank}: rr={p['params']['rr_ratio']:.2f} "
+                     f"sl={p['params']['sl_atr_multiplier']:.2f} "
+                     f"wick={p['params']['wick_threshold']:.2f} "
+                     f"atr={p['params']['atr_period']}")
+            configs.append((label, p["params"]))
+            if len(configs) >= 10:   # cap at 10 total
+                break
+
+    print(f"Loading 2025 OOS data ({DATE_FROM} -> {DATE_TO})...", flush=True)
+    t0   = time.perf_counter()
+    data = _load_data()
+    print(f"  {len(data.df_1m):,} bars | {len(data.trading_dates):,} trading days  ({time.perf_counter()-t0:.1f}s)\n")
+    print(f"  Period: {data.trading_dates[0]} -> {data.trading_dates[-1]}\n")
+
+    config_base = RunConfig(
+        starting_capital=100_000, slippage_points=0.25,
+        commission_per_contract=4.50, eod_exit_time=dtime(23, 59), params={},
+    )
+
+    rows = []
+    for label, params in configs:
+        print(f"\n{'='*70}")
+        print(f"Config: {label}")
+        config_base.params = params
+        t_bt = time.perf_counter()
+        result = run_backtest(SessionMeanRevStrategy, config_base, data)
+        bt_time = time.perf_counter() - t_bt
+
+        n_trades = len(result.trades)
+        print(f"  Trades: {n_trades}  [{bt_time:.1f}s]")
+
+        if n_trades < 5:
+            print("  SKIP: too few trades for meaningful propfirm analysis")
+            rows.append({
+                "label": label, "n_trades": n_trades,
+                "win_rate": None, "avg_r": None,
+                "ev_per_day_2025": None, "pass_rate": None,
+                "account": None, "scheme": None,
+            })
+            continue
+
+        wins = sum(1 for t in result.trades if t.net_pnl_dollars > 0)
+        win_rate = wins / n_trades
+        net_pnl  = sum(t.net_pnl_dollars for t in result.trades)
+        pnl_pts, sl_dists = extract_normalised_trades(result.trades)
+        avg_r    = float((pnl_pts / np.where(sl_dists > 0, sl_dists, 1.0)).mean())
+        tpd      = max(0.5, n_trades / max(1, _estimate_trading_days(result.trades)))
+
+        print(f"  WR={win_rate:.1%}  avgR={avg_r:+.3f}  net_pnl=${net_pnl:,.0f}  trades/day={tpd:.3f}")
+
+        t_pf = time.perf_counter()
+        best_ev, best_info = _run_propfirm(pnl_pts, sl_dists, tpd)
+        pf_time = time.perf_counter() - t_pf
+
+        print(f"  EV/day(2025)=${best_ev:.2f}  pass={best_info.get('pass_rate',0):.1%}  "
+              f"account={best_info.get('account','')}  scheme={best_info.get('scheme','')}  [{pf_time:.1f}s]")
+
+        rows.append({
+            "label": label,
+            "n_trades": n_trades,
+            "win_rate": round(win_rate, 4),
+            "avg_r": round(avg_r, 4),
+            "ev_per_day_2025": round(best_ev, 4),
+            "pass_rate": round(best_info.get("pass_rate", 0), 4),
+            "account": best_info.get("account", ""),
+            "scheme": best_info.get("scheme", ""),
+        })
+
+    # Summary table
+    print("\n\n" + "="*80)
+    print("2025 OOS VERIFICATION SUMMARY")
+    print("="*80)
+    df = pd.DataFrame(rows)
+    df = df.sort_values("ev_per_day_2025", ascending=False, na_position="last").reset_index(drop=True)
+    df.index = range(1, len(df)+1)
+    pd.set_option("display.width", 200); pd.set_option("display.max_colwidth", 45)
+    print(df.to_string())
+
+    df.to_csv("verify_2025_results.csv", index_label="rank")
+    print("\nSaved -> verify_2025_results.csv")
+
+
+if __name__ == "__main__":
+    main()
