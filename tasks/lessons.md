@@ -82,6 +82,14 @@ OOS (2023-2024): net **+$31,629** — profitable on OOS, but params were tuned o
 
 **Implication:** 48-combo coarse sweep (disp×bos×momentum_only×sessions) found 0/48 profitable on IS 2019-2022. WR ceiling is ~47.3% across all combos. Commission + slippage drag ~$114/trade is eating the entire edge. The only remaining lever to try is higher rr_ratio (longer hold = fewer round-trips). If rr≥1.5 doesn't flip it, the strategy has no edge on 2019-2022 NQ data.
 
+## 9. _estimate_trading_days uses equity bars/day — wrong for NQ futures
+
+**Rule:** Always pass `n_trading_days=len(trading_dates)` to `run_propfirm_grid` for NQ futures. Never rely on the auto-estimate alone.
+
+**Why:** `_estimate_trading_days` divided bar-index span by 390 (equity 6.5h session). NQ trades 23h/day (~1380 bars). This overstated day count by 3.5×, understated trades/day by 3.5×, and then the `max(0.5, ...)` floor further inflated it. Combined effect: ev/day figures were ~2× overstated (e.g., $24/day shown instead of correct $12/day for 25K). Fix committed in ae1d14e: default changed to 1380 bars/day; `n_trading_days` param added to `run_propfirm_grid`; fallback floor lowered to 0.01.
+
+**How to apply:** Always pass `n_trading_days=len(trading_dates_f)` when calling `run_propfirm_grid` in any script. The fallback (bar-index estimate) is now close (~9% off) but explicit is always more accurate.
+
 ## 8. London session and lower disp filter destroy SessionMeanRevStrategy edge
 
 **Rule:** Never add London session or lower disp_min_atr_mult below 2.0 for SessionMeanRevStrategy. The edge is in selectivity, not frequency.
