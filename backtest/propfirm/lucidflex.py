@@ -1352,6 +1352,7 @@ def run_propfirm_grid(
     _pnl_pts: Optional[np.ndarray] = None,
     _sl_dists: Optional[np.ndarray] = None,
     _trades_per_day: Optional[float] = None,
+    n_trading_days: Optional[int] = None,
 ) -> dict:
     """
     Sweep scheme × eval_risk_pct × funded_risk_pct.
@@ -1366,6 +1367,11 @@ def run_propfirm_grid(
         _pnl_pts        : (n,) float32 array of signed P&L in points
         _sl_dists       : (n,) float32 array of SL distances in points
         _trades_per_day : pre-computed trades-per-day rate
+        n_trading_days  : calendar trading-day count for the backtest window.
+                          When provided, trades_per_day = len(trades)/n_trading_days,
+                          bypassing _estimate_trading_days entirely. Pass this for
+                          futures instruments (NQ/ES) where _estimate_trading_days
+                          defaults to 390 bars/day (equity) and will be wrong.
 
     When _pnl_pts and _sl_dists are provided, ``trades`` is ignored and
     extraction is skipped entirely.  _trades_per_day overrides the
@@ -1392,8 +1398,14 @@ def run_propfirm_grid(
     # ── trades_per_day ────────────────────────────────────────────────────────
     if _trades_per_day is not None:
         trades_per_day = float(_trades_per_day)
+    elif n_trading_days is not None and n_trading_days > 0:
+        # Caller passed the exact trading-day count — most accurate path.
+        trades_per_day = max(0.01, len(pnl_pts) / n_trading_days)
     elif trades is not None and len(trades) > 0 and hasattr(trades[0], "entry_bar"):
-        trades_per_day = max(0.5, len(trades) / max(1, _estimate_trading_days(trades)))
+        # Fallback: estimate from bar indices. Accurate for equities (390 bars/day);
+        # for futures pass n_trading_days instead. Floor set low so a genuine
+        # low-frequency strategy isn't silently doubled.
+        trades_per_day = max(0.01, len(trades) / max(1, _estimate_trading_days(trades)))
     else:
         trades_per_day = 1.0
 
@@ -1838,10 +1850,24 @@ def run_propfirm_grid_threshold_sweep(
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _estimate_trading_days(trades: list) -> int:
+def _estimate_trading_days(trades: list, bars_per_trading_day: int = 1380) -> int:
+    """
+    Estimate the number of trading days spanned by a trade list using bar indices.
+
+    bars_per_trading_day must match the instrument's actual 1-minute session length:
+      - NQ/ES futures (23h/day): 1380  (default — this codebase is futures-only)
+      - Equities (6.5h/day):      390
+
+    Using the equity default (390) for futures overstates the day count by ~3.5×,
+    understates trades-per-day by the same factor, and causes the propfirm
+    simulation to run cycles far too slowly.
+
+    Prefer passing n_trading_days to run_propfirm_grid directly when the
+    backtest trading-day count is available — that is always more accurate.
+    """
     try:
         bars = [t.entry_bar for t in trades]
-        return max(1, (max(bars) - min(bars)) // 390)
+        return max(1, (max(bars) - min(bars)) // bars_per_trading_day)
     except Exception:
         return len(trades)
 
