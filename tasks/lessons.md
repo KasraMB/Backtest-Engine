@@ -81,3 +81,15 @@ IS (2019-2022): net **-$9,418** — strategy is net losing on correct IS data
 OOS (2023-2024): net **+$31,629** — profitable on OOS, but params were tuned on contaminated range
 
 **Implication:** 48-combo coarse sweep (disp×bos×momentum_only×sessions) found 0/48 profitable on IS 2019-2022. WR ceiling is ~47.3% across all combos. Commission + slippage drag ~$114/trade is eating the entire edge. The only remaining lever to try is higher rr_ratio (longer hold = fewer round-trips). If rr≥1.5 doesn't flip it, the strategy has no edge on 2019-2022 NQ data.
+
+## 8. London session and lower disp filter destroy SessionMeanRevStrategy edge
+
+**Rule:** Never add London session or lower disp_min_atr_mult below 2.0 for SessionMeanRevStrategy. The edge is in selectivity, not frequency.
+
+**Why:** Tested on 2025 OOS (53 trades, 54.7% WR, +$16,793 PnL baseline):
+- London+NY: WR drops to 36.9%, PnL goes to -$25,853 (141 trades — London quality is much lower)
+- disp=1.5: WR drops to 41%, PnL goes to -$10,468 (251 trades — lower quality signals dilute edge)
+- London+NY+disp=1.5: WR 40.2%, PnL -$50,533 (500 trades — catastrophic)
+- Increasing max_trades_per_day: no meaningful benefit; signal quality is the constraint
+
+**How to apply:** When trying to reduce cycle time (more trades → faster eval), the instinct to add London or loosen filters will destroy the strategy. The correct lever for shorter cycles is aggressive propfirm sizing (eval_risk_pct), not more trades. The 91-day cycle (k=5 on 150K) already satisfies a 2-4 month target without any filter changes.
