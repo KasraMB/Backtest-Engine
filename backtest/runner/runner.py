@@ -584,15 +584,20 @@ def _run_single(
                         # Market orders fill at bar close — no remaining bar
                         # range exists, so same-bar SL/TP cannot be hit.
                         fill_price = bar.close
-                        contracts = risk_manager.resolve_contracts(order, account, fill_price)
-                        _validate_sl_tp_at_fill(order, fill_price)
+                        try:
+                            contracts = risk_manager.resolve_contracts(order, account, fill_price)
+                        except ValueError:
+                            # Fill price landed at SL — degenerate trade, skip silently.
+                            order = None
+                        if order is not None:
+                            _validate_sl_tp_at_fill(order, fill_price)
 
-                        from backtest.engine.execution import FillResult
-                        fill = FillResult(fill_price=fill_price, contracts=contracts)
-                        position = _open_position(order, fill, i, order_placed_bar=i)
+                            from backtest.engine.execution import FillResult
+                            fill = FillResult(fill_price=fill_price, contracts=contracts)
+                            position = _open_position(order, fill, i, order_placed_bar=i)
 
-                        # Strategy sets SL/TP; wrapper handles reversal if needed
-                        strategy._on_fill(position, data, i)
+                            # Strategy sets SL/TP; wrapper handles reversal if needed
+                            strategy._on_fill(position, data, i)
                     else:
                         # Limit/Stop/StopLimit: register as pending
                         bars_remaining = order.expiry_bars  # None = GTC
