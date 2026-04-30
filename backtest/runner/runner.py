@@ -414,20 +414,30 @@ def _run_single(
     risk_manager = RiskManager()
     account = Account(balance=config.starting_capital)
 
-    active_bars = build_active_bar_set(data, strategy.trading_hours)
     eod_bars = build_eod_bar_set(data, config.eod_exit_time)
-
-    # For strategies with trading_hours=None we compute a required_bars mask
-    # covering all session windows. Bars outside this are skipped when flat.
-    _req_set = build_required_bar_set(data, strategy_class)
     n_bars   = len(data.open_1m)
-    if _req_set is not None:
-        # Convert to boolean numpy array for fast O(1) indexing
-        required_mask = np.zeros(n_bars, dtype=bool)
-        for idx in _req_set:
-            required_mask[idx] = True
+
+    # Strategy may provide a fine-grained signal mask.  When present it is used
+    # as both the generate_signals gate (replaces active_bars set) and the
+    # flat-bar skip mask (replaces required_mask), giving a large speedup for
+    # sparse strategies like ORB that only check a handful of bars per day.
+    _custom_mask = strategy.signal_bar_mask(data)
+    if _custom_mask is not None:
+        active_bar_mask = _custom_mask          # bool array, O(1) index
+        required_mask   = _custom_mask          # flat-bar skip uses same mask
     else:
-        required_mask = None   # all bars required
+        _active_set = build_active_bar_set(data, strategy.trading_hours)
+        active_bar_mask = np.zeros(n_bars, dtype=bool)
+        for idx in _active_set:
+            active_bar_mask[idx] = True
+
+        _req_set = build_required_bar_set(data, strategy_class)
+        if _req_set is not None:
+            required_mask = np.zeros(n_bars, dtype=bool)
+            for idx in _req_set:
+                required_mask[idx] = True
+        else:
+            required_mask = None   # all bars required
 
     # Pre-extract numpy arrays for the hot path
     opens  = data.open_1m
@@ -454,7 +464,8 @@ def _run_single(
         )
 
     trades: list[Trade] = []
-    equity_curve: list[float] = [account.balance]
+    _track_eq = config.track_equity_curve
+    equity_curve: list[float] = [account.balance] if _track_eq else []
 
     position: Optional[OpenPosition] = None
     pending: Optional[PendingOrder] = None
@@ -466,7 +477,8 @@ def _run_single(
         if (position is None and pending is None
                 and required_mask is not None
                 and not required_mask[i]):
-            equity_curve.append(account.balance)
+            if _track_eq:
+                equity_curve.append(account.balance)
             continue
         bar = Bar(
             index=i,
@@ -577,7 +589,7 @@ def _run_single(
 
         # ── Step 3: Signal generation ──────────────────────────────────────
         if position is None and pending is None:
-            if i >= strategy.min_lookback and i in active_bars:
+            if i >= strategy.min_lookback and active_bar_mask[i]:
                 order = strategy._generate_signals(data, i)
                 if order is not None:
                     if order.order_type == OrderType.MARKET:
@@ -608,12 +620,12 @@ def _run_single(
                         )
 
         # ── Step 4: Advance (equity curve snapshot) ─────────────────────────
-        # Mark-to-market the open position at bar close
-        if position is not None:
-            unrealized = _unrealized_pnl(position, bar.close)
-            equity_curve.append(account.balance + unrealized)
-        else:
-            equity_curve.append(account.balance)
+        if _track_eq:
+            if position is not None:
+                unrealized = _unrealized_pnl(position, bar.close)
+                equity_curve.append(account.balance + unrealized)
+            else:
+                equity_curve.append(account.balance)
 
     # Force-close any position still open at end of data.
     # Step 4 already appended the last bar's mark-to-market snapshot, so we

@@ -62,6 +62,11 @@ class MarketData:
     # trading_hours_key is None (for trading_hours=None) or a tuple-of-tuples
     _active_bar_cache: dict = field(default=None)
 
+    # Shared per-bar integer day index (days since 1970-01-01) for fast daily
+    # resets in strategy _setup.  Populated once by the sweep/loader so all
+    # combo runs can reference the same array without re-computing it.
+    bar_day_int_1m: np.ndarray = field(default=None)   # int64, same length as df_1m
+
     def __post_init__(self):
         self._validate()
 
