@@ -46,6 +46,15 @@ class BaseStrategy(ABC):
         # Set by the runner from RunConfig.reverse_signals before the bar loop.
         self._reverse_mode: bool = False
 
+    def signal_bar_mask(self, data: 'MarketData') -> Optional['np.ndarray']:
+        """Return a boolean array (length = n_bars) marking bars where
+        generate_signals should be called.  The runner also uses this as the
+        flat-bar skip mask so it can skip irrelevant bars when no position is
+        open — potentially giving a large speedup for sparse strategies.
+
+        Return None to use the default trading_hours-based behaviour."""
+        return None
+
     # ── Reversal helpers ─────────────────────────────────────────────────────
 
     @staticmethod

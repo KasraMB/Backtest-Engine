@@ -138,25 +138,30 @@ class ORBATRBreakoutStrategy(BaseStrategy):
             return
 
         idx = data.df_1m.index
-        self._times_min = (idx.hour * 60 + idx.minute).to_numpy(np.int32)
 
-        # Integer day index per bar (days since epoch) for fast daily resets
-        self._bar_day = idx.normalize().view(np.int64) // (86_400 * 10**9)
+        # Use cached times array from MarketData if available; compute once otherwise
+        if data.bar_times_1m_min is not None:
+            self._times_min = data.bar_times_1m_min
+        else:
+            self._times_min = (idx.hour * 60 + idx.minute).to_numpy(np.int32)
 
-        # Capture 9:30 open for each trading date
-        open_s = pd.Series(data.open_1m, index=idx)
-        rth_mask = (idx.hour == 9) & (idx.minute == 30)
-        rth_open = open_s[rth_mask].groupby(idx[rth_mask].date).first()
-        self._orb_open = rth_open.to_dict()
+        # Integer day index per bar (days since epoch).  Reuse cached array when
+        # the sweep pre-populates data.bar_day_int_1m — avoids 1.5s normalize() call.
+        if data.bar_day_int_1m is not None:
+            self._bar_day = data.bar_day_int_1m
+        else:
+            self._bar_day = idx.normalize().view(np.int64) // (86_400 * 10**9)
 
-        # Also map day-int → orb_open for O(1) lookup without date() conversion
+        # Build day-int → 9:30 open dict.  Iterate with index arithmetic only;
+        # no idx.date call (eliminates the slow 0.6s pandas date extraction).
+        rth_mask = (self._times_min == _RTH_OPEN_MIN)
         self._orb_open_int: dict = {}
         day_arr = self._bar_day
-        for j, d in enumerate(idx.date):
-            if rth_mask[j]:
-                k = int(day_arr[j])
-                if k not in self._orb_open_int:
-                    self._orb_open_int[k] = float(data.open_1m[j])
+        rth_indices = np.where(rth_mask)[0]
+        for j in rth_indices:
+            k = int(day_arr[j])
+            if k not in self._orb_open_int:
+                self._orb_open_int[k] = float(data.open_1m[j])
 
         # Load daily arrays
         d_dates, d_atr5, d_sma200, d_close = _get_daily_arrays()
@@ -173,6 +178,22 @@ class ORBATRBreakoutStrategy(BaseStrategy):
         self._bar_d1_atr5  = np.where(valid, d_atr5[idx_safe],  np.nan)
         self._bar_sma200   = np.where(valid, d_sma200[idx_safe], np.nan)
         self._bar_prev_cls = np.where(valid, d_close[idx_safe],  np.nan)
+
+        # Precompute signal bar mask: M30 closes (t_min % 30 == 29) within the
+        # entry window.  Exposed via signal_bar_mask() so the runner can skip
+        # all other bars when flat, avoiding ~322K redundant loop iterations.
+        t = self._times_min
+        self._sig_mask = (
+            (t % 30 == 29) &
+            (t >= _ORB_END_MIN) &
+            (t < _WIN_END_MIN)
+        )
+
+    # ── Signal bar mask (runner hook) ─────────────────────────────────────────
+
+    def signal_bar_mask(self, data: MarketData) -> np.ndarray:
+        self._setup(data)
+        return self._sig_mask
 
     # ── Equity ────────────────────────────────────────────────────────────────
 
@@ -214,11 +235,8 @@ class ORBATRBreakoutStrategy(BaseStrategy):
                 self._short_level = _tick(orb_open - space)
                 self._levels_set  = True
 
-        # Only enter on M30 closes within the trading window (t_min % 30 == 29
-        # is the last 1m bar of each 30m period, equivalent to the M30 bar close)
+        # Entry window guard (runner's signal_bar_mask already ensures M30 closes only)
         if not self._levels_set or t_min < _ORB_END_MIN or t_min >= _WIN_END_MIN:
-            return None
-        if t_min % 30 != 29:
             return None
 
         if self._trades_today >= self.max_trades_day:

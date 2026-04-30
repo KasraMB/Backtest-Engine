@@ -35,6 +35,7 @@ class RunConfig:
     eod_exit_time: time = field(default_factory=lambda: time(17, 0))
     order_cancel_time: time = field(default_factory=lambda: time(11, 0))  # cancel pending orders at this time
     reverse_signals: bool = False   # flip every signal: long→short, short→long (SL/TP offsets preserved)
+    track_equity_curve: bool = True  # set False in sweeps to skip 2M per-bar appends
     params: dict = field(default_factory=dict)
 
     def __post_init__(self):
