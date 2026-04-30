@@ -275,6 +275,7 @@ def _eval_loop_nb(
     scheme_code: int,
     point_value: float,
     max_t:       int,
+    comm_rt:     float,
 ):
     n_sims   = all_counts.shape[0]
     max_days = all_counts.shape[1]
@@ -348,7 +349,7 @@ def _eval_loop_nb(
                 sl_t    = max(np.float32(0.25), pool_sl[raw_idx])
                 raw_c   = target / (sl_t * np.float32(point_value))
                 n_c     = max(1, min(max_micros, int(raw_c)))
-                dollar  = pnl_t * np.float32(n_c) * np.float32(point_value)
+                dollar  = pnl_t * np.float32(n_c) * np.float32(point_value) - np.float32(comm_rt) * np.float32(n_c)
                 cum_pnl += dollar
                 day_pnl += dollar
                 last_trade_pnl = dollar
@@ -421,6 +422,7 @@ def _funded_loop_nb(
     max_pay:          int,
     payout_cap:       float,
     split:            float,
+    comm_rt:          float,
 ):
     n_sims   = all_counts.shape[0]
     MAX_DAYS = all_counts.shape[1]
@@ -485,7 +487,7 @@ def _funded_loop_nb(
                 sl_t    = max(np.float32(0.25), sl_dists[raw_idx])
                 raw_c   = target / (sl_t * np.float32(point_value))
                 n_c     = max(1, min(max_micros, int(raw_c)))
-                dollar  = pnl_t * np.float32(n_c) * np.float32(point_value)
+                dollar  = pnl_t * np.float32(n_c) * np.float32(point_value) - np.float32(comm_rt) * np.float32(n_c)
                 cum_pnl += dollar
                 day_pnl += dollar
                 last_trade_pnl = dollar
@@ -566,6 +568,7 @@ def _eval_loop_nb_multi(
     scheme_code:      int,
     point_value:      float,
     max_t:            int,
+    comm_rt:          float,
 ):
     n_thr    = pnl_2d.shape[0]
     n_sims   = all_counts.shape[1]
@@ -643,7 +646,7 @@ def _eval_loop_nb_multi(
                 sl_t    = max(np.float32(0.25), pool_sl[raw_idx])
                 raw_c   = target / (sl_t * np.float32(point_value))
                 n_c     = max(1, min(max_micros, int(raw_c)))
-                dollar  = pnl_t * np.float32(n_c) * np.float32(point_value)
+                dollar  = pnl_t * np.float32(n_c) * np.float32(point_value) - np.float32(comm_rt) * np.float32(n_c)
                 cum_pnl += dollar; day_pnl += dollar; last_trade_pnl = dollar
                 if balance + cum_pnl <= mll_level:
                     breached = True; break
@@ -701,6 +704,7 @@ def _funded_loop_nb_multi(
     max_pay:          int,
     payout_cap:       float,
     split:            float,
+    comm_rt:          float,
 ):
     n_thr    = pnl_2d.shape[0]
     n_sims   = all_counts.shape[1]
@@ -771,7 +775,7 @@ def _funded_loop_nb_multi(
                 sl_t    = max(np.float32(0.25), pool_sl[raw_idx])
                 raw_c   = target / (sl_t * np.float32(point_value))
                 n_c     = max(1, min(max_micros, int(raw_c)))
-                dollar  = pnl_t * np.float32(n_c) * np.float32(point_value)
+                dollar  = pnl_t * np.float32(n_c) * np.float32(point_value) - np.float32(comm_rt) * np.float32(n_c)
                 cum_pnl += dollar; day_pnl += dollar; last_trade_pnl = dollar
                 if balance + cum_pnl <= mll_level:
                     breached = True; break
@@ -909,6 +913,7 @@ def simulate_eval_batch(
     n_sims: int,
     regime_labels: Optional[np.ndarray] = None,
     transition_matrix: Optional[np.ndarray] = None,
+    comm_rt: float = 1.30,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Run n_sims eval simulations in parallel using Numba JIT kernel.
@@ -945,6 +950,7 @@ def simulate_eval_batch(
         int(SCHEME_CODE.get(scheme, 0)),
         float(MICRO_POINT_VALUE),
         int(MAX_T),
+        float(comm_rt),
     )
     return passed, balance, days
 
@@ -963,6 +969,7 @@ def simulate_funded_batch(
     rng: np.random.Generator,
     trades_per_day: float,
     starting_balances: np.ndarray,   # (n_passed,) — varies per sim
+    comm_rt: float = 1.30,
 ) -> np.ndarray:
     """
     Simulate funded phase for all sims that passed eval.
@@ -998,6 +1005,7 @@ def simulate_funded_batch(
             int(max_pay),
             float(account.payout_cap),
             float(account.split),
+            float(comm_rt),
         )
 
     # ── Fallback: pure NumPy path (Numba unavailable) ────────────────────────
@@ -1108,7 +1116,7 @@ def _run_scheme_worker(args: tuple) -> tuple[str, dict]:
     """
     (scheme, pnl_pts, sl_dists, account, eval_risk_pcts, funded_risk_pcts,
      sizing_mode, n_sims, seed, BS, trades_per_day,
-     regime_labels, transition_matrix) = args
+     regime_labels, transition_matrix, comm_rt) = args
 
     # Each worker gets its own RNG seeded deterministically per scheme
     scheme_seed = seed + hash(scheme) % 10_000
@@ -1127,6 +1135,7 @@ def _run_scheme_worker(args: tuple) -> tuple[str, dict]:
             sizing_mode, rng, trades_per_day, n_sims,
             regime_labels=regime_labels,
             transition_matrix=transition_matrix,
+            comm_rt=comm_rt,
         )
         eval_cache[erp] = (passed, days_eval)
 
@@ -1137,6 +1146,7 @@ def _run_scheme_worker(args: tuple) -> tuple[str, dict]:
         w_all, dtw_all, n_pay_all, payout_days_all, payout_amounts_all, funded_days_all = simulate_funded_batch(
             pnl_pts, sl_dists, account, frp, scheme,
             sizing_mode, rng, trades_per_day, funded_start,
+            comm_rt=comm_rt,
         )
         funded_cache[frp] = (w_all, dtw_all, n_pay_all, payout_days_all, payout_amounts_all, funded_days_all)
 
@@ -1353,6 +1363,7 @@ def run_propfirm_grid(
     _sl_dists: Optional[np.ndarray] = None,
     _trades_per_day: Optional[float] = None,
     n_trading_days: Optional[int] = None,
+    comm_rt: float = 1.30,
 ) -> dict:
     """
     Sweep scheme × eval_risk_pct × funded_risk_pct.
@@ -1427,13 +1438,13 @@ def run_propfirm_grid(
             _dummy_sl, _dummy_sl, _dummy_sl,
             4, 4, 4,
             25000.0, 1000.0, 1250.0, 20,
-            0.20, 0, 2.0, 3,
+            0.20, 0, 2.0, 3, 1.30,
         )
         _funded_loop_nb(
             _dummy, _dummy_sl, 4,
             np.ones((2, 5), dtype=np.int16),
             np.zeros((2, 5, 3), dtype=np.int32),
-            25000.0, 1000.0, 20, 0.20, 0, 2.0, 3, 6, 1500.0, 0.90,
+            25000.0, 1000.0, 20, 0.20, 0, 2.0, 3, 6, 1500.0, 0.90, 1.30,
         )
 
     BS = 500
@@ -1452,7 +1463,7 @@ def run_propfirm_grid(
     worker_args = [
         (scheme, pnl_pts, sl_dists, account, eval_risk_pcts, funded_risk_pcts,
          sizing_mode, n_sims, seed, BS, trades_per_day,
-         regime_labels, transition_matrix)
+         regime_labels, transition_matrix, comm_rt)
         for scheme in schemes
     ]
 
@@ -1518,6 +1529,7 @@ def simulate_eval_batch_multi(
     n_sims:         int,
     regime_labels_list: list[Optional[np.ndarray]],
     transition_matrix:  Optional[np.ndarray],
+    comm_rt: float = 1.30,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Run eval simulation for all thresholds simultaneously.
@@ -1566,6 +1578,7 @@ def simulate_eval_batch_multi(
         float(account.profit_target), int(account.max_micros),
         float(risk_pct), int(SCHEME_CODE.get(scheme, 0)),
         float(MICRO_POINT_VALUE), int(MAX_T),
+        float(comm_rt),
     )
     return passed, balance, days
 
@@ -1579,6 +1592,7 @@ def simulate_funded_batch_multi(
     scheme:     str,
     rng:        np.random.Generator,
     n_sims:     int,
+    comm_rt:    float = 1.30,
 ) -> tuple:
     """
     Run funded simulation for all thresholds simultaneously.
@@ -1604,6 +1618,7 @@ def simulate_funded_batch_multi(
         int(SCHEME_CODE.get(scheme, 0)), float(MICRO_POINT_VALUE),
         int(MAX_T), int(account.max_payouts),
         float(account.payout_cap), float(account.split),
+        float(comm_rt),
     )
 
 
@@ -1623,6 +1638,7 @@ def run_propfirm_grid_threshold_sweep(
     schemes:        list[str] = None,
     seed:           int = 42,
     n_workers:      int = None,
+    comm_rt:        float = 1.30,
 ) -> list[dict]:
     """
     Run the full propfirm grid for all thresholds simultaneously.
@@ -1660,13 +1676,13 @@ def run_propfirm_grid_threshold_sweep(
         _eval_loop_nb_multi(
             _d, _ds, _sz, _d, _d, _d, _ds, _ds, _ds, _rs,
             _ac, _ai, _rseq,
-            25000.0, 1000.0, 1250.0, 20, 0.20, 0, 2.0, 3,
+            25000.0, 1000.0, 1250.0, 20, 0.20, 0, 2.0, 3, 1.30,
         )
         _fac = np.ones((2, 2, 5), dtype=np.int16)
         _fai = np.zeros((2, 5, 3), dtype=np.int32)
         _funded_loop_nb_multi(
             _d, _ds, _sz, _fac, _fai,
-            25000.0, 1000.0, 20, 0.20, 0, 2.0, 3, 6, 1500.0, 0.90,
+            25000.0, 1000.0, 20, 0.20, 0, 2.0, 3, 6, 1500.0, 0.90, 1.30,
         )
 
     # ── Regime transition matrix (shared across thresholds) ──────────────────
@@ -1690,6 +1706,7 @@ def run_propfirm_grid_threshold_sweep(
                 pnl_list, sl_list, tpd_list, account,
                 erp, scheme, rng, n_sims,
                 regime_labels_list, transition_matrix,
+                comm_rt=comm_rt,
             )
             eval_cache[erp] = (passed, days_eval)
 
@@ -1699,6 +1716,7 @@ def run_propfirm_grid_threshold_sweep(
             funded_cache[frp] = simulate_funded_batch_multi(
                 pnl_list, sl_list, tpd_list, account,
                 frp, scheme, rng, n_sims,
+                comm_rt=comm_rt,
             )
 
         # ── Assemble per-threshold result dicts ────────────────────────────
