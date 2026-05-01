@@ -1,0 +1,35 @@
+Sweep7 IBS+TF+TS: 2019-01-01 -> 2024-12-31
+Valid: 596/596  Positive EV: 48
+
+TOP 30:
+          strategy                                                          params_json  n_trades  win_rate   avg_r  best_ev_per_day best_account   best_scheme
+1   TrendFollowing   {"sma_fast": 20, "sma_slow": 100, "lookback": 50, "atr_mult": 3.0}       173    0.8844  0.1930          31.1277         150K   floor_aware
+2   TrendFollowing   {"sma_fast": 20, "sma_slow": 200, "lookback": 50, "atr_mult": 3.0}       169    0.8876  0.1907          30.2014         150K   floor_aware
+3   TrendFollowing   {"sma_fast": 50, "sma_slow": 100, "lookback": 50, "atr_mult": 3.0}       160    0.8875  0.2032          29.5618         150K   floor_aware
+4   TrendFollowing  {"sma_fast": 20, "sma_slow": 100, "lookback": 100, "atr_mult": 3.0}       155    0.8839  0.1966          28.4181         150K   floor_aware
+5   TrendFollowing  {"sma_fast": 20, "sma_slow": 200, "lookback": 100, "atr_mult": 3.0}       155    0.8839  0.1962          28.3987         150K   floor_aware
+6   TrendFollowing   {"sma_fast": 50, "sma_slow": 200, "lookback": 50, "atr_mult": 3.0}       161    0.8820  0.1861          28.0737         150K   floor_aware
+7   TrendFollowing  {"sma_fast": 50, "sma_slow": 100, "lookback": 100, "atr_mult": 3.0}       153    0.8824  0.1977          27.8497         150K   floor_aware
+8   TrendFollowing  {"sma_fast": 50, "sma_slow": 200, "lookback": 100, "atr_mult": 3.0}       151    0.8808  0.1902          26.3334         150K   floor_aware
+9   TrendFollowing  {"sma_fast": 20, "sma_slow": 200, "lookback": 200, "atr_mult": 3.0}       142    0.8803  0.1951          24.7644         150K   floor_aware
+10  TrendFollowing  {"sma_fast": 50, "sma_slow": 200, "lookback": 200, "atr_mult": 3.0}       142    0.8803  0.1951          24.7644         150K   floor_aware
+11  TrendFollowing  {"sma_fast": 20, "sma_slow": 100, "lookback": 200, "atr_mult": 3.0}       141    0.8794  0.1942          24.6812         150K   floor_aware
+12  TrendFollowing  {"sma_fast": 50, "sma_slow": 100, "lookback": 200, "atr_mult": 3.0}       139    0.8777  0.1953          23.6322         150K   floor_aware
+13  TrendFollowing   {"sma_fast": 20, "sma_slow": 100, "lookback": 50, "atr_mult": 4.0}       173    0.8844  0.1304          21.1279         150K   floor_aware
+14  TrendFollowing   {"sma_fast": 50, "sma_slow": 100, "lookback": 50, "atr_mult": 4.0}       160    0.8875  0.1371          20.6153         150K   floor_aware
+15  TrendFollowing   {"sma_fast": 20, "sma_slow": 200, "lookback": 50, "atr_mult": 4.0}       169    0.8876  0.1291          20.5770         150K   floor_aware
+16  TrendFollowing  {"sma_fast": 20, "sma_slow": 100, "lookback": 100, "atr_mult": 4.0}       155    0.8839  0.1329          19.0179         150K   floor_aware
+17  TrendFollowing  {"sma_fast": 20, "sma_slow": 200, "lookback": 100, "atr_mult": 4.0}       155    0.8839  0.1326          18.9404         150K   floor_aware
+18  TrendFollowing   {"sma_fast": 50, "sma_slow": 200, "lookback": 50, "atr_mult": 4.0}       161    0.8820  0.1263          18.5753         150K   floor_aware
+19  TrendFollowing  {"sma_fast": 50, "sma_slow": 100, "lookback": 100, "atr_mult": 4.0}       153    0.8824  0.1335          18.5268         150K   floor_aware
+20  TrendFollowing  {"sma_fast": 50, "sma_slow": 200, "lookback": 100, "atr_mult": 4.0}       151    0.8808  0.1290          16.1157         150K   floor_aware
+21  TrendFollowing  {"sma_fast": 20, "sma_slow": 100, "lookback": 200, "atr_mult": 4.0}       141    0.8794  0.1315          15.6947         150K   floor_aware
+22  TrendFollowing  {"sma_fast": 20, "sma_slow": 200, "lookback": 200, "atr_mult": 4.0}       142    0.8803  0.1322          15.3208         150K   floor_aware
+23  TrendFollowing  {"sma_fast": 50, "sma_slow": 200, "lookback": 200, "atr_mult": 4.0}       142    0.8803  0.1322          15.3208         150K   floor_aware
+24  TrendFollowing  {"sma_fast": 50, "sma_slow": 100, "lookback": 200, "atr_mult": 4.0}       139    0.8777  0.1322          14.3882         150K   floor_aware
+25  TrendFollowing   {"sma_fast": 20, "sma_slow": 100, "lookback": 50, "atr_mult": 6.0}       173    0.8844  0.0794          11.9600          25K   floor_aware
+26  TrendFollowing   {"sma_fast": 20, "sma_slow": 100, "lookback": 50, "atr_mult": 8.0}       173    0.8844  0.0571          11.7260          25K  fixed_dollar
+27  TrendFollowing   {"sma_fast": 20, "sma_slow": 200, "lookback": 50, "atr_mult": 6.0}       169    0.8876  0.0787          11.3767          25K   floor_aware
+28  TrendFollowing   {"sma_fast": 50, "sma_slow": 100, "lookback": 50, "atr_mult": 6.0}       160    0.8875  0.0834          11.3292          25K   floor_aware
+29  TrendFollowing   {"sma_fast": 50, "sma_slow": 100, "lookback": 50, "atr_mult": 8.0}       160    0.8875  0.0600          11.1834          25K    martingale
+30  TrendFollowing   {"sma_fast": 20, "sma_slow": 200, "lookback": 50, "atr_mult": 8.0}       169    0.8876  0.0567          11.0543          25K    martingale
