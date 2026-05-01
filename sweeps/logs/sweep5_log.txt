@@ -1,0 +1,1030 @@
+Loading data 2019-01-01 -> 2024-12-31...
+  2,036,515 bars | 1549 days  (3.6s)
+
+Total combos across all strategies: 1143
+
+
+============================================================
+Strategy: MACD  (162 combos)
+============================================================
+[   3/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=50  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 3237 WR=49.0% avgR=-0.014 ev/d=    $-1.97 pass=  25%  [62.2s+1.3s]
+  ETA: 1206.4m  (1 done, 1140 left)
+[   4/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 3272 WR=38.2% avgR=-0.041 ev/d=    $-4.09 pass=  17%  [60.8s+0.6s]
+  ETA: 1185.3m  (2 done, 1139 left)
+[   5/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 3264 WR=38.6% avgR=-0.032 ev/d=    $-3.47 pass=  24%  [61.6s+0.6s]
+  ETA: 1182.6m  (3 done, 1138 left)
+[   6/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 3209 WR=38.6% avgR=-0.033 ev/d=    $-4.02 pass=  22%  [62.6s+0.6s]
+  ETA: 1185.5m  (4 done, 1137 left)
+[   7/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 3272 WR=31.6% avgR=-0.050 ev/d=    $-4.60 pass=  21%  [63.2s+0.6s]
+  ETA: 1189.3m  (5 done, 1136 left)
+[   8/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 3250 WR=32.1% avgR=-0.038 ev/d=    $-4.91 pass=  20%  [62.9s+0.6s]
+  ETA: 1190.3m  (6 done, 1135 left)
+[   9/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 3200 WR=32.4% avgR=-0.034 ev/d=    $-4.91 pass=  23%  [63.6s+0.6s]
+  ETA: 1192.7m  (7 done, 1134 left)
+[  10/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 2264 WR=44.7% avgR=-0.093 ev/d=    $-3.93 pass=  10%  [64.2s+0.6s]
+  ETA: 1195.6m  (8 done, 1133 left)
+[  11/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 2260 WR=50.2% avgR=+0.007 ev/d=    $-1.47 pass=  27%  [63.7s+0.6s]
+  ETA: 1196.6m  (9 done, 1132 left)
+[  12/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 2241 WR=51.7% avgR=+0.036 ev/d=     $0.13 pass=  37%  [64.3s+0.6s]
+  ETA: 1198.5m  (10 done, 1131 left)
+[  13/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 2264 WR=38.9% avgR=-0.027 ev/d=    $-3.00 pass=  22%  [63.3s+0.6s]
+  ETA: 1198.0m  (11 done, 1130 left)
+[  14/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 2255 WR=40.8% avgR=+0.021 ev/d=    $-1.63 pass=  30%  [63.7s+0.6s]
+  ETA: 1198.1m  (12 done, 1129 left)
+[  15/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 2227 WR=41.3% avgR=+0.031 ev/d=    $-0.54 pass=  33%  [62.7s+0.6s]
+  ETA: 1196.4m  (13 done, 1128 left)
+[  16/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 2262 WR=32.9% avgR=-0.014 ev/d=    $-3.34 pass=  24%  [62.6s+0.6s]
+  ETA: 1194.7m  (14 done, 1127 left)
+[  17/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 2247 WR=33.7% avgR=+0.005 ev/d=    $-3.04 pass=  28%  [63.5s+0.6s]
+  ETA: 1194.4m  (15 done, 1126 left)
+[  18/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 2218 WR=34.6% avgR=+0.025 ev/d=    $-1.08 pass=  29%  [64.6s+0.6s]
+  ETA: 1195.1m  (16 done, 1125 left)
+[  19/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 1815 WR=43.3% avgR=-0.129 ev/d=    $-4.76 pass=   7%  [63.9s+0.6s]
+  ETA: 1194.8m  (17 done, 1124 left)
+[  20/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 1809 WR=49.3% avgR=-0.012 ev/d=    $-2.40 pass=  23%  [63.7s+0.6s]
+  ETA: 1194.3m  (18 done, 1123 left)
+[  21/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 1796 WR=50.7% avgR=+0.016 ev/d=    $-0.88 pass=  31%  [64.3s+0.6s]
+  ETA: 1194.3m  (19 done, 1122 left)
+[  22/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 1814 WR=37.3% avgR=-0.067 ev/d=    $-4.78 pass=  13%  [64.9s+0.6s]
+  ETA: 1194.9m  (20 done, 1121 left)
+[  23/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 1806 WR=40.0% avgR=-0.000 ev/d=    $-3.06 pass=  25%  [63.7s+0.6s]
+  ETA: 1194.1m  (21 done, 1120 left)
+[  24/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 1788 WR=39.7% avgR=-0.011 ev/d=    $-2.88 pass=  26%  [64.8s+0.6s]
+  ETA: 1194.3m  (22 done, 1119 left)
+[  25/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 1813 WR=31.4% avgR=-0.056 ev/d=    $-5.19 pass=  16%  [63.8s+0.6s]
+  ETA: 1193.5m  (23 done, 1118 left)
+[  26/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 1804 WR=32.9% avgR=-0.017 ev/d=    $-3.49 pass=  26%  [64.1s+0.6s]
+  ETA: 1192.9m  (24 done, 1117 left)
+[  27/1143] MACD | bar_minutes=5  ma_fast=10  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 1779 WR=32.7% avgR=-0.027 ev/d=    $-3.01 pass=  25%  [64.9s+0.6s]
+  ETA: 1192.9m  (25 done, 1116 left)
+[  28/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=50  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 2646 WR=43.8% avgR=-0.101 ev/d=    $-3.86 pass=   9%  [63.6s+0.6s]
+  ETA: 1191.9m  (26 done, 1115 left)
+[  29/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=50  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 2639 WR=49.2% avgR=-0.008 ev/d=    $-2.31 pass=  26%  [65.2s+0.6s]
+  ETA: 1191.9m  (27 done, 1114 left)
+[  30/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=50  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 2628 WR=49.8% avgR=+0.004 ev/d=    $-1.35 pass=  28%  [1382.5s+0.6s]
+  ETA: 2064.7m  (28 done, 1113 left)
+[  31/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 2646 WR=37.7% avgR=-0.045 ev/d=    $-3.33 pass=  22%  [92.5s+0.6s]
+  ETA: 2051.1m  (29 done, 1112 left)
+[  32/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 2635 WR=39.0% avgR=-0.020 ev/d=    $-3.11 pass=  24%  [64.7s+0.5s]
+  ETA: 2021.3m  (30 done, 1111 left)
+[  33/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 2613 WR=39.8% avgR=-0.003 ev/d=    $-2.43 pass=  27%  [74.5s+0.6s]
+  ETA: 1999.1m  (31 done, 1110 left)
+[  34/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 2646 WR=31.6% avgR=-0.043 ev/d=    $-4.06 pass=  20%  [77.3s+0.6s]
+  ETA: 1979.9m  (32 done, 1109 left)
+[  35/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 2631 WR=32.7% avgR=-0.020 ev/d=    $-4.25 pass=  22%  [68.9s+0.6s]
+  ETA: 1957.0m  (33 done, 1108 left)
+[  36/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 2605 WR=33.1% avgR=-0.012 ev/d=    $-3.42 pass=  24%  [71.1s+0.6s]
+  ETA: 1936.7m  (34 done, 1107 left)
+[  37/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 1653 WR=43.4% avgR=-0.124 ev/d=    $-4.38 pass=   7%  [122.1s+0.8s]
+  ETA: 1944.4m  (35 done, 1106 left)
+[  38/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 1650 WR=48.5% avgR=-0.025 ev/d=    $-1.88 pass=  26%  [89.9s+0.6s]
+  ETA: 1935.0m  (36 done, 1105 left)
+[  39/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 1643 WR=49.4% avgR=-0.006 ev/d=    $-1.23 pass=  28%  [75.6s+0.6s]
+  ETA: 1918.9m  (37 done, 1104 left)
+[  40/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 1653 WR=36.4% avgR=-0.088 ev/d=    $-4.53 pass=  14%  [74.7s+0.6s]
+  ETA: 1903.1m  (38 done, 1103 left)
+[  41/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 1647 WR=38.9% avgR=-0.025 ev/d=    $-2.53 pass=  27%  [73.7s+0.6s]
+  ETA: 1887.6m  (39 done, 1102 left)
+[  42/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 1642 WR=40.0% avgR=+0.002 ev/d=    $-1.89 pass=  28%  [79.6s+0.6s]
+  ETA: 1875.6m  (40 done, 1101 left)
+[  43/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 1652 WR=30.7% avgR=-0.078 ev/d=    $-4.10 pass=  21%  [93.2s+0.6s]
+  ETA: 1870.1m  (41 done, 1100 left)
+[  44/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 1647 WR=32.7% avgR=-0.018 ev/d=    $-2.36 pass=  27%  [90.0s+0.9s]
+  ETA: 1863.6m  (42 done, 1099 left)
+[  45/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 1640 WR=32.9% avgR=-0.013 ev/d=    $-2.71 pass=  25%  [78.0s+0.7s]
+  ETA: 1852.0m  (43 done, 1098 left)
+[  46/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 1327 WR=45.6% avgR=-0.077 ev/d=    $-3.62 pass=  13%  [75.8s+0.6s]
+  ETA: 1840.1m  (44 done, 1097 left)
+[  47/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 1327 WR=51.8% avgR=+0.036 ev/d=     $1.87 pass=  39%  [77.1s+0.6s]
+  ETA: 1829.0m  (45 done, 1096 left)
+[  48/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 1318 WR=50.3% avgR=+0.008 ev/d=    $-1.08 pass=  29%  [71.1s+0.6s]
+  ETA: 1816.1m  (46 done, 1095 left)
+[  49/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 1327 WR=39.0% avgR=-0.025 ev/d=    $-2.85 pass=  29%  [76.7s+0.6s]
+  ETA: 1805.8m  (47 done, 1094 left)
+[  50/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 1326 WR=40.8% avgR=+0.017 ev/d=    $-1.71 pass=  30%  [69.0s+0.6s]
+  ETA: 1793.0m  (48 done, 1093 left)
+[  51/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 1314 WR=39.5% avgR=-0.013 ev/d=    $-2.47 pass=  27%  [70.1s+0.6s]
+  ETA: 1781.1m  (49 done, 1092 left)
+[  52/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 1327 WR=33.1% avgR=-0.009 ev/d=    $-3.12 pass=  25%  [70.4s+0.6s]
+  ETA: 1769.7m  (50 done, 1091 left)
+[  53/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 1323 WR=34.0% avgR=+0.015 ev/d=    $-1.17 pass=  30%  [71.2s+0.6s]
+  ETA: 1759.0m  (51 done, 1090 left)
+[  54/1143] MACD | bar_minutes=5  ma_fast=20  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 1310 WR=32.7% avgR=-0.025 ev/d=    $-3.71 pass=  24%  [70.5s+0.6s]
+  ETA: 1748.4m  (52 done, 1089 left)
+[  55/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=50  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 1230 WR=45.3% avgR=-0.088 ev/d=    $-3.70 pass=  12%  [58.7s+0.6s]
+  ETA: 1734.1m  (53 done, 1088 left)
+[  56/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=50  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 1230 WR=48.0% avgR=-0.033 ev/d=    $-2.78 pass=  20%  [59.0s+0.6s]
+  ETA: 1720.5m  (54 done, 1087 left)
+[  57/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=50  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 1228 WR=47.6% avgR=-0.043 ev/d=    $-3.11 pass=  18%  [58.7s+0.6s]
+  ETA: 1707.1m  (55 done, 1086 left)
+[  58/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 1230 WR=38.5% avgR=-0.037 ev/d=    $-3.08 pass=  23%  [55.3s+0.6s]
+  ETA: 1693.2m  (56 done, 1085 left)
+[  59/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 1230 WR=38.4% avgR=-0.043 ev/d=    $-4.13 pass=  20%  [57.5s+0.6s]
+  ETA: 1680.3m  (57 done, 1084 left)
+[  60/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 1225 WR=37.1% avgR=-0.074 ev/d=    $-5.34 pass=  15%  [51.5s+0.6s]
+  ETA: 1666.1m  (58 done, 1083 left)
+[  61/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 1230 WR=33.5% avgR=+0.002 ev/d=    $-2.76 pass=  28%  [52.3s+0.6s]
+  ETA: 1652.5m  (59 done, 1082 left)
+[  62/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 1228 WR=31.9% avgR=-0.051 ev/d=    $-4.51 pass=  23%  [51.7s+0.6s]
+  ETA: 1639.1m  (60 done, 1081 left)
+[  63/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 1222 WR=30.8% avgR=-0.085 ev/d=    $-6.82 pass=  14%  [54.7s+0.6s]
+  ETA: 1627.1m  (61 done, 1080 left)
+[  64/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 1000 WR=48.2% avgR=-0.019 ev/d=    $-2.37 pass=  19%  [53.4s+0.7s]
+  ETA: 1615.1m  (62 done, 1079 left)
+[  65/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 1000 WR=54.2% avgR=+0.090 ev/d=     $3.92 pass=  42%  [85.1s+0.8s]
+  ETA: 1612.4m  (63 done, 1078 left)
+[  66/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 1000 WR=52.6% avgR=+0.056 ev/d=     $2.00 pass=  35%  [88.3s+0.7s]
+  ETA: 1610.7m  (64 done, 1077 left)
+[  67/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 1000 WR=40.6% avgR=+0.027 ev/d=    $-1.74 pass=  27%  [77.7s+0.7s]
+  ETA: 1606.1m  (65 done, 1076 left)
+[  68/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 1000 WR=42.4% avgR=+0.062 ev/d=     $0.53 pass=  36%  [80.9s+0.7s]
+  ETA: 1602.5m  (66 done, 1075 left)
+[  69/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=1.5  n=  999 WR=42.6% avgR=+0.064 ev/d=     $0.83 pass=  38%  [75.5s+0.7s]
+  ETA: 1597.5m  (67 done, 1074 left)
+[  70/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 1000 WR=35.2% avgR=+0.059 ev/d=    $-0.83 pass=  33%  [79.0s+1.0s]
+  ETA: 1593.6m  (68 done, 1073 left)
+[  71/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 1000 WR=36.3% avgR=+0.084 ev/d=     $1.21 pass=  37%  [87.5s+0.7s]
+  ETA: 1591.8m  (69 done, 1072 left)
+[  72/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=1.5  n=  998 WR=35.1% avgR=+0.043 ev/d=    $-0.18 pass=  33%  [57.3s+0.6s]
+  ETA: 1582.4m  (70 done, 1071 left)
+[  73/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=0.5  n=  637 WR=49.0% avgR=-0.018 ev/d=    $-1.65 pass=  26%  [57.0s+0.6s]
+  ETA: 1573.1m  (71 done, 1070 left)
+[  74/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=1.0  n=  637 WR=52.3% avgR=+0.044 ev/d=     $1.06 pass=  36%  [56.6s+0.6s]
+  ETA: 1564.0m  (72 done, 1069 left)
+[  75/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=1.5  n=  637 WR=52.7% avgR=+0.053 ev/d=     $2.77 pass=  36%  [56.4s+0.7s]
+  ETA: 1555.0m  (73 done, 1068 left)
+[  76/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=0.5  n=  637 WR=41.1% avgR=+0.025 ev/d=    $-0.74 pass=  33%  [56.9s+0.6s]
+  ETA: 1546.4m  (74 done, 1067 left)
+[  77/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=1.0  n=  637 WR=41.4% avgR=+0.030 ev/d=    $-0.62 pass=  33%  [56.6s+0.6s]
+  ETA: 1537.9m  (75 done, 1066 left)
+[  78/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=1.5  n=  637 WR=42.9% avgR=+0.063 ev/d=     $1.93 pass=  40%  [57.6s+0.6s]
+  ETA: 1529.8m  (76 done, 1065 left)
+[  79/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=0.5  n=  637 WR=34.2% avgR=+0.021 ev/d=    $-1.41 pass=  30%  [57.1s+0.6s]
+  ETA: 1521.8m  (77 done, 1064 left)
+[  80/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=1.0  n=  637 WR=34.4% avgR=+0.022 ev/d=    $-1.60 pass=  31%  [56.4s+0.6s]
+  ETA: 1513.9m  (78 done, 1063 left)
+[  81/1143] MACD | bar_minutes=15  ma_fast=10  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=1.5  n=  635 WR=37.6% avgR=+0.110 ev/d=     $4.03 pass=  42%  [57.0s+0.6s]
+  ETA: 1506.2m  (79 done, 1062 left)
+[  82/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=50  rr_ratio=1.0  sl_atr_multiplier=0.5  n=  990 WR=45.8% avgR=-0.073 ev/d=    $-3.45 pass=  10%  [56.4s+0.6s]
+  ETA: 1498.6m  (80 done, 1061 left)
+[  83/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=50  rr_ratio=1.0  sl_atr_multiplier=1.0  n=  990 WR=50.4% avgR=+0.012 ev/d=    $-1.17 pass=  30%  [55.5s+0.6s]
+  ETA: 1490.9m  (81 done, 1060 left)
+[  84/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=50  rr_ratio=1.0  sl_atr_multiplier=1.5  n=  986 WR=48.4% avgR=-0.029 ev/d=    $-2.65 pass=  24%  [54.8s+0.6s]
+  ETA: 1483.2m  (82 done, 1059 left)
+[  85/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=0.5  n=  990 WR=38.6% avgR=-0.037 ev/d=    $-2.99 pass=  22%  [56.3s+0.7s]
+  ETA: 1476.1m  (83 done, 1058 left)
+[  86/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=1.0  n=  990 WR=39.0% avgR=-0.030 ev/d=    $-3.87 pass=  21%  [56.2s+0.6s]
+  ETA: 1469.1m  (84 done, 1057 left)
+[  87/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=1.5  n=  985 WR=39.3% avgR=-0.023 ev/d=    $-3.12 pass=  25%  [55.8s+0.6s]
+  ETA: 1462.1m  (85 done, 1056 left)
+[  88/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=0.5  n=  990 WR=31.8% avgR=-0.050 ev/d=    $-3.92 pass=  20%  [58.0s+0.6s]
+  ETA: 1455.7m  (86 done, 1055 left)
+[  89/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=1.0  n=  990 WR=32.7% avgR=-0.030 ev/d=    $-3.67 pass=  27%  [55.6s+0.6s]
+  ETA: 1448.9m  (87 done, 1054 left)
+[  90/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=1.5  n=  983 WR=33.9% avgR=-0.001 ev/d=    $-2.77 pass=  28%  [58.1s+0.6s]
+  ETA: 1442.8m  (88 done, 1053 left)
+[  91/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=0.5  n=  750 WR=48.5% avgR=+0.000 ev/d=    $-1.43 pass=  33%  [64.3s+0.7s]
+  ETA: 1438.0m  (89 done, 1052 left)
+[  92/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=1.0  n=  750 WR=52.1% avgR=+0.053 ev/d=     $1.79 pass=  36%  [65.9s+0.8s]
+  ETA: 1433.7m  (90 done, 1051 left)
+[  93/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=1.5  n=  750 WR=49.7% avgR=+0.003 ev/d=    $-1.69 pass=  30%  [71.4s+0.6s]
+  ETA: 1430.4m  (91 done, 1050 left)
+[  94/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=0.5  n=  750 WR=41.3% avgR=+0.044 ev/d=    $-0.89 pass=  34%  [82.5s+0.7s]
+  ETA: 1429.4m  (92 done, 1049 left)
+[  95/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=1.0  n=  750 WR=41.6% avgR=+0.044 ev/d=     $0.07 pass=  34%  [87.6s+0.7s]
+  ETA: 1429.2m  (93 done, 1048 left)
+[  96/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=1.5  n=  750 WR=39.5% avgR=-0.017 ev/d=    $-3.20 pass=  25%  [77.1s+0.6s]
+  ETA: 1427.1m  (94 done, 1047 left)
+[  97/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=0.5  n=  750 WR=35.5% avgR=+0.069 ev/d=     $0.54 pass=  35%  [72.9s+0.7s]
+  ETA: 1424.2m  (95 done, 1046 left)
+[  98/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=1.0  n=  750 WR=33.3% avgR=-0.005 ev/d=    $-3.03 pass=  26%  [66.6s+0.6s]
+  ETA: 1420.2m  (96 done, 1045 left)
+[  99/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=1.5  n=  750 WR=33.5% avgR=-0.013 ev/d=    $-3.64 pass=  24%  [69.5s+0.7s]
+  ETA: 1416.8m  (97 done, 1044 left)
+[ 100/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=0.5  n=  512 WR=47.9% avgR=-0.045 ev/d=    $-2.38 pass=  21%  [67.9s+0.6s]
+  ETA: 1413.2m  (98 done, 1043 left)
+[ 101/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=1.0  n=  512 WR=51.4% avgR=+0.028 ev/d=    $-0.08 pass=  36%  [69.6s+0.7s]
+  ETA: 1409.9m  (99 done, 1042 left)
+[ 102/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=1.5  n=  512 WR=51.4% avgR=+0.028 ev/d=    $-0.13 pass=  37%  [66.3s+0.6s]
+  ETA: 1406.1m  (100 done, 1041 left)
+[ 103/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=0.5  n=  512 WR=42.2% avgR=+0.047 ev/d=     $1.69 pass=  46%  [65.7s+0.7s]
+  ETA: 1402.2m  (101 done, 1040 left)
+[ 104/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=1.0  n=  512 WR=41.0% avgR=+0.023 ev/d=    $-0.29 pass=  36%  [66.2s+0.7s]
+  ETA: 1398.5m  (102 done, 1039 left)
+[ 105/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=1.5  n=  511 WR=40.7% avgR=+0.010 ev/d=    $-1.59 pass=  29%  [63.6s+0.6s]
+  ETA: 1394.4m  (103 done, 1038 left)
+[ 106/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=0.5  n=  512 WR=34.4% avgR=+0.021 ev/d=    $-0.03 pass=  37%  [74.5s+0.7s]
+  ETA: 1392.1m  (104 done, 1037 left)
+[ 107/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=1.0  n=  512 WR=33.2% avgR=-0.015 ev/d=    $-2.30 pass=  29%  [82.6s+0.9s]
+  ETA: 1391.3m  (105 done, 1036 left)
+[ 108/1143] MACD | bar_minutes=15  ma_fast=20  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=1.5  n=  511 WR=34.1% avgR=-0.003 ev/d=    $-2.87 pass=  25%  [75.3s+0.7s]
+  ETA: 1389.2m  (106 done, 1035 left)
+[ 109/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=50  rr_ratio=1.0  sl_atr_multiplier=0.5  n=  762 WR=48.2% avgR=-0.028 ev/d=    $-1.57 pass=  28%  [65.5s+0.7s]
+  ETA: 1385.5m  (107 done, 1034 left)
+[ 110/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=50  rr_ratio=1.0  sl_atr_multiplier=1.0  n=  762 WR=52.4% avgR=+0.048 ev/d=     $1.07 pass=  37%  [63.0s+0.6s]
+  ETA: 1381.5m  (108 done, 1033 left)
+[ 111/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=50  rr_ratio=1.0  sl_atr_multiplier=1.5  n=  762 WR=50.5% avgR=+0.017 ev/d=    $-0.83 pass=  33%  [60.9s+0.6s]
+  ETA: 1377.2m  (109 done, 1032 left)
+[ 112/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=0.5  n=  762 WR=42.1% avgR=+0.044 ev/d=     $0.46 pass=  41%  [72.1s+0.7s]
+  ETA: 1374.7m  (110 done, 1031 left)
+[ 113/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=1.0  n=  762 WR=42.1% avgR=+0.045 ev/d=    $-0.46 pass=  35%  [72.8s+0.6s]
+  ETA: 1372.4m  (111 done, 1030 left)
+[ 114/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=1.5  n=  762 WR=41.1% avgR=+0.022 ev/d=    $-1.70 pass=  30%  [75.7s+0.8s]
+  ETA: 1370.5m  (112 done, 1029 left)
+[ 115/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=0.5  n=  762 WR=36.6% avgR=+0.082 ev/d=     $2.46 pass=  42%  [70.9s+0.6s]
+  ETA: 1367.9m  (113 done, 1028 left)
+[ 116/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=1.0  n=  762 WR=35.0% avgR=+0.032 ev/d=    $-1.34 pass=  31%  [63.5s+0.6s]
+  ETA: 1364.2m  (114 done, 1027 left)
+[ 117/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=1.5  n=  762 WR=36.2% avgR=+0.068 ev/d=    $-0.09 pass=  35%  [74.4s+0.8s]
+  ETA: 1362.2m  (115 done, 1026 left)
+[ 118/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=0.5  n=  503 WR=45.5% avgR=-0.091 ev/d=    $-2.70 pass=  27%  [82.4s+0.7s]
+  ETA: 1361.4m  (116 done, 1025 left)
+[ 119/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=1.0  n=  503 WR=53.3% avgR=+0.070 ev/d=     $5.10 pass=  41%  [84.5s+0.7s]
+  ETA: 1360.9m  (117 done, 1024 left)
+[ 120/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=1.5  n=  503 WR=53.3% avgR=+0.073 ev/d=     $5.19 pass=  42%  [83.8s+0.7s]
+  ETA: 1360.2m  (118 done, 1023 left)
+[ 121/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=0.5  n=  503 WR=40.0% avgR=-0.011 ev/d=    $-0.12 pass=  36%  [82.2s+0.9s]
+  ETA: 1359.4m  (119 done, 1022 left)
+[ 122/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=1.0  n=  503 WR=42.1% avgR=+0.051 ev/d=     $2.05 pass=  42%  [72.2s+0.6s]
+  ETA: 1357.1m  (120 done, 1021 left)
+[ 123/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=1.5  n=  503 WR=43.9% avgR=+0.096 ev/d=     $4.83 pass=  46%  [58.5s+0.6s]
+  ETA: 1352.8m  (121 done, 1020 left)
+[ 124/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=0.5  n=  503 WR=35.8% avgR=+0.056 ev/d=     $2.82 pass=  41%  [78.8s+0.8s]
+  ETA: 1351.5m  (122 done, 1019 left)
+[ 125/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=1.0  n=  503 WR=35.2% avgR=+0.042 ev/d=     $1.12 pass=  39%  [81.1s+0.8s]
+  ETA: 1350.5m  (123 done, 1018 left)
+[ 126/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=1.5  n=  503 WR=36.4% avgR=+0.074 ev/d=     $1.62 pass=  37%  [83.4s+0.7s]
+  ETA: 1349.8m  (124 done, 1017 left)
+[ 127/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=0.5  n=  322 WR=44.7% avgR=-0.110 ev/d=    $-3.82 pass=   9%  [83.3s+0.8s]
+  ETA: 1349.1m  (125 done, 1016 left)
+[ 128/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=1.0  n=  322 WR=54.3% avgR=+0.072 ev/d=     $3.28 pass=  40%  [80.3s+1.0s]
+  ETA: 1347.9m  (126 done, 1015 left)
+[ 129/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=1.5  n=  322 WR=54.0% avgR=+0.065 ev/d=     $3.81 pass=  37%  [80.7s+0.6s]
+  ETA: 1346.8m  (127 done, 1014 left)
+[ 130/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=0.5  n=  322 WR=38.8% avgR=-0.041 ev/d=    $-2.93 pass=  24%  [65.1s+0.7s]
+  ETA: 1343.7m  (128 done, 1013 left)
+[ 131/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=1.0  n=  322 WR=44.7% avgR=+0.085 ev/d=     $2.58 pass=  44%  [84.9s+0.8s]
+  ETA: 1343.1m  (129 done, 1012 left)
+[ 132/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=1.5  n=  322 WR=44.1% avgR=+0.068 ev/d=     $2.25 pass=  40%  [64.4s+0.7s]
+  ETA: 1339.9m  (130 done, 1011 left)
+[ 133/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=0.5  n=  322 WR=34.8% avgR=+0.026 ev/d=    $-0.93 pass=  34%  [62.1s+0.6s]
+  ETA: 1336.5m  (131 done, 1010 left)
+[ 134/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=1.0  n=  322 WR=37.9% avgR=+0.086 ev/d=     $0.87 pass=  39%  [55.8s+0.6s]
+  ETA: 1332.2m  (132 done, 1009 left)
+[ 135/1143] MACD | bar_minutes=30  ma_fast=10  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=1.5  n=  322 WR=37.6% avgR=+0.072 ev/d=     $1.81 pass=  39%  [57.9s+0.6s]
+  ETA: 1328.3m  (133 done, 1008 left)
+[ 136/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=50  rr_ratio=1.0  sl_atr_multiplier=0.5  n=  633 WR=47.6% avgR=-0.035 ev/d=    $-2.32 pass=  20%  [63.0s+0.6s]
+  ETA: 1325.0m  (134 done, 1007 left)
+[ 137/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=50  rr_ratio=1.0  sl_atr_multiplier=1.0  n=  633 WR=53.4% avgR=+0.086 ev/d=     $2.32 pass=  49%  [56.6s+0.7s]
+  ETA: 1321.0m  (135 done, 1006 left)
+[ 138/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=50  rr_ratio=1.0  sl_atr_multiplier=1.5  n=  633 WR=52.4% avgR=+0.068 ev/d=     $1.57 pass=  44%  [98.5s+2.6s]
+  ETA: 1322.4m  (136 done, 1005 left)
+[ 139/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=0.5  n=  633 WR=42.5% avgR=+0.060 ev/d=    $-0.43 pass=  38%  [95.4s+0.8s]
+  ETA: 1323.2m  (137 done, 1004 left)
+[ 140/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=1.0  n=  633 WR=43.3% avgR=+0.085 ev/d=     $1.88 pass=  43%  [90.5s+0.8s]
+  ETA: 1323.4m  (138 done, 1003 left)
+[ 141/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=50  rr_ratio=1.5  sl_atr_multiplier=1.5  n=  633 WR=44.1% avgR=+0.110 ev/d=     $4.10 pass=  47%  [88.1s+0.9s]
+  ETA: 1323.2m  (139 done, 1002 left)
+[ 142/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=0.5  n=  633 WR=37.9% avgR=+0.128 ev/d=     $2.63 pass=  47%  [89.9s+0.9s]
+  ETA: 1323.3m  (140 done, 1001 left)
+[ 143/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=1.0  n=  633 WR=37.0% avgR=+0.102 ev/d=     $1.75 pass=  40%  [85.5s+0.8s]
+  ETA: 1322.8m  (141 done, 1000 left)
+[ 144/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=50  rr_ratio=2.0  sl_atr_multiplier=1.5  n=  633 WR=37.9% avgR=+0.133 ev/d=     $4.69 pass=  44%  [85.6s+0.7s]
+  ETA: 1322.3m  (142 done, 999 left)
+[ 145/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=0.5  n=  335 WR=47.2% avgR=-0.040 ev/d=    $-1.54 pass=  31%  [71.9s+0.6s]
+  ETA: 1320.2m  (143 done, 998 left)
+[ 146/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=1.0  n=  335 WR=56.1% avgR=+0.121 ev/d=     $5.55 pass=  43%  [62.9s+0.6s]
+  ETA: 1317.0m  (144 done, 997 left)
+[ 147/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=100  rr_ratio=1.0  sl_atr_multiplier=1.5  n=  335 WR=53.7% avgR=+0.072 ev/d=     $3.86 pass=  38%  [58.5s+0.6s]
+  ETA: 1313.4m  (145 done, 996 left)
+[ 148/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=0.5  n=  335 WR=43.0% avgR=+0.064 ev/d=     $2.71 pass=  46%  [55.1s+0.6s]
+  ETA: 1309.4m  (146 done, 995 left)
+[ 149/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=1.0  n=  335 WR=44.2% avgR=+0.089 ev/d=     $1.07 pass=  40%  [55.2s+0.6s]
+  ETA: 1305.5m  (147 done, 994 left)
+[ 150/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=100  rr_ratio=1.5  sl_atr_multiplier=1.5  n=  335 WR=43.6% avgR=+0.064 ev/d=     $1.37 pass=  36%  [56.9s+0.6s]
+  ETA: 1301.8m  (148 done, 993 left)
+[ 151/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=0.5  n=  335 WR=37.9% avgR=+0.116 ev/d=     $3.79 pass=  46%  [55.1s+0.6s]
+  ETA: 1298.0m  (149 done, 992 left)
+[ 152/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=1.0  n=  335 WR=38.2% avgR=+0.110 ev/d=     $2.23 pass=  37%  [54.6s+0.6s]
+  ETA: 1294.1m  (150 done, 991 left)
+[ 153/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=100  rr_ratio=2.0  sl_atr_multiplier=1.5  n=  335 WR=37.0% avgR=+0.061 ev/d=     $0.37 pass=  31%  [54.3s+0.6s]
+  ETA: 1290.2m  (151 done, 990 left)
+[ 154/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=0.5  n=  201 WR=47.3% avgR=-0.054 ev/d=    $-2.86 pass=  16%  [85.0s+0.8s]
+  ETA: 1289.7m  (152 done, 989 left)
+[ 155/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=1.0  n=  201 WR=48.3% avgR=-0.023 ev/d=    $-2.42 pass=  22%  [114.0s+0.9s]
+  ETA: 1292.4m  (153 done, 988 left)
+[ 156/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=200  rr_ratio=1.0  sl_atr_multiplier=1.5  n=  201 WR=49.3% avgR=+0.010 ev/d=    $-1.42 pass=  28%  [90.3s+0.9s]
+  ETA: 1292.4m  (154 done, 987 left)
+[ 157/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=0.5  n=  201 WR=39.3% avgR=-0.005 ev/d=    $-2.32 pass=  27%  [94.2s+0.9s]
+  ETA: 1292.9m  (155 done, 986 left)
+[ 158/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=1.0  n=  201 WR=37.8% avgR=-0.046 ev/d=    $-4.25 pass=  20%  [100.3s+0.9s]
+  ETA: 1293.9m  (156 done, 985 left)
+[ 159/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=200  rr_ratio=1.5  sl_atr_multiplier=1.5  n=  201 WR=41.3% avgR=+0.045 ev/d=     $0.42 pass=  41%  [119.6s+2.7s]
+  ETA: 1297.2m  (157 done, 984 left)
+[ 160/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=0.5  n=  201 WR=31.8% avgR=-0.039 ev/d=    $-3.94 pass=  21%  [142.9s+0.8s]
+  ETA: 1302.5m  (158 done, 983 left)
+[ 161/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=1.0  n=  201 WR=33.8% avgR=+0.013 ev/d=    $-3.09 pass=  28%  [78.5s+0.8s]
+  ETA: 1301.2m  (159 done, 982 left)
+[ 162/1143] MACD | bar_minutes=30  ma_fast=20  ma_slow=200  rr_ratio=2.0  sl_atr_multiplier=1.5  n=  201 WR=33.3% avgR=+0.001 ev/d=    $-2.30 pass=  30%  [112.7s+1.0s]
+  ETA: 1303.4m  (160 done, 981 left)
+
+============================================================
+Strategy: ParabolicSAR  (162 combos)
+============================================================
+[ 163/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 9269 WR=42.2% avgR=-0.141 ev/d=    $-9.04 pass=   4%  [51.6s+0.7s]
+  ETA: 1299.3m  (161 done, 980 left)
+[ 164/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 9265 WR=49.3% avgR=-0.010 ev/d=    $-5.32 pass=  23%  [45.8s+1.6s]
+  ETA: 1294.7m  (162 done, 979 left)
+[ 165/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 9238 WR=50.1% avgR=+0.005 ev/d=    $-2.89 pass=  29%  [66.5s+0.9s]
+  ETA: 1292.2m  (163 done, 978 left)
+[ 166/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 9269 WR=36.4% avgR=-0.087 ev/d=    $-9.20 pass=  11%  [61.0s+1.0s]
+  ETA: 1289.1m  (164 done, 977 left)
+[ 167/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 9255 WR=39.8% avgR=-0.006 ev/d=    $-5.21 pass=  25%  [59.6s+0.9s]
+  ETA: 1286.0m  (165 done, 976 left)
+[ 168/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 9228 WR=39.9% avgR=-0.007 ev/d=    $-6.87 pass=  22%  [55.5s+1.4s]
+  ETA: 1282.5m  (166 done, 975 left)
+[ 169/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 9269 WR=31.0% avgR=-0.071 ev/d=   $-10.27 pass=  13%  [53.9s+0.9s]
+  ETA: 1278.8m  (167 done, 974 left)
+[ 170/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 9255 WR=33.3% avgR=-0.011 ev/d=    $-7.84 pass=  22%  [53.0s+1.1s]
+  ETA: 1275.1m  (168 done, 973 left)
+[ 171/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 9179 WR=33.5% avgR=-0.011 ev/d=    $-7.54 pass=  24%  [52.1s+0.8s]
+  ETA: 1271.4m  (169 done, 972 left)
+[ 172/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=0.5  n=10435 WR=42.4% avgR=-0.137 ev/d=    $-9.54 pass=   6%  [52.4s+0.8s]
+  ETA: 1267.7m  (170 done, 971 left)
+[ 173/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=1.0  n=10427 WR=49.3% avgR=-0.010 ev/d=    $-5.31 pass=  22%  [53.3s+1.0s]
+  ETA: 1264.1m  (171 done, 970 left)
+[ 174/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=1.5  n=10382 WR=49.3% avgR=-0.008 ev/d=    $-4.41 pass=  25%  [50.1s+0.8s]
+  ETA: 1260.2m  (172 done, 969 left)
+[ 175/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=0.5  n=10435 WR=36.7% avgR=-0.079 ev/d=    $-8.87 pass=  13%  [58.3s+2.5s]
+  ETA: 1257.3m  (173 done, 968 left)
+[ 176/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=1.0  n=10421 WR=39.5% avgR=-0.013 ev/d=    $-6.19 pass=  24%  [95.0s+1.3s]
+  ETA: 1257.7m  (174 done, 967 left)
+[ 177/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=1.5  n=10365 WR=39.0% avgR=-0.027 ev/d=    $-6.50 pass=  23%  [85.1s+1.1s]
+  ETA: 1257.2m  (175 done, 966 left)
+[ 178/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=0.5  n=10435 WR=31.4% avgR=-0.059 ev/d=    $-9.39 pass=  18%  [85.2s+1.1s]
+  ETA: 1256.6m  (176 done, 965 left)
+[ 179/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=1.0  n=10420 WR=32.8% avgR=-0.024 ev/d=   $-10.06 pass=  18%  [79.4s+1.1s]
+  ETA: 1255.5m  (177 done, 964 left)
+[ 180/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=1.5  n=10302 WR=32.9% avgR=-0.028 ev/d=   $-11.02 pass=  17%  [84.2s+1.6s]
+  ETA: 1254.9m  (178 done, 963 left)
+[ 181/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=0.5  n=10520 WR=42.5% avgR=-0.136 ev/d=    $-9.20 pass=   4%  [114.2s+1.4s]
+  ETA: 1257.0m  (179 done, 962 left)
+[ 182/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=1.0  n=10512 WR=49.4% avgR=-0.009 ev/d=    $-4.11 pass=  26%  [104.3s+1.1s]
+  ETA: 1258.1m  (180 done, 961 left)
+[ 183/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=1.5  n=10463 WR=49.3% avgR=-0.009 ev/d=    $-4.16 pass=  24%  [68.5s+1.1s]
+  ETA: 1256.0m  (181 done, 960 left)
+[ 184/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=0.5  n=10520 WR=36.6% avgR=-0.080 ev/d=    $-8.24 pass=  17%  [67.9s+1.3s]
+  ETA: 1253.8m  (182 done, 959 left)
+[ 185/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=1.0  n=10502 WR=39.5% avgR=-0.012 ev/d=    $-6.96 pass=  24%  [70.1s+1.6s]
+  ETA: 1251.9m  (183 done, 958 left)
+[ 186/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=1.5  n=10444 WR=39.0% avgR=-0.029 ev/d=    $-7.64 pass=  23%  [79.9s+0.9s]
+  ETA: 1250.8m  (184 done, 957 left)
+[ 187/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=0.5  n=10520 WR=31.3% avgR=-0.060 ev/d=    $-9.40 pass=  17%  [67.8s+1.0s]
+  ETA: 1248.7m  (185 done, 956 left)
+[ 188/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=1.0  n=10500 WR=32.8% avgR=-0.023 ev/d=    $-9.40 pass=  19%  [64.7s+1.4s]
+  ETA: 1246.3m  (186 done, 955 left)
+[ 189/1143] ParabolicSAR | bar_minutes=5  initial_af=0.01  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=1.5  n=10378 WR=32.9% avgR=-0.029 ev/d=    $-9.80 pass=  20%  [88.9s+1.4s]
+  ETA: 1246.1m  (187 done, 954 left)
+[ 190/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=0.5  n=10234 WR=42.3% avgR=-0.140 ev/d=    $-8.97 pass=   7%  [84.1s+0.9s]
+  ETA: 1245.3m  (188 done, 953 left)
+[ 191/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=1.0  n=10223 WR=49.1% avgR=-0.015 ev/d=    $-4.98 pass=  23%  [44.5s+0.8s]
+  ETA: 1241.2m  (189 done, 952 left)
+[ 192/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=1.5  n=10192 WR=49.7% avgR=-0.002 ev/d=    $-3.55 pass=  30%  [58.6s+1.4s]
+  ETA: 1238.4m  (190 done, 951 left)
+[ 193/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=0.5  n=10234 WR=36.5% avgR=-0.086 ev/d=    $-8.12 pass=  14%  [50.9s+0.9s]
+  ETA: 1234.9m  (191 done, 950 left)
+[ 194/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=1.0  n=10215 WR=39.5% avgR=-0.016 ev/d=    $-8.19 pass=  22%  [44.7s+1.1s]
+  ETA: 1231.0m  (192 done, 949 left)
+[ 195/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=1.5  n=10173 WR=39.6% avgR=-0.013 ev/d=    $-7.64 pass=  21%  [63.2s+0.9s]
+  ETA: 1228.6m  (193 done, 948 left)
+[ 196/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=0.5  n=10234 WR=30.9% avgR=-0.075 ev/d=    $-9.34 pass=  16%  [61.2s+1.2s]
+  ETA: 1226.0m  (194 done, 947 left)
+[ 197/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=1.0  n=10214 WR=33.0% avgR=-0.018 ev/d=    $-7.55 pass=  21%  [63.0s+1.1s]
+  ETA: 1223.6m  (195 done, 946 left)
+[ 198/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=1.5  n=10098 WR=33.0% avgR=-0.027 ev/d=    $-8.64 pass=  19%  [69.9s+1.0s]
+  ETA: 1221.8m  (196 done, 945 left)
+[ 199/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=0.5  n=11561 WR=42.2% avgR=-0.142 ev/d=    $-9.90 pass=   4%  [66.2s+1.0s]
+  ETA: 1219.7m  (197 done, 944 left)
+[ 200/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=1.0  n=11549 WR=48.9% avgR=-0.018 ev/d=    $-5.93 pass=  21%  [71.0s+1.3s]
+  ETA: 1217.9m  (198 done, 943 left)
+[ 201/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=1.5  n=11496 WR=49.3% avgR=-0.009 ev/d=    $-5.03 pass=  25%  [75.0s+1.2s]
+  ETA: 1216.5m  (199 done, 942 left)
+[ 202/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=0.5  n=11561 WR=36.2% avgR=-0.093 ev/d=    $-9.90 pass=  12%  [71.9s+1.3s]
+  ETA: 1214.9m  (200 done, 941 left)
+[ 203/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=1.0  n=11537 WR=39.1% avgR=-0.022 ev/d=    $-8.50 pass=  21%  [69.3s+1.2s]
+  ETA: 1213.1m  (201 done, 940 left)
+[ 204/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=1.5  n=11466 WR=39.2% avgR=-0.023 ev/d=    $-7.58 pass=  21%  [67.0s+1.2s]
+  ETA: 1211.1m  (202 done, 939 left)
+[ 205/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=0.5  n=11561 WR=30.8% avgR=-0.076 ev/d=   $-10.69 pass=  15%  [77.8s+1.3s]
+  ETA: 1209.9m  (203 done, 938 left)
+[ 206/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=1.0  n=11534 WR=32.5% avgR=-0.031 ev/d=   $-10.91 pass=  18%  [81.3s+1.4s]
+  ETA: 1209.0m  (204 done, 937 left)
+[ 207/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=1.5  n=11365 WR=32.6% avgR=-0.038 ev/d=   $-11.02 pass=  17%  [81.2s+1.4s]
+  ETA: 1208.1m  (205 done, 936 left)
+[ 208/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=0.5  n=11670 WR=42.3% avgR=-0.140 ev/d=   $-10.60 pass=   6%  [83.8s+1.4s]
+  ETA: 1207.4m  (206 done, 935 left)
+[ 209/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=1.0  n=11657 WR=49.0% avgR=-0.017 ev/d=    $-6.55 pass=  21%  [84.0s+1.5s]
+  ETA: 1206.7m  (207 done, 934 left)
+[ 210/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=1.5  n=11598 WR=49.4% avgR=-0.009 ev/d=    $-5.04 pass=  25%  [93.5s+1.5s]
+  ETA: 1206.8m  (208 done, 933 left)
+[ 211/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=0.5  n=11670 WR=36.2% avgR=-0.091 ev/d=    $-9.78 pass=  12%  [90.6s+1.5s]
+  ETA: 1206.5m  (209 done, 932 left)
+[ 212/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=1.0  n=11641 WR=39.1% avgR=-0.023 ev/d=    $-8.48 pass=  21%  [85.4s+1.4s]
+  ETA: 1205.9m  (210 done, 931 left)
+[ 213/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=1.5  n=11565 WR=39.2% avgR=-0.022 ev/d=    $-8.69 pass=  19%  [71.2s+1.3s]
+  ETA: 1204.3m  (211 done, 930 left)
+[ 214/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=0.5  n=11670 WR=30.9% avgR=-0.074 ev/d=   $-10.57 pass=  16%  [104.2s+1.6s]
+  ETA: 1205.0m  (212 done, 929 left)
+[ 215/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=1.0  n=11637 WR=32.5% avgR=-0.030 ev/d=    $-9.91 pass=  22%  [61.6s+0.8s]
+  ETA: 1202.6m  (213 done, 928 left)
+[ 216/1143] ParabolicSAR | bar_minutes=5  initial_af=0.02  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=1.5  n=11459 WR=32.6% avgR=-0.037 ev/d=   $-10.02 pass=  20%  [45.3s+0.9s]
+  ETA: 1199.0m  (214 done, 927 left)
+[ 217/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 3379 WR=45.8% avgR=-0.078 ev/d=    $-4.12 pass=  12%  [31.3s+0.6s]
+  ETA: 1194.4m  (215 done, 926 left)
+[ 218/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 3379 WR=49.2% avgR=-0.007 ev/d=    $-2.41 pass=  23%  [60.7s+1.3s]
+  ETA: 1192.1m  (216 done, 925 left)
+[ 219/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 3374 WR=49.6% avgR=+0.003 ev/d=    $-1.52 pass=  29%  [36.2s+0.8s]
+  ETA: 1187.9m  (217 done, 924 left)
+[ 220/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 3379 WR=39.4% avgR=-0.015 ev/d=    $-3.06 pass=  24%  [41.0s+0.9s]
+  ETA: 1184.1m  (218 done, 923 left)
+[ 221/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 3378 WR=38.8% avgR=-0.029 ev/d=    $-3.91 pass=  22%  [48.8s+0.8s]
+  ETA: 1180.9m  (219 done, 922 left)
+[ 222/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 3371 WR=39.2% avgR=-0.018 ev/d=    $-3.74 pass=  22%  [43.4s+0.8s]
+  ETA: 1177.4m  (220 done, 921 left)
+[ 223/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 3379 WR=33.1% avgR=-0.011 ev/d=    $-4.00 pass=  23%  [70.0s+1.4s]
+  ETA: 1175.7m  (221 done, 920 left)
+[ 224/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 3377 WR=31.9% avgR=-0.052 ev/d=    $-5.04 pass=  22%  [74.6s+1.1s]
+  ETA: 1174.4m  (222 done, 919 left)
+[ 225/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 3365 WR=33.2% avgR=-0.014 ev/d=    $-4.23 pass=  24%  [69.2s+1.1s]
+  ETA: 1172.7m  (223 done, 918 left)
+[ 226/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 3754 WR=45.3% avgR=-0.085 ev/d=    $-4.62 pass=   8%  [67.8s+0.8s]
+  ETA: 1170.8m  (224 done, 917 left)
+[ 227/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 3754 WR=48.6% avgR=-0.021 ev/d=    $-3.31 pass=  20%  [43.4s+0.7s]
+  ETA: 1167.3m  (225 done, 916 left)
+[ 228/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 3748 WR=49.6% avgR=+0.000 ev/d=    $-1.02 pass=  28%  [35.4s+0.7s]
+  ETA: 1163.3m  (226 done, 915 left)
+[ 229/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 3754 WR=39.0% avgR=-0.024 ev/d=    $-4.08 pass=  22%  [46.0s+0.8s]
+  ETA: 1160.1m  (227 done, 914 left)
+[ 230/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 3751 WR=39.0% avgR=-0.027 ev/d=    $-4.20 pass=  21%  [46.5s+1.1s]
+  ETA: 1156.9m  (228 done, 913 left)
+[ 231/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 3745 WR=39.1% avgR=-0.025 ev/d=    $-4.28 pass=  19%  [47.5s+0.8s]
+  ETA: 1153.8m  (229 done, 912 left)
+[ 232/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 3754 WR=32.6% avgR=-0.026 ev/d=    $-4.65 pass=  21%  [52.0s+0.9s]
+  ETA: 1151.0m  (230 done, 911 left)
+[ 233/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 3750 WR=32.1% avgR=-0.050 ev/d=    $-5.80 pass=  19%  [47.5s+1.0s]
+  ETA: 1148.0m  (231 done, 910 left)
+[ 234/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 3738 WR=33.0% avgR=-0.028 ev/d=    $-4.75 pass=  22%  [43.4s+0.7s]
+  ETA: 1144.6m  (232 done, 909 left)
+[ 235/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 3776 WR=45.2% avgR=-0.085 ev/d=    $-4.06 pass=  11%  [47.3s+1.5s]
+  ETA: 1141.7m  (233 done, 908 left)
+[ 236/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 3776 WR=48.6% avgR=-0.019 ev/d=    $-3.16 pass=  19%  [45.3s+1.0s]
+  ETA: 1138.5m  (234 done, 907 left)
+[ 237/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 3770 WR=49.5% avgR=+0.000 ev/d=    $-1.72 pass=  29%  [50.4s+0.8s]
+  ETA: 1135.7m  (235 done, 906 left)
+[ 238/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 3776 WR=39.0% avgR=-0.023 ev/d=    $-3.99 pass=  20%  [51.1s+1.0s]
+  ETA: 1133.0m  (236 done, 905 left)
+[ 239/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 3773 WR=39.0% avgR=-0.026 ev/d=    $-4.20 pass=  21%  [45.5s+0.7s]
+  ETA: 1129.9m  (237 done, 904 left)
+[ 240/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 3767 WR=39.0% avgR=-0.025 ev/d=    $-3.37 pass=  24%  [48.2s+0.7s]
+  ETA: 1127.0m  (238 done, 903 left)
+[ 241/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 3776 WR=32.6% avgR=-0.026 ev/d=    $-5.02 pass=  19%  [41.1s+1.1s]
+  ETA: 1123.7m  (239 done, 902 left)
+[ 242/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 3772 WR=32.2% avgR=-0.047 ev/d=    $-4.61 pass=  22%  [44.2s+0.9s]
+  ETA: 1120.6m  (240 done, 901 left)
+[ 243/1143] ParabolicSAR | bar_minutes=15  initial_af=0.01  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 3760 WR=32.8% avgR=-0.029 ev/d=    $-4.76 pass=  21%  [44.4s+0.8s]
+  ETA: 1117.5m  (241 done, 900 left)
+[ 244/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 3699 WR=45.8% avgR=-0.070 ev/d=    $-4.13 pass=  12%  [48.7s+0.8s]
+  ETA: 1114.7m  (242 done, 899 left)
+[ 245/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 3699 WR=50.0% avgR=+0.009 ev/d=    $-1.86 pass=  28%  [75.4s+1.3s]
+  ETA: 1113.6m  (243 done, 898 left)
+[ 246/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 3692 WR=49.8% avgR=+0.009 ev/d=    $-1.32 pass=  30%  [51.6s+1.1s]
+  ETA: 1111.0m  (244 done, 897 left)
+[ 247/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 3699 WR=39.5% avgR=-0.009 ev/d=    $-3.28 pass=  24%  [44.6s+0.8s]
+  ETA: 1108.0m  (245 done, 896 left)
+[ 248/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 3696 WR=39.7% avgR=-0.006 ev/d=    $-3.39 pass=  23%  [45.8s+0.8s]
+  ETA: 1105.1m  (246 done, 895 left)
+[ 249/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 3688 WR=39.7% avgR=-0.006 ev/d=    $-2.26 pass=  30%  [41.3s+0.8s]
+  ETA: 1102.0m  (247 done, 894 left)
+[ 250/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 3699 WR=33.3% avgR=-0.000 ev/d=    $-3.40 pass=  26%  [41.5s+0.8s]
+  ETA: 1098.8m  (248 done, 893 left)
+[ 251/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 3695 WR=32.5% avgR=-0.033 ev/d=    $-4.38 pass=  25%  [72.7s+3.0s]
+  ETA: 1097.7m  (249 done, 892 left)
+[ 252/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 3682 WR=33.4% avgR=-0.006 ev/d=    $-3.81 pass=  24%  [77.3s+1.2s]
+  ETA: 1096.7m  (250 done, 891 left)
+[ 253/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 4141 WR=44.6% avgR=-0.093 ev/d=    $-4.59 pass=  11%  [68.2s+1.1s]
+  ETA: 1095.2m  (251 done, 890 left)
+[ 254/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 4141 WR=49.5% avgR=-0.002 ev/d=    $-2.22 pass=  27%  [65.5s+1.2s]
+  ETA: 1093.6m  (252 done, 889 left)
+[ 255/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 4134 WR=50.3% avgR=+0.016 ev/d=    $-0.95 pass=  31%  [70.6s+1.3s]
+  ETA: 1092.3m  (253 done, 888 left)
+[ 256/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 4141 WR=39.0% avgR=-0.024 ev/d=    $-3.75 pass=  24%  [41.5s+0.8s]
+  ETA: 1089.2m  (254 done, 887 left)
+[ 257/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 4137 WR=39.8% avgR=-0.005 ev/d=    $-3.72 pass=  23%  [83.3s+1.7s]
+  ETA: 1088.6m  (255 done, 886 left)
+[ 258/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 4129 WR=40.6% avgR=+0.013 ev/d=    $-2.78 pass=  28%  [50.6s+0.7s]
+  ETA: 1086.1m  (256 done, 885 left)
+[ 259/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 4141 WR=32.6% avgR=-0.024 ev/d=    $-4.57 pass=  24%  [44.6s+1.0s]
+  ETA: 1083.3m  (257 done, 884 left)
+[ 260/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 4136 WR=33.1% avgR=-0.019 ev/d=    $-3.70 pass=  25%  [55.3s+0.8s]
+  ETA: 1081.0m  (258 done, 883 left)
+[ 261/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 4122 WR=33.9% avgR=+0.003 ev/d=    $-3.34 pass=  26%  [44.1s+0.8s]
+  ETA: 1078.2m  (259 done, 882 left)
+[ 262/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 4173 WR=44.7% avgR=-0.091 ev/d=    $-4.75 pass=   9%  [67.4s+0.7s]
+  ETA: 1076.7m  (260 done, 881 left)
+[ 263/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 4173 WR=49.7% avgR=+0.003 ev/d=    $-2.19 pass=  27%  [49.7s+0.9s]
+  ETA: 1074.2m  (261 done, 880 left)
+[ 264/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 4166 WR=50.3% avgR=+0.018 ev/d=    $-0.16 pass=  35%  [50.1s+1.0s]
+  ETA: 1071.7m  (262 done, 879 left)
+[ 265/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 4173 WR=39.1% avgR=-0.020 ev/d=    $-3.76 pass=  22%  [51.8s+0.8s]
+  ETA: 1069.4m  (263 done, 878 left)
+[ 266/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 4169 WR=40.0% avgR=+0.001 ev/d=    $-2.18 pass=  28%  [51.4s+1.0s]
+  ETA: 1067.0m  (264 done, 877 left)
+[ 267/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 4161 WR=40.5% avgR=+0.013 ev/d=    $-2.38 pass=  29%  [52.3s+0.9s]
+  ETA: 1064.7m  (265 done, 876 left)
+[ 268/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 4173 WR=32.7% avgR=-0.022 ev/d=    $-4.09 pass=  24%  [48.0s+0.8s]
+  ETA: 1062.2m  (266 done, 875 left)
+[ 269/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 4168 WR=33.2% avgR=-0.014 ev/d=    $-3.17 pass=  27%  [51.4s+0.9s]
+  ETA: 1059.8m  (267 done, 874 left)
+[ 270/1143] ParabolicSAR | bar_minutes=15  initial_af=0.02  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 4154 WR=33.9% avgR=+0.003 ev/d=    $-3.72 pass=  28%  [48.4s+0.9s]
+  ETA: 1057.3m  (268 done, 873 left)
+[ 271/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 1966 WR=45.6% avgR=-0.081 ev/d=    $-3.84 pass=  12%  [42.5s+0.8s]
+  ETA: 1054.5m  (269 done, 872 left)
+[ 272/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 1966 WR=51.5% avgR=+0.035 ev/d=    $-0.91 pass=  33%  [42.2s+1.1s]
+  ETA: 1051.8m  (270 done, 871 left)
+[ 273/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 1966 WR=50.6% avgR=+0.023 ev/d=    $-1.03 pass=  31%  [40.1s+0.8s]
+  ETA: 1048.9m  (271 done, 870 left)
+[ 274/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 1966 WR=40.0% avgR=-0.002 ev/d=    $-2.59 pass=  25%  [38.7s+0.8s]
+  ETA: 1045.9m  (272 done, 869 left)
+[ 275/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 1966 WR=41.1% avgR=+0.024 ev/d=    $-2.44 pass=  28%  [43.2s+0.8s]
+  ETA: 1043.2m  (273 done, 868 left)
+[ 276/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 1964 WR=41.4% avgR=+0.034 ev/d=    $-0.96 pass=  32%  [41.0s+0.8s]
+  ETA: 1040.4m  (274 done, 867 left)
+[ 277/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 1966 WR=34.4% avgR=+0.022 ev/d=    $-3.14 pass=  25%  [39.2s+0.9s]
+  ETA: 1037.5m  (275 done, 866 left)
+[ 278/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 1966 WR=35.1% avgR=+0.038 ev/d=    $-2.26 pass=  31%  [39.9s+0.8s]
+  ETA: 1034.7m  (276 done, 865 left)
+[ 279/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 1960 WR=35.5% avgR=+0.049 ev/d=    $-0.29 pass=  33%  [40.6s+0.9s]
+  ETA: 1031.9m  (277 done, 864 left)
+[ 280/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 2073 WR=45.4% avgR=-0.082 ev/d=    $-3.73 pass=  12%  [44.4s+0.8s]
+  ETA: 1029.4m  (278 done, 863 left)
+[ 281/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 2073 WR=51.8% avgR=+0.043 ev/d=    $-0.41 pass=  37%  [40.4s+1.5s]
+  ETA: 1026.7m  (279 done, 862 left)
+[ 282/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 2073 WR=51.3% avgR=+0.038 ev/d=     $0.02 pass=  35%  [45.6s+0.9s]
+  ETA: 1024.2m  (280 done, 861 left)
+[ 283/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 2073 WR=39.9% avgR=-0.001 ev/d=    $-2.32 pass=  26%  [40.1s+0.8s]
+  ETA: 1021.4m  (281 done, 860 left)
+[ 284/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 2073 WR=41.6% avgR=+0.038 ev/d=    $-1.30 pass=  33%  [46.7s+0.9s]
+  ETA: 1019.0m  (282 done, 859 left)
+[ 285/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 2072 WR=41.9% avgR=+0.048 ev/d=    $-0.62 pass=  34%  [43.5s+0.9s]
+  ETA: 1016.5m  (283 done, 858 left)
+[ 286/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 2073 WR=34.1% avgR=+0.015 ev/d=    $-2.77 pass=  24%  [46.2s+0.9s]
+  ETA: 1014.1m  (284 done, 857 left)
+[ 287/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 2073 WR=35.1% avgR=+0.038 ev/d=    $-2.26 pass=  30%  [44.1s+0.9s]
+  ETA: 1011.6m  (285 done, 856 left)
+[ 288/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 2068 WR=36.2% avgR=+0.071 ev/d=     $0.72 pass=  37%  [46.5s+0.9s]
+  ETA: 1009.3m  (286 done, 855 left)
+[ 289/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 2085 WR=45.3% avgR=-0.084 ev/d=    $-4.13 pass=  10%  [43.9s+1.0s]
+  ETA: 1006.8m  (287 done, 854 left)
+[ 290/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 2085 WR=51.8% avgR=+0.043 ev/d=     $0.22 pass=  36%  [39.9s+0.8s]
+  ETA: 1004.2m  (288 done, 853 left)
+[ 291/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 2085 WR=51.1% avgR=+0.036 ev/d=    $-0.07 pass=  33%  [39.5s+0.8s]
+  ETA: 1001.5m  (289 done, 852 left)
+[ 292/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 2085 WR=39.8% avgR=-0.005 ev/d=    $-2.81 pass=  24%  [42.6s+0.9s]
+  ETA: 999.0m  (290 done, 851 left)
+[ 293/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 2085 WR=41.5% avgR=+0.035 ev/d=    $-1.69 pass=  29%  [40.8s+0.9s]
+  ETA: 996.4m  (291 done, 850 left)
+[ 294/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 2084 WR=41.8% avgR=+0.046 ev/d=    $-0.74 pass=  32%  [45.3s+0.8s]
+  ETA: 994.1m  (292 done, 849 left)
+[ 295/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 2085 WR=34.1% avgR=+0.014 ev/d=    $-2.95 pass=  25%  [40.3s+0.9s]
+  ETA: 991.5m  (293 done, 848 left)
+[ 296/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 2085 WR=35.1% avgR=+0.037 ev/d=    $-2.09 pass=  27%  [41.0s+0.9s]
+  ETA: 989.0m  (294 done, 847 left)
+[ 297/1143] ParabolicSAR | bar_minutes=30  initial_af=0.01  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 2080 WR=36.0% avgR=+0.067 ev/d=    $-0.52 pass=  34%  [44.7s+0.9s]
+  ETA: 986.6m  (295 done, 846 left)
+[ 298/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 2121 WR=45.7% avgR=-0.073 ev/d=    $-3.57 pass=  14%  [46.2s+1.1s]
+  ETA: 984.4m  (296 done, 845 left)
+[ 299/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 2121 WR=52.0% avgR=+0.049 ev/d=     $0.24 pass=  38%  [47.0s+0.9s]
+  ETA: 982.2m  (297 done, 844 left)
+[ 300/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.1  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 2120 WR=51.2% avgR=+0.039 ev/d=     $0.48 pass=  36%  [44.9s+0.9s]
+  ETA: 979.9m  (298 done, 843 left)
+[ 301/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 2121 WR=40.4% avgR=+0.013 ev/d=    $-2.47 pass=  26%  [39.8s+0.8s]
+  ETA: 977.4m  (299 done, 842 left)
+[ 302/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 2121 WR=41.9% avgR=+0.044 ev/d=    $-0.42 pass=  35%  [44.0s+1.0s]
+  ETA: 975.0m  (300 done, 841 left)
+[ 303/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.1  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 2119 WR=41.0% avgR=+0.025 ev/d=    $-1.67 pass=  29%  [42.2s+0.8s]
+  ETA: 972.7m  (301 done, 840 left)
+[ 304/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 2121 WR=34.5% avgR=+0.031 ev/d=    $-2.11 pass=  28%  [42.6s+1.0s]
+  ETA: 970.3m  (302 done, 839 left)
+[ 305/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 2121 WR=35.4% avgR=+0.047 ev/d=    $-1.20 pass=  32%  [43.9s+0.9s]
+  ETA: 968.0m  (303 done, 838 left)
+[ 306/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.1  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 2115 WR=35.1% avgR=+0.040 ev/d=    $-0.95 pass=  32%  [42.2s+0.9s]
+  ETA: 965.6m  (304 done, 837 left)
+[ 307/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 2270 WR=45.6% avgR=-0.079 ev/d=    $-3.83 pass=  11%  [45.9s+0.9s]
+  ETA: 963.5m  (305 done, 836 left)
+[ 308/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 2270 WR=51.8% avgR=+0.043 ev/d=     $0.40 pass=  37%  [41.9s+0.9s]
+  ETA: 961.1m  (306 done, 835 left)
+[ 309/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.2  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 2269 WR=51.1% avgR=+0.035 ev/d=     $0.63 pass=  37%  [49.1s+1.1s]
+  ETA: 959.1m  (307 done, 834 left)
+[ 310/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 2270 WR=40.2% avgR=+0.003 ev/d=    $-2.32 pass=  28%  [52.7s+1.0s]
+  ETA: 957.3m  (308 done, 833 left)
+[ 311/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 2270 WR=41.9% avgR=+0.043 ev/d=    $-0.57 pass=  33%  [50.5s+1.1s]
+  ETA: 955.3m  (309 done, 832 left)
+[ 312/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.2  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 2268 WR=41.2% avgR=+0.027 ev/d=    $-1.06 pass=  33%  [45.9s+0.9s]
+  ETA: 953.2m  (310 done, 831 left)
+[ 313/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 2270 WR=34.3% avgR=+0.019 ev/d=    $-2.85 pass=  27%  [46.3s+0.9s]
+  ETA: 951.1m  (311 done, 830 left)
+[ 314/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 2270 WR=35.3% avgR=+0.038 ev/d=    $-1.42 pass=  31%  [45.0s+0.9s]
+  ETA: 948.9m  (312 done, 829 left)
+[ 315/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.2  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 2264 WR=35.7% avgR=+0.049 ev/d=     $0.89 pass=  37%  [46.7s+0.9s]
+  ETA: 946.9m  (313 done, 828 left)
+[ 316/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 2280 WR=45.5% avgR=-0.083 ev/d=    $-3.66 pass=  10%  [43.9s+0.7s]
+  ETA: 944.7m  (314 done, 827 left)
+[ 317/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 2280 WR=51.8% avgR=+0.042 ev/d=     $0.07 pass=  35%  [43.0s+0.9s]
+  ETA: 942.4m  (315 done, 826 left)
+[ 318/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.4  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 2279 WR=50.9% avgR=+0.031 ev/d=     $0.83 pass=  36%  [40.5s+2.2s]
+  ETA: 940.2m  (316 done, 825 left)
+[ 319/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 2280 WR=40.1% avgR=+0.000 ev/d=    $-2.61 pass=  26%  [47.1s+0.7s]
+  ETA: 938.2m  (317 done, 824 left)
+[ 320/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 2280 WR=41.8% avgR=+0.039 ev/d=    $-0.65 pass=  36%  [35.8s+0.8s]
+  ETA: 935.6m  (318 done, 823 left)
+[ 321/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.4  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 2278 WR=41.1% avgR=+0.022 ev/d=    $-1.06 pass=  30%  [31.8s+0.7s]
+  ETA: 933.0m  (319 done, 822 left)
+[ 322/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 2280 WR=34.3% avgR=+0.019 ev/d=    $-2.80 pass=  27%  [34.9s+0.7s]
+  ETA: 930.4m  (320 done, 821 left)
+[ 323/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 2280 WR=35.1% avgR=+0.031 ev/d=    $-1.66 pass=  32%  [31.0s+0.7s]
+  ETA: 927.8m  (321 done, 820 left)
+[ 324/1143] ParabolicSAR | bar_minutes=30  initial_af=0.02  end_af=0.4  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 2274 WR=35.4% avgR=+0.039 ev/d=    $-1.04 pass=  32%  [29.4s+0.7s]
+  ETA: 925.0m  (322 done, 819 left)
+
+============================================================
+Strategy: RSI  (216 combos)
+============================================================
+[ 325/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 8641 WR=44.3% avgR=-0.099 ev/d=    $-7.04 pass=   7%  [47.5s+0.8s]
+  ETA: 923.1m  (323 done, 818 left)
+[ 326/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 8626 WR=49.7% avgR=-0.003 ev/d=    $-4.14 pass=  24%  [49.0s+1.4s]
+  ETA: 921.2m  (324 done, 817 left)
+[ 327/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 8375 WR=48.8% avgR=-0.021 ev/d=    $-4.53 pass=  23%  [50.2s+1.0s]
+  ETA: 919.4m  (325 done, 816 left)
+[ 328/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 8641 WR=38.5% avgR=-0.035 ev/d=    $-6.06 pass=  18%  [40.0s+0.7s]
+  ETA: 917.2m  (326 done, 815 left)
+[ 329/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 8542 WR=38.9% avgR=-0.029 ev/d=    $-6.77 pass=  21%  [41.1s+0.7s]
+  ETA: 915.0m  (327 done, 814 left)
+[ 330/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 8162 WR=39.5% avgR=-0.017 ev/d=    $-6.46 pass=  21%  [37.4s+0.8s]
+  ETA: 912.6m  (328 done, 813 left)
+[ 331/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 8640 WR=32.7% avgR=-0.021 ev/d=    $-6.71 pass=  20%  [38.7s+0.7s]
+  ETA: 910.4m  (329 done, 812 left)
+[ 332/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 8473 WR=32.5% avgR=-0.033 ev/d=   $-10.39 pass=  18%  [38.3s+0.7s]
+  ETA: 908.1m  (330 done, 811 left)
+[ 333/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 8086 WR=33.4% avgR=-0.014 ev/d=    $-7.56 pass=  21%  [51.9s+0.9s]
+  ETA: 906.4m  (331 done, 810 left)
+[ 334/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 6769 WR=43.9% avgR=-0.107 ev/d=    $-6.31 pass=  10%  [53.1s+0.7s]
+  ETA: 904.7m  (332 done, 809 left)
+[ 335/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 6759 WR=50.5% avgR=+0.013 ev/d=    $-1.47 pass=  32%  [51.0s+0.7s]
+  ETA: 903.0m  (333 done, 808 left)
+[ 336/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 6602 WR=49.9% avgR=-0.001 ev/d=    $-3.47 pass=  25%  [45.8s+1.4s]
+  ETA: 901.1m  (334 done, 807 left)
+[ 337/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 6769 WR=38.7% avgR=-0.031 ev/d=    $-4.56 pass=  21%  [40.3s+0.7s]
+  ETA: 898.9m  (335 done, 806 left)
+[ 338/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 6717 WR=39.7% avgR=-0.013 ev/d=    $-4.86 pass=  23%  [47.1s+1.8s]
+  ETA: 897.1m  (336 done, 805 left)
+[ 339/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 6492 WR=40.2% avgR=-0.002 ev/d=    $-3.06 pass=  28%  [53.6s+0.9s]
+  ETA: 895.5m  (337 done, 804 left)
+[ 340/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 6769 WR=33.2% avgR=-0.007 ev/d=    $-4.81 pass=  23%  [44.2s+0.7s]
+  ETA: 893.5m  (338 done, 803 left)
+[ 341/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 6694 WR=33.2% avgR=-0.015 ev/d=    $-7.65 pass=  21%  [52.5s+1.1s]
+  ETA: 891.9m  (339 done, 802 left)
+[ 342/1143] RSI | bar_minutes=5  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 6473 WR=33.8% avgR=-0.001 ev/d=    $-5.06 pass=  24%  [62.6s+0.9s]
+  ETA: 890.6m  (340 done, 801 left)
+[ 343/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n=10353 WR=43.5% avgR=-0.116 ev/d=    $-8.63 pass=   8%  [55.7s+1.0s]
+  ETA: 889.1m  (341 done, 800 left)
+[ 344/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n=10335 WR=49.2% avgR=-0.014 ev/d=    $-4.65 pass=  23%  [60.1s+1.2s]
+  ETA: 887.8m  (342 done, 799 left)
+[ 345/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n=10018 WR=48.9% avgR=-0.020 ev/d=    $-6.14 pass=  20%  [64.3s+1.1s]
+  ETA: 886.6m  (343 done, 798 left)
+[ 346/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n=10353 WR=37.5% avgR=-0.059 ev/d=    $-8.31 pass=  18%  [54.2s+0.9s]
+  ETA: 885.1m  (344 done, 797 left)
+[ 347/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n=10234 WR=38.7% avgR=-0.035 ev/d=    $-7.34 pass=  22%  [50.6s+1.2s]
+  ETA: 883.4m  (345 done, 796 left)
+[ 348/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 9709 WR=39.2% avgR=-0.024 ev/d=    $-8.13 pass=  21%  [52.2s+0.9s]
+  ETA: 881.8m  (346 done, 795 left)
+[ 349/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n=10352 WR=31.7% avgR=-0.050 ev/d=    $-9.44 pass=  15%  [51.8s+0.8s]
+  ETA: 880.1m  (347 done, 794 left)
+[ 350/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n=10137 WR=32.3% avgR=-0.039 ev/d=    $-9.68 pass=  18%  [46.7s+0.9s]
+  ETA: 878.3m  (348 done, 793 left)
+[ 351/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 9594 WR=33.2% avgR=-0.018 ev/d=    $-7.02 pass=  21%  [44.5s+0.8s]
+  ETA: 876.4m  (349 done, 792 left)
+[ 352/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 8481 WR=43.0% avgR=-0.126 ev/d=    $-7.32 pass=  10%  [45.1s+0.8s]
+  ETA: 874.5m  (350 done, 791 left)
+[ 353/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 8468 WR=49.7% avgR=-0.004 ev/d=    $-3.10 pass=  29%  [50.0s+0.8s]
+  ETA: 872.8m  (351 done, 790 left)
+[ 354/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 8245 WR=49.7% avgR=-0.004 ev/d=    $-3.24 pass=  26%  [48.0s+0.7s]
+  ETA: 871.1m  (352 done, 789 left)
+[ 355/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 8481 WR=37.4% avgR=-0.062 ev/d=    $-7.45 pass=  16%  [42.3s+0.7s]
+  ETA: 869.1m  (353 done, 788 left)
+[ 356/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 8409 WR=39.2% avgR=-0.024 ev/d=    $-6.46 pass=  22%  [47.5s+0.9s]
+  ETA: 867.3m  (354 done, 787 left)
+[ 357/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 8039 WR=39.7% avgR=-0.013 ev/d=    $-5.79 pass=  22%  [55.5s+1.0s]
+  ETA: 865.9m  (355 done, 786 left)
+[ 358/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 8481 WR=31.9% avgR=-0.045 ev/d=    $-8.03 pass=  18%  [62.5s+1.0s]
+  ETA: 864.7m  (356 done, 785 left)
+[ 359/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 8358 WR=32.8% avgR=-0.026 ev/d=    $-8.86 pass=  19%  [59.5s+1.0s]
+  ETA: 863.4m  (357 done, 784 left)
+[ 360/1143] RSI | bar_minutes=5  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 7982 WR=33.6% avgR=-0.008 ev/d=    $-5.94 pass=  25%  [58.5s+1.0s]
+  ETA: 862.0m  (358 done, 783 left)
+[ 361/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 3076 WR=44.0% avgR=-0.117 ev/d=    $-4.14 pass=  13%  [56.5s+0.9s]
+  ETA: 860.6m  (359 done, 782 left)
+[ 362/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 3069 WR=49.3% avgR=-0.014 ev/d=    $-2.22 pass=  25%  [58.7s+0.8s]
+  ETA: 859.3m  (360 done, 781 left)
+[ 363/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 2989 WR=49.5% avgR=-0.010 ev/d=    $-1.76 pass=  26%  [59.9s+0.8s]
+  ETA: 858.0m  (361 done, 780 left)
+[ 364/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 3076 WR=38.4% avgR=-0.043 ev/d=    $-3.35 pass=  21%  [60.3s+0.9s]
+  ETA: 856.7m  (362 done, 779 left)
+[ 365/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 3035 WR=38.7% avgR=-0.040 ev/d=    $-3.65 pass=  24%  [60.5s+0.8s]
+  ETA: 855.4m  (363 done, 778 left)
+[ 366/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 2920 WR=39.0% avgR=-0.035 ev/d=    $-4.26 pass=  21%  [59.4s+0.8s]
+  ETA: 854.1m  (364 done, 777 left)
+[ 367/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 3075 WR=31.9% avgR=-0.050 ev/d=    $-3.32 pass=  23%  [57.1s+0.8s]
+  ETA: 852.8m  (365 done, 776 left)
+[ 368/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 3018 WR=32.1% avgR=-0.050 ev/d=    $-3.77 pass=  22%  [64.4s+0.9s]
+  ETA: 851.6m  (366 done, 775 left)
+[ 369/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 2902 WR=33.2% avgR=-0.025 ev/d=    $-3.77 pass=  24%  [58.0s+1.0s]
+  ETA: 850.3m  (367 done, 774 left)
+[ 370/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 1929 WR=44.9% avgR=-0.102 ev/d=    $-3.79 pass=  10%  [60.4s+0.9s]
+  ETA: 849.0m  (368 done, 773 left)
+[ 371/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 1924 WR=50.1% avgR=-0.001 ev/d=    $-1.66 pass=  27%  [62.6s+0.9s]
+  ETA: 847.9m  (369 done, 772 left)
+[ 372/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 1879 WR=48.6% avgR=-0.030 ev/d=    $-2.49 pass=  23%  [60.5s+0.8s]
+  ETA: 846.6m  (370 done, 771 left)
+[ 373/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 1929 WR=39.5% avgR=-0.021 ev/d=    $-1.91 pass=  28%  [69.6s+0.9s]
+  ETA: 845.7m  (371 done, 770 left)
+[ 374/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 1911 WR=39.1% avgR=-0.030 ev/d=    $-3.25 pass=  23%  [68.6s+1.0s]
+  ETA: 844.7m  (372 done, 769 left)
+[ 375/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 1850 WR=37.9% avgR=-0.063 ev/d=    $-3.83 pass=  20%  [82.7s+1.0s]
+  ETA: 844.2m  (373 done, 768 left)
+[ 376/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 1929 WR=33.9% avgR=+0.004 ev/d=    $-1.62 pass=  32%  [78.1s+2.3s]
+  ETA: 843.6m  (374 done, 767 left)
+[ 377/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 1901 WR=32.5% avgR=-0.042 ev/d=    $-4.27 pass=  22%  [64.3s+2.5s]
+  ETA: 842.5m  (375 done, 766 left)
+[ 378/1143] RSI | bar_minutes=5  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 1847 WR=31.8% avgR=-0.066 ev/d=    $-5.30 pass=  19%  [75.2s+1.0s]
+  ETA: 841.8m  (376 done, 765 left)
+[ 379/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 4067 WR=44.0% avgR=-0.116 ev/d=    $-4.87 pass=  10%  [74.4s+2.6s]
+  ETA: 841.0m  (377 done, 764 left)
+[ 380/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 4059 WR=49.7% avgR=-0.006 ev/d=    $-1.61 pass=  27%  [76.1s+1.0s]
+  ETA: 840.3m  (378 done, 763 left)
+[ 381/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 3953 WR=49.6% avgR=-0.008 ev/d=    $-1.62 pass=  30%  [78.2s+1.6s]
+  ETA: 839.7m  (379 done, 762 left)
+[ 382/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 4067 WR=37.7% avgR=-0.059 ev/d=    $-4.50 pass=  20%  [79.7s+1.2s]
+  ETA: 839.1m  (380 done, 761 left)
+[ 383/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 4020 WR=39.0% avgR=-0.030 ev/d=    $-3.47 pass=  24%  [58.1s+0.8s]
+  ETA: 837.7m  (381 done, 760 left)
+[ 384/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 3850 WR=39.2% avgR=-0.029 ev/d=    $-3.39 pass=  24%  [53.0s+0.8s]
+  ETA: 836.2m  (382 done, 759 left)
+[ 385/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 4066 WR=31.6% avgR=-0.059 ev/d=    $-4.37 pass=  23%  [52.5s+0.8s]
+  ETA: 834.7m  (383 done, 758 left)
+[ 386/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 3992 WR=32.5% avgR=-0.038 ev/d=    $-4.58 pass=  23%  [67.5s+0.8s]
+  ETA: 833.6m  (384 done, 757 left)
+[ 387/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 3817 WR=33.1% avgR=-0.025 ev/d=    $-4.05 pass=  25%  [65.3s+0.8s]
+  ETA: 832.5m  (385 done, 756 left)
+[ 388/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 2920 WR=44.7% avgR=-0.106 ev/d=    $-4.27 pass=  11%  [78.9s+1.0s]
+  ETA: 831.9m  (386 done, 755 left)
+[ 389/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 2914 WR=50.4% avgR=+0.006 ev/d=    $-1.33 pass=  30%  [90.6s+0.9s]
+  ETA: 831.6m  (387 done, 754 left)
+[ 390/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 2843 WR=49.0% avgR=-0.021 ev/d=    $-2.11 pass=  25%  [67.8s+2.6s]
+  ETA: 830.7m  (388 done, 753 left)
+[ 391/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 2920 WR=38.2% avgR=-0.051 ev/d=    $-3.77 pass=  20%  [97.2s+1.3s]
+  ETA: 830.6m  (389 done, 752 left)
+[ 392/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 2896 WR=39.5% avgR=-0.020 ev/d=    $-3.32 pass=  24%  [78.1s+0.9s]
+  ETA: 829.9m  (390 done, 751 left)
+[ 393/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 2780 WR=38.5% avgR=-0.045 ev/d=    $-3.19 pass=  24%  [76.3s+1.1s]
+  ETA: 829.1m  (391 done, 750 left)
+[ 394/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 2920 WR=32.7% avgR=-0.028 ev/d=    $-3.85 pass=  23%  [73.6s+1.1s]
+  ETA: 828.3m  (392 done, 749 left)
+[ 395/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 2875 WR=32.8% avgR=-0.028 ev/d=    $-3.38 pass=  28%  [60.7s+0.8s]
+  ETA: 827.0m  (393 done, 748 left)
+[ 396/1143] RSI | bar_minutes=5  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 2762 WR=32.2% avgR=-0.052 ev/d=    $-4.49 pass=  22%  [60.0s+0.8s]
+  ETA: 825.8m  (394 done, 747 left)
+[ 397/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 3157 WR=41.1% avgR=-0.175 ev/d=    $-5.48 pass=   4%  [46.9s+0.7s]
+  ETA: 824.1m  (395 done, 746 left)
+[ 398/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 3157 WR=49.9% avgR=-0.003 ev/d=    $-1.68 pass=  29%  [38.6s+1.0s]
+  ETA: 822.1m  (396 done, 745 left)
+[ 399/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 3151 WR=49.6% avgR=-0.013 ev/d=    $-2.45 pass=  24%  [78.9s+1.6s]
+  ETA: 821.5m  (397 done, 744 left)
+[ 400/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 3157 WR=35.6% avgR=-0.118 ev/d=    $-5.23 pass=  14%  [58.8s+0.7s]
+  ETA: 820.2m  (398 done, 743 left)
+[ 401/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 3157 WR=39.5% avgR=-0.029 ev/d=    $-3.75 pass=  22%  [33.7s+1.4s]
+  ETA: 818.1m  (399 done, 742 left)
+[ 402/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 3145 WR=40.2% avgR=-0.018 ev/d=    $-3.05 pass=  25%  [32.4s+0.7s]
+  ETA: 816.0m  (400 done, 741 left)
+[ 403/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 3157 WR=30.7% avgR=-0.098 ev/d=    $-5.46 pass=  18%  [53.1s+1.6s]
+  ETA: 814.5m  (401 done, 740 left)
+[ 404/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 3156 WR=33.0% avgR=-0.046 ev/d=    $-5.03 pass=  20%  [41.8s+0.8s]
+  ETA: 812.7m  (402 done, 739 left)
+[ 405/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 3134 WR=34.2% avgR=-0.020 ev/d=    $-4.43 pass=  24%  [60.6s+0.9s]
+  ETA: 811.5m  (403 done, 738 left)
+[ 406/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 2627 WR=41.3% avgR=-0.175 ev/d=    $-5.23 pass=   5%  [39.8s+0.8s]
+  ETA: 809.6m  (404 done, 737 left)
+[ 407/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 2627 WR=49.5% avgR=-0.010 ev/d=    $-1.91 pass=  26%  [47.4s+1.0s]
+  ETA: 808.0m  (405 done, 736 left)
+[ 408/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 2622 WR=48.8% avgR=-0.027 ev/d=    $-2.68 pass=  22%  [55.0s+1.0s]
+  ETA: 806.6m  (406 done, 735 left)
+[ 409/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 2627 WR=35.8% avgR=-0.114 ev/d=    $-4.70 pass=  14%  [54.7s+0.9s]
+  ETA: 805.2m  (407 done, 734 left)
+[ 410/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 2627 WR=38.8% avgR=-0.044 ev/d=    $-3.82 pass=  20%  [51.0s+1.0s]
+  ETA: 803.6m  (408 done, 733 left)
+[ 411/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 2616 WR=39.4% avgR=-0.033 ev/d=    $-3.88 pass=  22%  [48.8s+1.0s]
+  ETA: 802.1m  (409 done, 732 left)
+[ 412/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 2627 WR=30.8% avgR=-0.098 ev/d=    $-4.98 pass=  16%  [49.6s+1.0s]
+  ETA: 800.5m  (410 done, 731 left)
+[ 413/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 2625 WR=32.4% avgR=-0.058 ev/d=    $-4.83 pass=  19%  [48.6s+1.2s]
+  ETA: 799.0m  (411 done, 730 left)
+[ 414/1143] RSI | bar_minutes=15  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 2606 WR=33.3% avgR=-0.035 ev/d=    $-3.88 pass=  24%  [54.8s+1.0s]
+  ETA: 797.6m  (412 done, 729 left)
+[ 415/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 3665 WR=41.4% avgR=-0.166 ev/d=    $-5.35 pass=   6%  [48.0s+0.8s]
+  ETA: 796.0m  (413 done, 728 left)
+[ 416/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 3665 WR=49.6% avgR=-0.007 ev/d=    $-2.65 pass=  25%  [50.9s+3.1s]
+  ETA: 794.5m  (414 done, 727 left)
+[ 417/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 3661 WR=49.2% avgR=-0.020 ev/d=    $-2.83 pass=  23%  [46.5s+1.0s]
+  ETA: 792.9m  (415 done, 726 left)
+[ 418/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 3665 WR=35.8% avgR=-0.108 ev/d=    $-5.33 pass=  12%  [45.1s+0.9s]
+  ETA: 791.3m  (416 done, 725 left)
+[ 419/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 3665 WR=39.3% avgR=-0.035 ev/d=    $-4.98 pass=  19%  [43.4s+0.9s]
+  ETA: 789.6m  (417 done, 724 left)
+[ 420/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 3647 WR=39.5% avgR=-0.036 ev/d=    $-4.64 pass=  20%  [56.9s+1.3s]
+  ETA: 788.3m  (418 done, 723 left)
+[ 421/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 3665 WR=30.9% avgR=-0.087 ev/d=    $-5.70 pass=  17%  [48.3s+0.9s]
+  ETA: 786.7m  (419 done, 722 left)
+[ 422/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 3663 WR=32.5% avgR=-0.060 ev/d=    $-6.03 pass=  19%  [43.7s+0.8s]
+  ETA: 785.0m  (420 done, 721 left)
+[ 423/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 3624 WR=33.2% avgR=-0.051 ev/d=    $-5.56 pass=  21%  [48.9s+1.4s]
+  ETA: 783.5m  (421 done, 720 left)
+[ 424/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 3135 WR=41.6% avgR=-0.165 ev/d=    $-5.08 pass=   5%  [56.1s+1.0s]
+  ETA: 782.2m  (422 done, 719 left)
+[ 425/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 3135 WR=49.3% avgR=-0.013 ev/d=    $-2.47 pass=  24%  [54.3s+0.8s]
+  ETA: 780.8m  (423 done, 718 left)
+[ 426/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 3132 WR=48.5% avgR=-0.032 ev/d=    $-2.94 pass=  22%  [54.3s+1.4s]
+  ETA: 779.5m  (424 done, 717 left)
+[ 427/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 3135 WR=36.0% avgR=-0.104 ev/d=    $-4.85 pass=  14%  [37.2s+0.7s]
+  ETA: 777.6m  (425 done, 716 left)
+[ 428/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 3135 WR=38.6% avgR=-0.049 ev/d=    $-4.56 pass=  20%  [35.7s+0.8s]
+  ETA: 775.7m  (426 done, 715 left)
+[ 429/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 3118 WR=38.7% avgR=-0.051 ev/d=    $-4.37 pass=  19%  [31.7s+0.7s]
+  ETA: 773.7m  (427 done, 714 left)
+[ 430/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 3135 WR=31.0% avgR=-0.085 ev/d=    $-4.88 pass=  17%  [53.8s+1.0s]
+  ETA: 772.4m  (428 done, 713 left)
+[ 431/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 3132 WR=32.0% avgR=-0.072 ev/d=    $-5.43 pass=  18%  [68.0s+3.7s]
+  ETA: 771.5m  (429 done, 712 left)
+[ 432/1143] RSI | bar_minutes=15  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 3096 WR=32.3% avgR=-0.069 ev/d=    $-5.16 pass=  21%  [72.7s+0.8s]
+  ETA: 770.6m  (430 done, 711 left)
+[ 433/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 1411 WR=40.0% avgR=-0.196 ev/d=    $-5.70 pass=   4%  [35.4s+0.7s]
+  ETA: 768.7m  (431 done, 710 left)
+[ 434/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 1411 WR=48.6% avgR=-0.029 ev/d=    $-2.65 pass=  22%  [41.5s+0.8s]
+  ETA: 767.0m  (432 done, 709 left)
+[ 435/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 1410 WR=47.3% avgR=-0.056 ev/d=    $-3.69 pass=  16%  [36.0s+0.7s]
+  ETA: 765.2m  (433 done, 708 left)
+[ 436/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 1411 WR=34.5% avgR=-0.144 ev/d=    $-5.25 pass=  14%  [40.5s+1.1s]
+  ETA: 763.5m  (434 done, 707 left)
+[ 437/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 1410 WR=39.1% avgR=-0.034 ev/d=    $-3.96 pass=  20%  [74.5s+1.0s]
+  ETA: 762.7m  (435 done, 706 left)
+[ 438/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 1408 WR=38.1% avgR=-0.063 ev/d=    $-4.57 pass=  20%  [48.9s+1.1s]
+  ETA: 761.2m  (436 done, 705 left)
+[ 439/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 1411 WR=29.5% avgR=-0.132 ev/d=    $-5.81 pass=  13%  [53.1s+0.9s]
+  ETA: 759.8m  (437 done, 704 left)
+[ 440/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 1409 WR=32.1% avgR=-0.066 ev/d=    $-5.36 pass=  18%  [45.5s+0.9s]
+  ETA: 758.3m  (438 done, 703 left)
+[ 441/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 1403 WR=32.6% avgR=-0.054 ev/d=    $-5.22 pass=  20%  [53.8s+1.4s]
+  ETA: 756.9m  (439 done, 702 left)
+[ 442/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 1059 WR=40.1% avgR=-0.198 ev/d=    $-5.69 pass=   4%  [54.4s+0.7s]
+  ETA: 755.6m  (440 done, 701 left)
+[ 443/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 1059 WR=48.8% avgR=-0.027 ev/d=    $-2.69 pass=  21%  [37.9s+0.8s]
+  ETA: 753.8m  (441 done, 700 left)
+[ 444/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 1058 WR=47.2% avgR=-0.063 ev/d=    $-3.65 pass=  17%  [61.4s+1.1s]
+  ETA: 752.7m  (442 done, 699 left)
+[ 445/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 1059 WR=33.6% avgR=-0.171 ev/d=    $-6.07 pass=   8%  [39.8s+0.7s]
+  ETA: 751.0m  (443 done, 698 left)
+[ 446/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 1058 WR=38.1% avgR=-0.062 ev/d=    $-4.30 pass=  17%  [49.8s+1.1s]
+  ETA: 749.6m  (444 done, 697 left)
+[ 447/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 1057 WR=37.9% avgR=-0.069 ev/d=    $-4.95 pass=  17%  [49.5s+0.9s]
+  ETA: 748.1m  (445 done, 696 left)
+[ 448/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 1059 WR=29.5% avgR=-0.136 ev/d=    $-5.67 pass=  14%  [41.3s+0.8s]
+  ETA: 746.5m  (446 done, 695 left)
+[ 449/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 1058 WR=30.7% avgR=-0.105 ev/d=    $-5.81 pass=  16%  [55.8s+0.9s]
+  ETA: 745.2m  (447 done, 694 left)
+[ 450/1143] RSI | bar_minutes=15  rsi_period=14  oversold=25.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 1053 WR=32.3% avgR=-0.065 ev/d=    $-4.70 pass=  21%  [49.6s+0.9s]
+  ETA: 743.7m  (448 done, 693 left)
+[ 451/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 1800 WR=39.6% avgR=-0.212 ev/d=    $-5.65 pass=   5%  [46.4s+0.8s]
+  ETA: 742.2m  (449 done, 692 left)
+[ 452/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 1800 WR=48.3% avgR=-0.037 ev/d=    $-2.59 pass=  21%  [53.3s+1.1s]
+  ETA: 740.9m  (450 done, 691 left)
+[ 453/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 1799 WR=48.3% avgR=-0.037 ev/d=    $-3.04 pass=  18%  [48.5s+0.8s]
+  ETA: 739.4m  (451 done, 690 left)
+[ 454/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 1800 WR=34.2% avgR=-0.156 ev/d=    $-5.57 pass=  10%  [38.8s+0.8s]
+  ETA: 737.8m  (452 done, 689 left)
+[ 455/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 1799 WR=39.4% avgR=-0.029 ev/d=    $-3.37 pass=  23%  [34.1s+0.8s]
+  ETA: 735.9m  (453 done, 688 left)
+[ 456/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 1794 WR=38.3% avgR=-0.059 ev/d=    $-4.69 pass=  19%  [39.5s+0.9s]
+  ETA: 734.3m  (454 done, 687 left)
+[ 457/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 1800 WR=28.6% avgR=-0.163 ev/d=    $-6.23 pass=  12%  [38.9s+0.9s]
+  ETA: 732.6m  (455 done, 686 left)
+[ 458/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 1796 WR=32.2% avgR=-0.060 ev/d=    $-4.89 pass=  20%  [54.0s+1.3s]
+  ETA: 731.3m  (456 done, 685 left)
+[ 459/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 1783 WR=32.0% avgR=-0.071 ev/d=    $-5.36 pass=  19%  [48.4s+1.0s]
+  ETA: 729.9m  (457 done, 684 left)
+[ 460/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 1448 WR=39.6% avgR=-0.217 ev/d=    $-5.81 pass=   3%  [42.6s+0.8s]
+  ETA: 728.3m  (458 done, 683 left)
+[ 461/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 1448 WR=48.3% avgR=-0.037 ev/d=    $-2.87 pass=  20%  [36.1s+0.8s]
+  ETA: 726.5m  (459 done, 682 left)
+[ 462/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 1447 WR=48.4% avgR=-0.036 ev/d=    $-2.20 pass=  24%  [35.7s+0.8s]
+  ETA: 724.8m  (460 done, 681 left)
+[ 463/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 1448 WR=33.5% avgR=-0.179 ev/d=    $-5.86 pass=  10%  [44.3s+0.9s]
+  ETA: 723.3m  (461 done, 680 left)
+[ 464/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 1447 WR=38.6% avgR=-0.048 ev/d=    $-3.56 pass=  21%  [42.7s+1.0s]
+  ETA: 721.7m  (462 done, 679 left)
+[ 465/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 1443 WR=38.2% avgR=-0.062 ev/d=    $-4.86 pass=  17%  [38.6s+0.8s]
+  ETA: 720.1m  (463 done, 678 left)
+[ 466/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 1448 WR=28.3% avgR=-0.174 ev/d=    $-6.69 pass=  10%  [38.5s+0.7s]
+  ETA: 718.4m  (464 done, 677 left)
+[ 467/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 1445 WR=31.3% avgR=-0.087 ev/d=    $-5.99 pass=  18%  [37.3s+0.8s]
+  ETA: 716.7m  (465 done, 676 left)
+[ 468/1143] RSI | bar_minutes=15  rsi_period=14  oversold=30.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 1433 WR=31.7% avgR=-0.083 ev/d=    $-5.92 pass=  17%  [58.9s+1.1s]
+  ETA: 715.6m  (466 done, 675 left)
+[ 469/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 1826 WR=39.2% avgR=-0.209 ev/d=    $-5.68 pass=   3%  [54.6s+0.8s]
+  ETA: 714.3m  (467 done, 674 left)
+[ 470/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 1826 WR=47.1% avgR=-0.055 ev/d=    $-3.60 pass=  18%  [52.4s+1.5s]
+  ETA: 713.0m  (468 done, 673 left)
+[ 471/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 1826 WR=48.8% avgR=-0.023 ev/d=    $-3.03 pass=  21%  [47.1s+0.9s]
+  ETA: 711.6m  (469 done, 672 left)
+[ 472/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 1826 WR=34.2% avgR=-0.148 ev/d=    $-5.21 pass=  10%  [54.9s+1.0s]
+  ETA: 710.4m  (470 done, 671 left)
+[ 473/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 1826 WR=38.6% avgR=-0.051 ev/d=    $-4.41 pass=  20%  [65.4s+2.0s]
+  ETA: 709.4m  (471 done, 670 left)
+[ 474/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 1825 WR=39.1% avgR=-0.046 ev/d=    $-3.88 pass=  23%  [46.5s+0.8s]
+  ETA: 708.0m  (472 done, 669 left)
+[ 475/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 1826 WR=29.5% avgR=-0.133 ev/d=    $-5.80 pass=  13%  [38.1s+0.9s]
+  ETA: 706.3m  (473 done, 668 left)
+[ 476/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 1826 WR=32.9% avgR=-0.053 ev/d=    $-4.40 pass=  23%  [36.5s+0.9s]
+  ETA: 704.7m  (474 done, 667 left)
+[ 477/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 1824 WR=32.6% avgR=-0.072 ev/d=    $-4.74 pass=  20%  [41.9s+0.9s]
+  ETA: 703.1m  (475 done, 666 left)
+[ 478/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 1506 WR=39.6% avgR=-0.200 ev/d=    $-5.28 pass=   3%  [52.3s+0.9s]
+  ETA: 701.8m  (476 done, 665 left)
+[ 479/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 1506 WR=47.1% avgR=-0.056 ev/d=    $-3.81 pass=  15%  [43.4s+0.9s]
+  ETA: 700.3m  (477 done, 664 left)
+[ 480/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 1506 WR=48.5% avgR=-0.029 ev/d=    $-3.11 pass=  18%  [38.3s+0.8s]
+  ETA: 698.7m  (478 done, 663 left)
+[ 481/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 1506 WR=34.7% avgR=-0.131 ev/d=    $-5.13 pass=  12%  [30.1s+0.6s]
+  ETA: 696.9m  (479 done, 662 left)
+[ 482/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 1506 WR=38.2% avgR=-0.057 ev/d=    $-4.73 pass=  17%  [33.1s+0.8s]
+  ETA: 695.2m  (480 done, 661 left)
+[ 483/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 1505 WR=38.8% avgR=-0.049 ev/d=    $-4.05 pass=  19%  [26.2s+0.6s]
+  ETA: 693.3m  (481 done, 660 left)
+[ 484/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 1506 WR=30.7% avgR=-0.096 ev/d=    $-5.38 pass=  15%  [25.8s+0.6s]
+  ETA: 691.4m  (482 done, 659 left)
+[ 485/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 1506 WR=32.4% avgR=-0.062 ev/d=    $-5.14 pass=  19%  [22.8s+0.6s]
+  ETA: 689.5m  (483 done, 658 left)
+[ 486/1143] RSI | bar_minutes=30  rsi_period=7  oversold=25.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 1505 WR=32.2% avgR=-0.076 ev/d=    $-5.54 pass=  19%  [23.1s+0.7s]
+  ETA: 687.5m  (484 done, 657 left)
+[ 487/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 2123 WR=39.3% avgR=-0.207 ev/d=    $-5.63 pass=   4%  [29.5s+0.7s]
+  ETA: 685.8m  (485 done, 656 left)
+[ 488/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 2123 WR=47.6% avgR=-0.044 ev/d=    $-3.68 pass=  16%  [28.2s+0.7s]
+  ETA: 684.0m  (486 done, 655 left)
+[ 489/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 2123 WR=49.0% avgR=-0.021 ev/d=    $-2.85 pass=  20%  [34.5s+0.9s]
+  ETA: 682.3m  (487 done, 654 left)
+[ 490/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 2123 WR=34.1% avgR=-0.149 ev/d=    $-5.28 pass=  10%  [28.5s+0.7s]
+  ETA: 680.5m  (488 done, 653 left)
+[ 491/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 2123 WR=39.0% avgR=-0.039 ev/d=    $-4.32 pass=  19%  [28.4s+0.7s]
+  ETA: 678.7m  (489 done, 652 left)
+[ 492/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 2123 WR=39.8% avgR=-0.027 ev/d=    $-3.44 pass=  23%  [28.2s+0.9s]
+  ETA: 677.0m  (490 done, 651 left)
+[ 493/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 2123 WR=29.3% avgR=-0.133 ev/d=    $-6.00 pass=  11%  [28.4s+0.8s]
+  ETA: 675.2m  (491 done, 650 left)
+[ 494/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 2123 WR=33.3% avgR=-0.038 ev/d=    $-4.65 pass=  21%  [30.9s+0.7s]
+  ETA: 673.5m  (492 done, 649 left)
+[ 495/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=70.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 2121 WR=33.6% avgR=-0.038 ev/d=    $-4.27 pass=  24%  [32.1s+0.7s]
+  ETA: 671.8m  (493 done, 648 left)
+[ 496/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n= 1803 WR=39.7% avgR=-0.200 ev/d=    $-5.95 pass=   2%  [29.4s+0.8s]
+  ETA: 670.0m  (494 done, 647 left)
+[ 497/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n= 1803 WR=47.7% avgR=-0.043 ev/d=    $-3.47 pass=  18%  [27.4s+0.6s]
+  ETA: 668.3m  (495 done, 646 left)
+[ 498/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.0  sl_atr_multiplier=1.5  n= 1803 WR=48.7% avgR=-0.026 ev/d=    $-2.39 pass=  23%  [24.3s+0.6s]
+  ETA: 666.4m  (496 done, 645 left)
+[ 499/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=0.5  n= 1803 WR=34.5% avgR=-0.135 ev/d=    $-5.73 pass=   8%  [24.5s+0.6s]
+  ETA: 664.6m  (497 done, 644 left)
+[ 500/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.0  n= 1803 WR=38.8% avgR=-0.042 ev/d=    $-4.11 pass=  19%  [23.7s+0.6s]
+  ETA: 662.8m  (498 done, 643 left)
+[ 501/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=1.5  sl_atr_multiplier=1.5  n= 1803 WR=39.7% avgR=-0.026 ev/d=    $-2.59 pass=  27%  [22.9s+0.6s]
+  ETA: 660.9m  (499 done, 642 left)
+[ 502/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=0.5  n= 1803 WR=30.3% avgR=-0.103 ev/d=    $-5.89 pass=  14%  [22.2s+0.6s]
+  ETA: 659.0m  (500 done, 641 left)
+[ 503/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.0  n= 1803 WR=33.0% avgR=-0.042 ev/d=    $-4.66 pass=  20%  [24.6s+1.3s]
+  ETA: 657.3m  (501 done, 640 left)
+[ 504/1143] RSI | bar_minutes=30  rsi_period=7  oversold=30.0  overbought=75.0  rr_ratio=2.0  sl_atr_multiplier=1.5  n= 1802 WR=33.5% avgR=-0.036 ev/d=    $-2.97 pass=  26%  [31.3s+0.7s]
+  ETA: 655.6m  (502 done, 639 left)
+[ 505/1143] RSI | bar_minutes=30  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n=  852 WR=38.1% avgR=-0.224 ev/d=    $-6.21 pass=   2%  [32.7s+0.9s]
+  ETA: 654.0m  (503 done, 638 left)
+[ 506/1143] RSI | bar_minutes=30  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.0  32 pass=  21%  [24.2s+0.8s]
+  ETA: 656.8m  (504 done, 639 left)
+[ 505/1143] RSI | bar_minutes=30  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=0.5  n=  852 WR=38.1% avgR=-0.224 ev/d=    $-5.84 pass=   2%  [32.0s+1.0s]
+  ETA: 655.2m  (505 done, 638 left)
+[ 506/1143] RSI | bar_minutes=30  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.0  n=  852 WR=44.5% avgR=-0.114 ev/d=    $-4.84 pass=  11%  [31.6s+0.9s]
+  ETA: 653.6m  (506 done, 637 left)
+[ 507/1143] RSI | bar_minutes=30  rsi_period=14  oversold=25.0  overbought=70.0  rr_ratio=1.0  sl_atr_multiplier=1.5  

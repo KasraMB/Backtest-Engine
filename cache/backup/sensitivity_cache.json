@@ -1,0 +1,1157 @@
+{
+  "442a6be088b37ec1": {
+    "is_valid": false,
+    "base_metric": -0.04220654924399953,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "739d99a9926c7894": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "7b58adfae915790a": {
+    "is_valid": true,
+    "base_metric": 0.25679154465174425,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "cad8cf71d142bede": {
+    "is_valid": false,
+    "base_metric": -0.09663913896009951,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "f7d882565703472d": {
+    "is_valid": false,
+    "base_metric": -0.08290240768226806,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "aa4b78692a262423": {
+    "is_valid": false,
+    "base_metric": -0.16353628008063548,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "1da312db049613c7": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "c8b2526925e50ff5": {
+    "is_valid": false,
+    "base_metric": -0.10532619236903314,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "9a0e031f4b43ac72": {
+    "is_valid": false,
+    "base_metric": -0.19310584634657302,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "790f37104dd9ff0e": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "89b5c27a4d9de96a": {
+    "is_valid": false,
+    "base_metric": -0.1915634500932021,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "768d1ce4faacb57f": {
+    "is_valid": true,
+    "base_metric": 0.5134946214227399,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "08e611daafa161e9": {
+    "is_valid": false,
+    "base_metric": -0.14049425659698647,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "7081c5a5feea248b": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "95360f047ae01f43": {
+    "is_valid": false,
+    "base_metric": -0.05649615004049911,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "380b5fb4966aad66": {
+    "is_valid": false,
+    "base_metric": -0.1266862094399421,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "31997082248d3699": {
+    "is_valid": true,
+    "base_metric": 0.14252226910454754,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "8ba02bf2135e56fc": {
+    "is_valid": false,
+    "base_metric": -0.10805366138377631,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "314fe2b6a3500ec4": {
+    "is_valid": false,
+    "base_metric": -0.06990154494940663,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "fb81ccdedd487c9c": {
+    "is_valid": false,
+    "base_metric": -0.028705155147438363,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "485d72db7f1e508b": {
+    "is_valid": false,
+    "base_metric": -0.07065306820185656,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "e7fdb2f2ae159d65": {
+    "is_valid": false,
+    "base_metric": -0.1090800110100094,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "d391143ded96e816": {
+    "is_valid": false,
+    "base_metric": -0.0324130414519761,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "d4b8f0380cc8fdbf": {
+    "is_valid": false,
+    "base_metric": -0.14983202824826197,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "400d2cac2d4c6080": {
+    "is_valid": false,
+    "base_metric": -0.04970466821813153,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "00a3d4c84c64ea46": {
+    "is_valid": false,
+    "base_metric": -0.05773976612253337,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "1980c39f6bd52f8b": {
+    "is_valid": false,
+    "base_metric": -0.1080025078107103,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "f88cad502be0ca51": {
+    "is_valid": false,
+    "base_metric": -0.07466873251043972,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "8085a7e0b60a5f61": {
+    "is_valid": false,
+    "base_metric": -0.046373059457291976,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "5e839724f3528259": {
+    "is_valid": false,
+    "base_metric": -0.08695782761987558,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "05d1a9fbbd1b867a": {
+    "is_valid": false,
+    "base_metric": -0.03541538552491827,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "260d9821304a56cb": {
+    "is_valid": false,
+    "base_metric": -0.026695208595420412,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "e982cbc60ba98e34": {
+    "is_valid": true,
+    "base_metric": 0.05225071031664681,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "83db60807cf165e7": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "ebacc7472761f52a": {
+    "is_valid": false,
+    "base_metric": -0.17141645883884585,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "35ac82a6cea01390": {
+    "is_valid": false,
+    "base_metric": -0.08307097704327725,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "d0ec0d0b0dbeddb9": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "4f6951a0038c72e1": {
+    "is_valid": false,
+    "base_metric": -0.1496993619126617,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "929725b7f95c95d3": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "b4c1b0a662cb1442": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "2e6f0c4c84a1a736": {
+    "is_valid": false,
+    "base_metric": -0.12171115720211224,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "d46ca75cdd63bcc9": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "7a28ca59e6b390ff": {
+    "is_valid": false,
+    "base_metric": -0.14347069691162448,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "e7e72ca3c96416a4": {
+    "is_valid": false,
+    "base_metric": -0.15312644255991034,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "6670d78b522bdd7d": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "e25d706d17d56acb": {
+    "is_valid": false,
+    "base_metric": -0.08674250120813705,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "eb944a6229d72b53": {
+    "is_valid": false,
+    "base_metric": -0.1276831019443712,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "ade62c7bdfdbba64": {
+    "is_valid": false,
+    "base_metric": -0.14442645904761164,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "bb2c03c2a99f053f": {
+    "is_valid": false,
+    "base_metric": -0.14661675812241134,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "27fe2d374c80a92f": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "62dfc111de312d35": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "65b06f2044d373d0": {
+    "is_valid": false,
+    "base_metric": -0.12813324484548172,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "39bd19acab81d858": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "c8500d0ca893c849": {
+    "is_valid": false,
+    "base_metric": -0.14152608000414532,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "8c3e7d9d83a3e663": {
+    "is_valid": false,
+    "base_metric": -0.13549033621635181,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "80df1643a4c74a4f": {
+    "is_valid": false,
+    "base_metric": -0.06855009018569573,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "4b97d30ab400e710": {
+    "is_valid": false,
+    "base_metric": -0.14323260123152662,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "149fd5ece8ca7543": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "834d89e809b46deb": {
+    "is_valid": false,
+    "base_metric": -0.19065168759126178,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "5facd4e5a4499471": {
+    "is_valid": false,
+    "base_metric": -0.22785364709995098,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "eb138a7c5aa80817": {
+    "is_valid": false,
+    "base_metric": -0.02643952221637062,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "9c76f739ad64ec7f": {
+    "is_valid": false,
+    "base_metric": -0.06169155782590401,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "35a2bedca6b8a974": {
+    "is_valid": false,
+    "base_metric": -0.011561105333825214,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "9e528b06bba60658": {
+    "is_valid": true,
+    "base_metric": 0.08366534632885382,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "fcdc19ab9732c01f": {
+    "is_valid": true,
+    "base_metric": 0.24604027495109124,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "5d7a856585597fd7": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "390ecdf359a208ad": {
+    "is_valid": false,
+    "base_metric": -0.07369190898375909,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "9c622d7ad545509f": {
+    "is_valid": false,
+    "base_metric": -0.12821964322068644,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "eef36e14299fb335": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "8679563303756b43": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "153c0085bf5444c3": {
+    "is_valid": false,
+    "base_metric": -0.08712416817533016,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "e87602c512de506e": {
+    "is_valid": false,
+    "base_metric": -0.06494450445278109,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "7b58e241a7c35a2d": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "9c5ef0e2f7936e33": {
+    "is_valid": false,
+    "base_metric": -0.11159173618261756,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "d3b171b56b23ed2d": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "855ac79bbe733fc4": {
+    "is_valid": false,
+    "base_metric": -0.10806418459176607,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "6347f2924f1f4366": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "9e1cc35c0f6ac429": {
+    "is_valid": false,
+    "base_metric": -0.24169443652329553,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "f299a382266b4c72": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "a2e67ad16f26f184": {
+    "is_valid": false,
+    "base_metric": -0.3802083333333333,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "5c468f912a35f77c": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "3e7564534e7bb78e": {
+    "is_valid": false,
+    "base_metric": -0.10763537856024742,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "e7921d1f71533e22": {
+    "is_valid": false,
+    "base_metric": -0.12172799270603049,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "72691755d21eb901": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "cb7ea5f1f472e2f2": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "5cf85b08859c5ba4": {
+    "is_valid": true,
+    "base_metric": 0.43274034586785987,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "e5beb98027f63fa5": {
+    "is_valid": false,
+    "base_metric": -0.13354163971269736,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "a990640416ec9902": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "095f8e2f0c6bed0c": {
+    "is_valid": false,
+    "base_metric": -0.1484382267331709,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "6d0af435e2f40f00": {
+    "is_valid": false,
+    "base_metric": -0.1947305173302072,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "b4daf9255c57b965": {
+    "is_valid": true,
+    "base_metric": 0.1218528179872597,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "b79ec533211ddf2c": {
+    "is_valid": false,
+    "base_metric": -0.1358121237279564,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "4f465d3879c7e60d": {
+    "is_valid": false,
+    "base_metric": -0.012344552451809274,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "e5d995113cd9f7a0": {
+    "is_valid": false,
+    "base_metric": -0.08216461599082167,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "bf1ac04f5f93a755": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "1b1796ecdc607d25": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "33ade40ef29158b9": {
+    "is_valid": false,
+    "base_metric": -0.1128729020487274,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "f847073025938844": {
+    "is_valid": true,
+    "base_metric": 1.1436365845421372,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "aff6dc866914a460": {
+    "is_valid": false,
+    "base_metric": -0.11242009285627991,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "8d3751c030d7c19b": {
+    "is_valid": false,
+    "base_metric": -0.0842293552664308,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "d94a98bf895a09d1": {
+    "is_valid": false,
+    "base_metric": -0.25235387165285206,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "6eb674a56b8ce020": {
+    "is_valid": false,
+    "base_metric": -0.06718785761505269,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "2acec5b122a8d3c6": {
+    "is_valid": false,
+    "base_metric": -0.032454460657038976,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "7ca3d5c681695ec9": {
+    "is_valid": false,
+    "base_metric": -0.11923820241380853,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "a4247a882cd23791": {
+    "is_valid": false,
+    "base_metric": -0.11664716798444197,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "59442f35bad98a64": {
+    "is_valid": false,
+    "base_metric": -0.11489913295240664,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "0102b5490252312c": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "7387e8d1ae35ad59": {
+    "is_valid": false,
+    "base_metric": -0.17205624711596149,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "1db3f8cf6e07bb2a": {
+    "is_valid": false,
+    "base_metric": -0.0669365615849321,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "cb4593d6bebf331e": {
+    "is_valid": false,
+    "base_metric": -0.08390733364152671,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "521c15ed08aa65a5": {
+    "is_valid": false,
+    "base_metric": -0.14518059836951588,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "f0ecc53822ed3f4e": {
+    "is_valid": false,
+    "base_metric": -0.1804473141800388,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "a10867c2e7330531": {
+    "is_valid": false,
+    "base_metric": -0.12858711346626406,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "7f2ba72ec75a37bf": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "6c401f9acc670b09": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "04a597742eb5f4c0": {
+    "is_valid": false,
+    "base_metric": -0.1485904735279843,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "40e89ed33b1faaa7": {
+    "is_valid": false,
+    "base_metric": -0.0953891728445429,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "4b7764b75f0b359c": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "33d373ea4fff9505": {
+    "is_valid": false,
+    "base_metric": -0.117607502212185,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "f8ffd067a2a8cd80": {
+    "is_valid": true,
+    "base_metric": 0.30173941521765263,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "57b654660883da14": {
+    "is_valid": false,
+    "base_metric": -0.34088575880479477,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "28e9d5c57c6eec7d": {
+    "is_valid": false,
+    "base_metric": -0.12589268984560267,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "0ff76efea8006cdb": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "7b8905d2b2ed1d00": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "de979c3ba95ec59d": {
+    "is_valid": false,
+    "base_metric": -0.09348926064739797,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "96e8d259cedaa434": {
+    "is_valid": false,
+    "base_metric": -0.08597434145767142,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "2541bbcf1e718732": {
+    "is_valid": false,
+    "base_metric": -0.1487704535429207,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "d2dd9fa0ce0241fb": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "3a7ff25d877771a2": {
+    "is_valid": true,
+    "base_metric": 0.19134151181949222,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "dbc2e005a85f466f": {
+    "is_valid": false,
+    "base_metric": -0.12224207086176526,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "769daf598b27a7ab": {
+    "is_valid": false,
+    "base_metric": -0.11923779791220661,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "e025c8a345bf1ec1": {
+    "is_valid": false,
+    "base_metric": -0.08520394118834616,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "2692a936638d41e8": {
+    "is_valid": false,
+    "base_metric": -0.009134879294194544,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "0e50a39a3109c4a5": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "487191f29bc11001": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "a8a844083741df94": {
+    "is_valid": false,
+    "base_metric": -0.08068550333246961,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "b8e5933303e5831a": {
+    "is_valid": false,
+    "base_metric": -0.25629112172321156,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "83ad5b3d195c17e0": {
+    "is_valid": false,
+    "base_metric": -0.18854142108495187,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "9ca049078af50c66": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "88b9ff342a90a25f": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "f7a3b23c4d7a9419": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "b44911dd05e29de6": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "2b07a300c0accbd0": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "9b751290ba3c0677": {
+    "is_valid": false,
+    "base_metric": -0.1264344655602775,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "363288c68a8d1b31": {
+    "is_valid": false,
+    "base_metric": -0.08496937113934627,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "a69e1533dc0ff46b": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "0d21db260dc6de36": {
+    "is_valid": false,
+    "base_metric": -0.05697181077761339,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "4e60f67c38d14519": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "c2431400f050dc0a": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "6c40be026a4bac02": {
+    "is_valid": false,
+    "base_metric": -0.1349131350498323,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "4a87805fcec1c361": {
+    "is_valid": false,
+    "base_metric": -0.15951281987755117,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "86b073680c25a7a9": {
+    "is_valid": false,
+    "base_metric": -0.13173675572024235,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "4a4d49671b332035": {
+    "is_valid": false,
+    "base_metric": -0.2574896517857774,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "214aad71d401cb33": {
+    "is_valid": false,
+    "base_metric": -0.1116570996812939,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "ba271877fece3ce0": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "f5df39681d794fb7": {
+    "is_valid": true,
+    "base_metric": 0.18276422764227643,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "35236a138ff6c8e1": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "fe6593d3e8fb9d3b": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "3251cfb1d3595a2b": {
+    "is_valid": false,
+    "base_metric": -0.02025798705118756,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "b8e6e2ccf6aa5011": {
+    "is_valid": false,
+    "base_metric": -999.0,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "db96b515b549ac21": {
+    "is_valid": false,
+    "base_metric": -0.09559220356224331,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "386e2096bfd16e9d": {
+    "is_valid": true,
+    "base_metric": 0.15290254038536083,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "4a08d585bba4da83": {
+    "is_valid": false,
+    "base_metric": -0.1825252265202346,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "bf7927e3b63caabf": {
+    "is_valid": false,
+    "base_metric": -0.16770541259539673,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  },
+  "a3e337d8a3df7f29": {
+    "is_valid": false,
+    "base_metric": -0.12551291142476892,
+    "degradation_pct": 0.0,
+    "worst_param": "",
+    "round": 1
+  }
+}

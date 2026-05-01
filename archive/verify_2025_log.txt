@@ -1,0 +1,103 @@
+Loading 2025 OOS data (2025-01-01 -> 2025-12-31)...
+  337,989 bars | 257 trading days  (2.1s)
+
+  Period: 2025-01-02 -> 2025-12-31
+
+
+======================================================================
+Config: S1-rank1: NY rr1.25 BOS mom disp2
+
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+  Trades: 51  [4.7s]
+  WR=52.9%  avgR=+0.192  net_pnl=$4,741  trades/day=0.500
+  EV/day(2025)=$20.45  pass=42.9%  account=150K  scheme=fixed_dollar  [93.0s]
+
+======================================================================
+Config: S1-rank2: NY rr1.00 BOS mom disp2
+
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+  Trades: 51  [3.0s]
+  WR=54.9%  avgR=+0.098  net_pnl=$1,027  trades/day=0.500
+  EV/day(2025)=$8.56  pass=36.6%  account=150K  scheme=fixed_dollar  [85.6s]
+
+======================================================================
+Config: S1-rank3: NY rr0.75 BOS mom disp2
+
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+  Trades: 52  [2.1s]
+  WR=67.3%  avgR=+0.178  net_pnl=$5,555  trades/day=0.500
+  EV/day(2025)=$34.56  pass=49.2%  account=150K  scheme=martingale  [80.5s]
+
+======================================================================
+Config: S1-rank4: NY rr1.25 BOS rev disp2
+
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+  Trades: 61  [1.9s]
+  WR=50.8%  avgR=+0.144  net_pnl=$3,557  trades/day=0.500
+  EV/day(2025)=$14.11  pass=39.5%  account=150K  scheme=fixed_dollar  [77.8s]
+
+======================================================================
+Config: S1-rank5: NY rr1.50 BOS mom disp2
+
+Validating SessionMeanRevStrategy...
+  [OK] Lookahead bias
+  [OK] NaN propagation
+  [OK] Order sanity
+  [OK] PositionUpdate sanity
+  [OK] Session state leak
+  [OK] Signals outside hours
+  [WARN] generate_signals returned None for all 50 validation bars — strategy may have long warmup or rarely signals
+  Validation passed.
+
+  Trades: 50  [2.7s]
+  WR=50.0%  avgR=+0.254  net_pnl=$9,053  trades/day=0.500
+  EV/day(2025)=$24.65  pass=61.4%  account=150K  scheme=fixed_dollar  [78.3s]
+
+
+================================================================================
+2025 OOS VERIFICATION SUMMARY
+================================================================================
+                               label  n_trades  win_rate   avg_r  ev_per_day_2025  pass_rate account        scheme
+1  S1-rank3: NY rr0.75 BOS mom disp2        52    0.6731  0.1776          34.5596     0.4920    150K    martingale
+2  S1-rank5: NY rr1.50 BOS mom disp2        50    0.5000  0.2541          24.6466     0.6138    150K  fixed_dollar
+3  S1-rank1: NY rr1.25 BOS mom disp2        51    0.5294  0.1921          20.4523     0.4286    150K  fixed_dollar
+4  S1-rank4: NY rr1.25 BOS rev disp2        61    0.5082  0.1445          14.1125     0.3948    150K  fixed_dollar
+5  S1-rank2: NY rr1.00 BOS mom disp2        51    0.5490  0.0980           8.5568     0.3660    150K  fixed_dollar
+
+Saved -> verify_2025_results.csv

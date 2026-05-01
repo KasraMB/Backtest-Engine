@@ -1,602 +1,1202 @@
 {
-  "442a6be088b37ec1": {
+  "26b86f63a34134a5": {
     "round": 1,
-    "n_trades": 467
+    "n_trades": 248
   },
-  "739d99a9926c7894": {
+  "ea900c6ddc9ecf80": {
     "round": 1,
-    "n_trades": 0
+    "n_trades": 374
   },
-  "7b58adfae915790a": {
+  "6b3599857efc5d19": {
     "round": 1,
-    "n_trades": 131
+    "n_trades": 156
   },
-  "cad8cf71d142bede": {
+  "f3613693be44214b": {
     "round": 1,
-    "n_trades": 364
+    "n_trades": 190
   },
-  "f7d882565703472d": {
+  "3393c37c2bcf2ac2": {
     "round": 1,
-    "n_trades": 435
+    "n_trades": 478
   },
-  "aa4b78692a262423": {
-    "round": 1,
-    "n_trades": 377
-  },
-  "1da312db049613c7": {
+  "3668d9dbec4b34a2": {
     "round": 1,
     "n_trades": 0
   },
-  "c8b2526925e50ff5": {
+  "b48c7a39ca4a663a": {
     "round": 1,
-    "n_trades": 178
+    "n_trades": 203
   },
-  "9a0e031f4b43ac72": {
-    "round": 1,
-    "n_trades": 408
-  },
-  "790f37104dd9ff0e": {
+  "38507a146d6b1c26": {
     "round": 1,
     "n_trades": 0
   },
-  "89b5c27a4d9de96a": {
+  "70ddccf1bcb3d955": {
     "round": 1,
-    "n_trades": 139
+    "n_trades": 9
   },
-  "768d1ce4faacb57f": {
+  "873ecfdfa80b7999": {
     "round": 1,
-    "n_trades": 66
+    "n_trades": 0
   },
-  "08e611daafa161e9": {
+  "271074bec59cb87e": {
     "round": 1,
-    "n_trades": 338
+    "n_trades": 469
   },
-  "7081c5a5feea248b": {
+  "f6673d9687233bfb": {
+    "round": 1,
+    "n_trades": 497
+  },
+  "0b798ae398e6a6ad": {
+    "round": 1,
+    "n_trades": 191
+  },
+  "881be21592b9f8de": {
+    "round": 1,
+    "n_trades": 100
+  },
+  "3a75f66cddd0e102": {
     "round": 1,
     "n_trades": 1
   },
-  "95360f047ae01f43": {
-    "round": 1,
-    "n_trades": 451
-  },
-  "380b5fb4966aad66": {
-    "round": 1,
-    "n_trades": 408
-  },
-  "31997082248d3699": {
-    "round": 1,
-    "n_trades": 15
-  },
-  "8ba02bf2135e56fc": {
-    "round": 1,
-    "n_trades": 397
-  },
-  "314fe2b6a3500ec4": {
-    "round": 1,
-    "n_trades": 506
-  },
-  "fb81ccdedd487c9c": {
-    "round": 1,
-    "n_trades": 233
-  },
-  "485d72db7f1e508b": {
-    "round": 1,
-    "n_trades": 548
-  },
-  "e7fdb2f2ae159d65": {
-    "round": 1,
-    "n_trades": 399
-  },
-  "d391143ded96e816": {
-    "round": 1,
-    "n_trades": 280
-  },
-  "d4b8f0380cc8fdbf": {
-    "round": 1,
-    "n_trades": 380
-  },
-  "400d2cac2d4c6080": {
-    "round": 1,
-    "n_trades": 306
-  },
-  "00a3d4c84c64ea46": {
-    "round": 1,
-    "n_trades": 311
-  },
-  "1980c39f6bd52f8b": {
-    "round": 1,
-    "n_trades": 466
-  },
-  "f88cad502be0ca51": {
-    "round": 1,
-    "n_trades": 433
-  },
-  "8085a7e0b60a5f61": {
-    "round": 1,
-    "n_trades": 541
-  },
-  "5e839724f3528259": {
-    "round": 1,
-    "n_trades": 315
-  },
-  "05d1a9fbbd1b867a": {
-    "round": 1,
-    "n_trades": 267
-  },
-  "260d9821304a56cb": {
-    "round": 1,
-    "n_trades": 380
-  },
-  "e982cbc60ba98e34": {
-    "round": 1,
-    "n_trades": 241
-  },
-  "83db60807cf165e7": {
+  "c24acdcb1931a4e4": {
     "round": 1,
     "n_trades": 0
   },
-  "ebacc7472761f52a": {
+  "53a54484e7defae3": {
     "round": 1,
-    "n_trades": 503
+    "n_trades": 61
   },
-  "35ac82a6cea01390": {
-    "round": 1,
-    "n_trades": 426
-  },
-  "d0ec0d0b0dbeddb9": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "4f6951a0038c72e1": {
-    "round": 1,
-    "n_trades": 259
-  },
-  "929725b7f95c95d3": {
-    "round": 1,
-    "n_trades": 8
-  },
-  "b4c1b0a662cb1442": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "2e6f0c4c84a1a736": {
-    "round": 1,
-    "n_trades": 388
-  },
-  "d46ca75cdd63bcc9": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "7a28ca59e6b390ff": {
-    "round": 1,
-    "n_trades": 752
-  },
-  "e7e72ca3c96416a4": {
-    "round": 1,
-    "n_trades": 264
-  },
-  "6670d78b522bdd7d": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "e25d706d17d56acb": {
-    "round": 1,
-    "n_trades": 290
-  },
-  "eb944a6229d72b53": {
-    "round": 1,
-    "n_trades": 486
-  },
-  "ade62c7bdfdbba64": {
-    "round": 1,
-    "n_trades": 553
-  },
-  "bb2c03c2a99f053f": {
-    "round": 1,
-    "n_trades": 603
-  },
-  "27fe2d374c80a92f": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "62dfc111de312d35": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "65b06f2044d373d0": {
-    "round": 1,
-    "n_trades": 476
-  },
-  "39bd19acab81d858": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "c8500d0ca893c849": {
-    "round": 1,
-    "n_trades": 634
-  },
-  "8c3e7d9d83a3e663": {
-    "round": 1,
-    "n_trades": 546
-  },
-  "80df1643a4c74a4f": {
-    "round": 1,
-    "n_trades": 213
-  },
-  "4b97d30ab400e710": {
-    "round": 1,
-    "n_trades": 456
-  },
-  "149fd5ece8ca7543": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "834d89e809b46deb": {
-    "round": 1,
-    "n_trades": 267
-  },
-  "5facd4e5a4499471": {
-    "round": 1,
-    "n_trades": 435
-  },
-  "eb138a7c5aa80817": {
-    "round": 1,
-    "n_trades": 386
-  },
-  "9c76f739ad64ec7f": {
-    "round": 1,
-    "n_trades": 647
-  },
-  "35a2bedca6b8a974": {
-    "round": 1,
-    "n_trades": 621
-  },
-  "9e528b06bba60658": {
-    "round": 1,
-    "n_trades": 174
-  },
-  "fcdc19ab9732c01f": {
-    "round": 1,
-    "n_trades": 46
-  },
-  "5d7a856585597fd7": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "390ecdf359a208ad": {
-    "round": 1,
-    "n_trades": 456
-  },
-  "9c622d7ad545509f": {
-    "round": 1,
-    "n_trades": 554
-  },
-  "eef36e14299fb335": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "8679563303756b43": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "153c0085bf5444c3": {
-    "round": 1,
-    "n_trades": 475
-  },
-  "e87602c512de506e": {
-    "round": 1,
-    "n_trades": 274
-  },
-  "7b58e241a7c35a2d": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "9c5ef0e2f7936e33": {
-    "round": 1,
-    "n_trades": 486
-  },
-  "d3b171b56b23ed2d": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "855ac79bbe733fc4": {
-    "round": 1,
-    "n_trades": 474
-  },
-  "6347f2924f1f4366": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "9e1cc35c0f6ac429": {
-    "round": 1,
-    "n_trades": 371
-  },
-  "f299a382266b4c72": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "a2e67ad16f26f184": {
-    "round": 1,
-    "n_trades": 12
-  },
-  "5c468f912a35f77c": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "3e7564534e7bb78e": {
-    "round": 1,
-    "n_trades": 42
-  },
-  "e7921d1f71533e22": {
-    "round": 1,
-    "n_trades": 640
-  },
-  "72691755d21eb901": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "cb7ea5f1f472e2f2": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "5cf85b08859c5ba4": {
-    "round": 1,
-    "n_trades": 69
-  },
-  "e5beb98027f63fa5": {
-    "round": 1,
-    "n_trades": 677
-  },
-  "a990640416ec9902": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "095f8e2f0c6bed0c": {
-    "round": 1,
-    "n_trades": 408
-  },
-  "6d0af435e2f40f00": {
-    "round": 1,
-    "n_trades": 536
-  },
-  "b4daf9255c57b965": {
-    "round": 1,
-    "n_trades": 182
-  },
-  "b79ec533211ddf2c": {
-    "round": 1,
-    "n_trades": 291
-  },
-  "4f465d3879c7e60d": {
-    "round": 1,
-    "n_trades": 269
-  },
-  "e5d995113cd9f7a0": {
-    "round": 1,
-    "n_trades": 349
-  },
-  "bf1ac04f5f93a755": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "1b1796ecdc607d25": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "33ade40ef29158b9": {
-    "round": 1,
-    "n_trades": 359
-  },
-  "f847073025938844": {
-    "round": 1,
-    "n_trades": 16
-  },
-  "aff6dc866914a460": {
-    "round": 1,
-    "n_trades": 328
-  },
-  "8d3751c030d7c19b": {
-    "round": 1,
-    "n_trades": 277
-  },
-  "d94a98bf895a09d1": {
-    "round": 1,
-    "n_trades": 383
-  },
-  "6eb674a56b8ce020": {
-    "round": 1,
-    "n_trades": 227
-  },
-  "2acec5b122a8d3c6": {
-    "round": 1,
-    "n_trades": 230
-  },
-  "7ca3d5c681695ec9": {
-    "round": 1,
-    "n_trades": 535
-  },
-  "a4247a882cd23791": {
-    "round": 1,
-    "n_trades": 177
-  },
-  "59442f35bad98a64": {
-    "round": 1,
-    "n_trades": 429
-  },
-  "0102b5490252312c": {
-    "round": 1,
-    "n_trades": 1
-  },
-  "7387e8d1ae35ad59": {
-    "round": 1,
-    "n_trades": 503
-  },
-  "1db3f8cf6e07bb2a": {
-    "round": 1,
-    "n_trades": 230
-  },
-  "cb4593d6bebf331e": {
-    "round": 1,
-    "n_trades": 275
-  },
-  "521c15ed08aa65a5": {
-    "round": 1,
-    "n_trades": 309
-  },
-  "f0ecc53822ed3f4e": {
-    "round": 1,
-    "n_trades": 167
-  },
-  "a10867c2e7330531": {
-    "round": 1,
-    "n_trades": 546
-  },
-  "7f2ba72ec75a37bf": {
-    "round": 1,
-    "n_trades": 1
-  },
-  "6c401f9acc670b09": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "04a597742eb5f4c0": {
-    "round": 1,
-    "n_trades": 507
-  },
-  "40e89ed33b1faaa7": {
-    "round": 1,
-    "n_trades": 530
-  },
-  "4b7764b75f0b359c": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "33d373ea4fff9505": {
-    "round": 1,
-    "n_trades": 278
-  },
-  "f8ffd067a2a8cd80": {
-    "round": 1,
-    "n_trades": 128
-  },
-  "57b654660883da14": {
-    "round": 1,
-    "n_trades": 398
-  },
-  "28e9d5c57c6eec7d": {
-    "round": 1,
-    "n_trades": 323
-  },
-  "0ff76efea8006cdb": {
-    "round": 1,
-    "n_trades": 1
-  },
-  "7b8905d2b2ed1d00": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "de979c3ba95ec59d": {
-    "round": 1,
-    "n_trades": 334
-  },
-  "96e8d259cedaa434": {
-    "round": 1,
-    "n_trades": 230
-  },
-  "2541bbcf1e718732": {
-    "round": 1,
-    "n_trades": 457
-  },
-  "d2dd9fa0ce0241fb": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "3a7ff25d877771a2": {
-    "round": 1,
-    "n_trades": 180
-  },
-  "dbc2e005a85f466f": {
-    "round": 1,
-    "n_trades": 392
-  },
-  "769daf598b27a7ab": {
-    "round": 1,
-    "n_trades": 578
-  },
-  "e025c8a345bf1ec1": {
-    "round": 1,
-    "n_trades": 269
-  },
-  "2692a936638d41e8": {
-    "round": 1,
-    "n_trades": 293
-  },
-  "0e50a39a3109c4a5": {
-    "round": 1,
-    "n_trades": 4
-  },
-  "487191f29bc11001": {
-    "round": 1,
-    "n_trades": 0
-  },
-  "a8a844083741df94": {
+  "fd31a2b53dd75a14": {
     "round": 1,
     "n_trades": 282
   },
-  "b8e5933303e5831a": {
+  "b1b8c0dbb0cd8cb0": {
     "round": 1,
-    "n_trades": 396
+    "n_trades": 258
   },
-  "83ad5b3d195c17e0": {
+  "58accebf1e9009cf": {
     "round": 1,
-    "n_trades": 332
+    "n_trades": 201
   },
-  "9ca049078af50c66": {
+  "06456ca886bfc0bd": {
+    "round": 1,
+    "n_trades": 280
+  },
+  "7285b7bc60929bb0": {
     "round": 1,
     "n_trades": 1
   },
-  "88b9ff342a90a25f": {
+  "d4fdae3e2c62f0ea": {
+    "round": 1,
+    "n_trades": 493
+  },
+  "65dade7fc073820a": {
+    "round": 1,
+    "n_trades": 342
+  },
+  "b26941416985693a": {
+    "round": 1,
+    "n_trades": 314
+  },
+  "5895024d3ff5e119": {
+    "round": 1,
+    "n_trades": 431
+  },
+  "90416c0aef4fd4c4": {
+    "round": 1,
+    "n_trades": 301
+  },
+  "d183331a4e0bf019": {
+    "round": 1,
+    "n_trades": 339
+  },
+  "e2fa808ba2758239": {
     "round": 1,
     "n_trades": 0
   },
-  "f7a3b23c4d7a9419": {
+  "e86833e74298dbe6": {
     "round": 1,
     "n_trades": 0
   },
-  "b44911dd05e29de6": {
+  "008cc15e1069b7ee": {
+    "round": 1,
+    "n_trades": 105
+  },
+  "314b4c99b11dfc2c": {
+    "round": 1,
+    "n_trades": 8
+  },
+  "3b70959a1b8f6950": {
+    "round": 1,
+    "n_trades": 505
+  },
+  "b0825515a94f920b": {
+    "round": 1,
+    "n_trades": 397
+  },
+  "8d8023128d15336b": {
+    "round": 1,
+    "n_trades": 243
+  },
+  "52ca33528fe73479": {
+    "round": 1,
+    "n_trades": 231
+  },
+  "0b3b83796ebb13d6": {
     "round": 1,
     "n_trades": 0
   },
-  "2b07a300c0accbd0": {
+  "432cc50ee9fe81a9": {
     "round": 1,
-    "n_trades": 2
+    "n_trades": 309
   },
-  "9b751290ba3c0677": {
+  "e4e548bb52f3dbec": {
     "round": 1,
-    "n_trades": 337
+    "n_trades": 4
   },
-  "363288c68a8d1b31": {
+  "2a2673e5daf004e2": {
     "round": 1,
-    "n_trades": 227
+    "n_trades": 6
   },
-  "a69e1533dc0ff46b": {
+  "350242defb715e16": {
+    "round": 1,
+    "n_trades": 466
+  },
+  "7a88958bd1d62e5a": {
+    "round": 1,
+    "n_trades": 472
+  },
+  "6748f5ae6f8585e5": {
+    "round": 1,
+    "n_trades": 551
+  },
+  "1b52d6f10051d5b7": {
+    "round": 1,
+    "n_trades": 568
+  },
+  "74913777cddd4522": {
+    "round": 1,
+    "n_trades": 370
+  },
+  "eddfd66f81818158": {
+    "round": 1,
+    "n_trades": 364
+  },
+  "0e28e84d8db4a0f2": {
+    "round": 1,
+    "n_trades": 91
+  },
+  "f4124cb535156283": {
     "round": 1,
     "n_trades": 0
   },
-  "0d21db260dc6de36": {
+  "c4acf4f693c3bf50": {
+    "round": 1,
+    "n_trades": 257
+  },
+  "fbe98b7c68c693fd": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "b7cfcdc5d4262d00": {
+    "round": 1,
+    "n_trades": 530
+  },
+  "eebd756252a30c73": {
+    "round": 1,
+    "n_trades": 204
+  },
+  "ee5853101f03d5ed": {
+    "round": 1,
+    "n_trades": 661
+  },
+  "3b65f3d6cdbac462": {
+    "round": 1,
+    "n_trades": 264
+  },
+  "82e20bbefaab340b": {
+    "round": 1,
+    "n_trades": 299
+  },
+  "084e7a0eb1442d25": {
+    "round": 1,
+    "n_trades": 201
+  },
+  "8ddf317f226120f8": {
+    "round": 1,
+    "n_trades": 332
+  },
+  "be261ba91ecd9d8d": {
+    "round": 1,
+    "n_trades": 640
+  },
+  "9faeaaf586712816": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "7518cfa38c459c4d": {
+    "round": 1,
+    "n_trades": 569
+  },
+  "37f1f94a3a80bafb": {
+    "round": 1,
+    "n_trades": 7
+  },
+  "287eb6fc47617fcf": {
+    "round": 1,
+    "n_trades": 706
+  },
+  "671ed7ee6bff0ff3": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "a169fb8645c2ba3b": {
+    "round": 1,
+    "n_trades": 383
+  },
+  "58d164ef6188af91": {
+    "round": 1,
+    "n_trades": 437
+  },
+  "ad8d4b977c9b931e": {
+    "round": 1,
+    "n_trades": 1
+  },
+  "11b843df931251e5": {
+    "round": 1,
+    "n_trades": 506
+  },
+  "5546c3752cda6963": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "9850b6e44df5f4a7": {
+    "round": 1,
+    "n_trades": 627
+  },
+  "00ca2fbf8d5148eb": {
+    "round": 1,
+    "n_trades": 34
+  },
+  "c18f69c3517ba0f8": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "63b1242a111713d7": {
+    "round": 1,
+    "n_trades": 316
+  },
+  "46715ae1c783bd99": {
+    "round": 1,
+    "n_trades": 483
+  },
+  "ffafab2c6afeedc3": {
+    "round": 1,
+    "n_trades": 70
+  },
+  "457176e3795766c9": {
+    "round": 1,
+    "n_trades": 316
+  },
+  "e1aae1af39b7eb5d": {
+    "round": 1,
+    "n_trades": 727
+  },
+  "fcb4f585335534af": {
+    "round": 1,
+    "n_trades": 411
+  },
+  "134507cc190797dd": {
+    "round": 1,
+    "n_trades": 456
+  },
+  "453de69b81a60ed7": {
+    "round": 1,
+    "n_trades": 190
+  },
+  "2f6d936c595ba2e2": {
+    "round": 1,
+    "n_trades": 307
+  },
+  "c93473ca16a46acd": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "f03a30f9a0a471be": {
     "round": 1,
     "n_trades": 399
   },
-  "4e60f67c38d14519": {
+  "98cb77dd09d83666": {
+    "round": 1,
+    "n_trades": 53
+  },
+  "c8d5f27494d8d98b": {
+    "round": 1,
+    "n_trades": 431
+  },
+  "42675f32344573da": {
+    "round": 1,
+    "n_trades": 494
+  },
+  "e15227a3934e3ac8": {
+    "round": 1,
+    "n_trades": 452
+  },
+  "fc883a7f01ddc98a": {
+    "round": 1,
+    "n_trades": 390
+  },
+  "10c3d2051fc4a052": {
     "round": 1,
     "n_trades": 0
   },
-  "c2431400f050dc0a": {
+  "b003d6a42304ec0f": {
+    "round": 1,
+    "n_trades": 83
+  },
+  "a8580d5838ec062b": {
     "round": 1,
     "n_trades": 0
   },
-  "6c40be026a4bac02": {
+  "07563fd29a6886f5": {
     "round": 1,
-    "n_trades": 573
+    "n_trades": 0
+  },
+  "8426cd0ab32f570d": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "40d10d9377636a91": {
+    "round": 1,
+    "n_trades": 269
+  },
+  "e80615e104635246": {
+    "round": 1,
+    "n_trades": 567
+  },
+  "a9065f4e206261cb": {
+    "round": 1,
+    "n_trades": 485
+  },
+  "face9b941033eeb5": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "ed2534422050c30c": {
+    "round": 1,
+    "n_trades": 398
+  },
+  "74061b866aa91d4a": {
+    "round": 1,
+    "n_trades": 470
+  },
+  "6fd8695350839ac4": {
+    "round": 1,
+    "n_trades": 229
+  },
+  "75eb67dc8ddfa34c": {
+    "round": 1,
+    "n_trades": 188
+  },
+  "e49d388bae41db1c": {
+    "round": 1,
+    "n_trades": 71
+  },
+  "4a4791b04218bd1c": {
+    "round": 1,
+    "n_trades": 593
+  },
+  "b08c87d3a6ec28c6": {
+    "round": 1,
+    "n_trades": 210
+  },
+  "f5d0e0eda2edd826": {
+    "round": 1,
+    "n_trades": 525
+  },
+  "978100981d4e3a1e": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "413f7e2d9d4b90c2": {
+    "round": 1,
+    "n_trades": 473
+  },
+  "e79dacc8a2d7da25": {
+    "round": 1,
+    "n_trades": 556
+  },
+  "5001e6076cab1350": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "58ff0887b1317542": {
+    "round": 1,
+    "n_trades": 20
+  },
+  "7d9654e067dc4256": {
+    "round": 1,
+    "n_trades": 10
+  },
+  "8829cfe4abdbdda1": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "fa62bdc6d0d292a3": {
+    "round": 1,
+    "n_trades": 446
+  },
+  "cbea31dc1a047f70": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "3fd9554d0115694a": {
+    "round": 1,
+    "n_trades": 451
+  },
+  "829d2cad5256e52f": {
+    "round": 1,
+    "n_trades": 520
+  },
+  "cceae7b9d895e95d": {
+    "round": 1,
+    "n_trades": 505
+  },
+  "51a441d2a95e1575": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "47b26d1cb30adc60": {
+    "round": 1,
+    "n_trades": 270
+  },
+  "53c23bbbe82a6ebd": {
+    "round": 1,
+    "n_trades": 500
+  },
+  "73b28fc8dd14bccd": {
+    "round": 1,
+    "n_trades": 1
+  },
+  "c82cff2dbaef484d": {
+    "round": 1,
+    "n_trades": 450
+  },
+  "046b78a1b324cce9": {
+    "round": 1,
+    "n_trades": 213
+  },
+  "80a10080683139bd": {
+    "round": 1,
+    "n_trades": 353
+  },
+  "3ea0d88ff9109560": {
+    "round": 1,
+    "n_trades": 42
+  },
+  "76460dbeeccbfab2": {
+    "round": 1,
+    "n_trades": 724
+  },
+  "3942e32d9c60e0ce": {
+    "round": 1,
+    "n_trades": 210
+  },
+  "ad645b608fc25435": {
+    "round": 1,
+    "n_trades": 184
+  },
+  "79b28aa20894606f": {
+    "round": 1,
+    "n_trades": 570
+  },
+  "91828575f95e9d60": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "f1889bf2d1e29431": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "167ea91fa9c16b3d": {
+    "round": 1,
+    "n_trades": 414
+  },
+  "e7bb87b5bed536b2": {
+    "round": 1,
+    "n_trades": 514
+  },
+  "1660e16b2cc83121": {
+    "round": 1,
+    "n_trades": 5
+  },
+  "ad252706c2888ecf": {
+    "round": 1,
+    "n_trades": 326
+  },
+  "071a664425a1be1e": {
+    "round": 1,
+    "n_trades": 319
+  },
+  "560aa448d144b47b": {
+    "round": 1,
+    "n_trades": 501
+  },
+  "236272b90cc62c0c": {
+    "round": 1,
+    "n_trades": 567
+  },
+  "3231d358fb312721": {
+    "round": 1,
+    "n_trades": 2
+  },
+  "97a80c021b3fb615": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "7d388d7d65e8a3e2": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "076983e1e2518d9d": {
+    "round": 1,
+    "n_trades": 699
+  },
+  "4ee41f71676003af": {
+    "round": 1,
+    "n_trades": 165
+  },
+  "01aae52299f481ab": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "f38615590637b16a": {
+    "round": 1,
+    "n_trades": 415
+  },
+  "c746d490ed7f6367": {
+    "round": 1,
+    "n_trades": 512
+  },
+  "c1d45e78ac892530": {
+    "round": 1,
+    "n_trades": 158
+  },
+  "7a6fca8c71bdb4c0": {
+    "round": 1,
+    "n_trades": 367
+  },
+  "0be68420b7366d05": {
+    "round": 1,
+    "n_trades": 195
+  },
+  "717d6d391e83a5e6": {
+    "round": 1,
+    "n_trades": 598
+  },
+  "b7a54e1083d26825": {
+    "round": 1,
+    "n_trades": 1
+  },
+  "8c9b52aac1203b9e": {
+    "round": 1,
+    "n_trades": 500
+  },
+  "0021ee5f8ecad8c7": {
+    "round": 1,
+    "n_trades": 398
+  },
+  "e3373a167dd8c432": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "826a9fa22c091c5b": {
+    "round": 1,
+    "n_trades": 435
+  },
+  "1ce48cf1ca44a7d4": {
+    "round": 1,
+    "n_trades": 522
+  },
+  "5031cd3b66e6ec50": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "d4b371c853380f22": {
+    "round": 1,
+    "n_trades": 358
+  },
+  "f23c22ec39809cb5": {
+    "round": 1,
+    "n_trades": 244
+  },
+  "3c49bf5a9dcd46d4": {
+    "round": 1,
+    "n_trades": 457
+  },
+  "6f482ea040019dce": {
+    "round": 1,
+    "n_trades": 598
+  },
+  "4332b99a6a70263d": {
+    "round": 1,
+    "n_trades": 101
+  },
+  "27d8726b2c3c2244": {
+    "round": 1,
+    "n_trades": 187
+  },
+  "4da9515fbe7a916a": {
+    "round": 1,
+    "n_trades": 107
+  },
+  "206d8bcf43a774f3": {
+    "round": 1,
+    "n_trades": 265
+  },
+  "34b6264826874440": {
+    "round": 1,
+    "n_trades": 340
+  },
+  "8f8fc5b6b98ce23f": {
+    "round": 1,
+    "n_trades": 277
+  },
+  "2e5959b16200ae98": {
+    "round": 1,
+    "n_trades": 475
+  },
+  "5c52bed4e58c1766": {
+    "round": 1,
+    "n_trades": 617
+  },
+  "6e82ea40d4eefb45": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "2ea53cc909518909": {
+    "round": 1,
+    "n_trades": 349
+  },
+  "e92f481a105ef289": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "a90f4040e6ae76c0": {
+    "round": 1,
+    "n_trades": 478
+  },
+  "c3342cc0d653a982": {
+    "round": 1,
+    "n_trades": 282
+  },
+  "4a8e28fb41243a57": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "59633f058d2585cf": {
+    "round": 1,
+    "n_trades": 374
+  },
+  "fdba25079ebbfe35": {
+    "round": 1,
+    "n_trades": 625
+  },
+  "97d2df3acb6c7b1d": {
+    "round": 1,
+    "n_trades": 685
+  },
+  "d2c4ee31e944964b": {
+    "round": 1,
+    "n_trades": 225
+  },
+  "f6d4f47bff7badf5": {
+    "round": 1,
+    "n_trades": 492
+  },
+  "93f73798c3f29106": {
+    "round": 1,
+    "n_trades": 707
+  },
+  "be66f58a376088d0": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "8dc6a677e60224f9": {
+    "round": 1,
+    "n_trades": 310
+  },
+  "da7d788bd20a765b": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "693b66243d2c1aee": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "8bea1bb2f6fb627b": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "0dae84b9adc22777": {
+    "round": 1,
+    "n_trades": 350
+  },
+  "f4dc55cc0ad69a45": {
+    "round": 1,
+    "n_trades": 190
+  },
+  "0600b4de0440dbbe": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "88c6f2b2657b6eb9": {
+    "round": 1,
+    "n_trades": 449
+  },
+  "a6d96711bb470b0c": {
+    "round": 1,
+    "n_trades": 654
+  },
+  "9aecdd5a7ec028a3": {
+    "round": 1,
+    "n_trades": 423
+  },
+  "23d9fa5d57a8462a": {
+    "round": 1,
+    "n_trades": 1
+  },
+  "75405473340423e7": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "306e0ffcae3f505c": {
+    "round": 1,
+    "n_trades": 506
+  },
+  "7b3ca438c7b3b8a5": {
+    "round": 1,
+    "n_trades": 508
+  },
+  "e3231fbb9e4e4163": {
+    "round": 1,
+    "n_trades": 511
+  },
+  "2a9ca5abf398b038": {
+    "round": 1,
+    "n_trades": 561
+  },
+  "487a734a2db37b8f": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "e652044c6b890080": {
+    "round": 1,
+    "n_trades": 339
+  },
+  "393d82d1594bf8d6": {
+    "round": 1,
+    "n_trades": 248
+  },
+  "9b36b26b21442796": {
+    "round": 1,
+    "n_trades": 403
+  },
+  "3a99f41db092b3f6": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "0667bdced9a9bb85": {
+    "round": 1,
+    "n_trades": 390
+  },
+  "b03207d8029f0e78": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "d59039230791a6db": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "4a0d5586fa2d6294": {
+    "round": 1,
+    "n_trades": 448
+  },
+  "1edb8f8456ea321f": {
+    "round": 1,
+    "n_trades": 470
+  },
+  "1eae157152001598": {
+    "round": 1,
+    "n_trades": 540
+  },
+  "07252854671f9593": {
+    "round": 1,
+    "n_trades": 420
+  },
+  "a35b76d6203d7bcd": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "12b9fca3173438c3": {
+    "round": 1,
+    "n_trades": 11
+  },
+  "c1ac6e77d3174e2c": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "d06f9b03cadef95c": {
+    "round": 1,
+    "n_trades": 417
+  },
+  "1c58bb6a25b87ba6": {
+    "round": 1,
+    "n_trades": 258
+  },
+  "ce9fd597c9bfd6f1": {
+    "round": 1,
+    "n_trades": 162
+  },
+  "5bc71272bcfe3126": {
+    "round": 1,
+    "n_trades": 632
+  },
+  "b2813e93a78e3e45": {
+    "round": 1,
+    "n_trades": 489
+  },
+  "ba73023d18d56a50": {
+    "round": 1,
+    "n_trades": 402
+  },
+  "8607960643d61b42": {
+    "round": 1,
+    "n_trades": 350
+  },
+  "de1ca166fe970f36": {
+    "round": 1,
+    "n_trades": 229
+  },
+  "897b7ecbfe30f744": {
+    "round": 1,
+    "n_trades": 226
+  },
+  "0557442abc0c420b": {
+    "round": 1,
+    "n_trades": 514
+  },
+  "d3447e334fdcf553": {
+    "round": 1,
+    "n_trades": 266
+  },
+  "4d0e036e9c69d947": {
+    "round": 1,
+    "n_trades": 537
+  },
+  "ab22ac2540f67bdb": {
+    "round": 1,
+    "n_trades": 443
+  },
+  "64d8576709851e76": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "8788f074363c8f58": {
+    "round": 1,
+    "n_trades": 51
+  },
+  "c365e436b9d90ae3": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "9a0de3dfd4cf6bac": {
+    "round": 1,
+    "n_trades": 466
+  },
+  "2b2d5f5b212b15b3": {
+    "round": 1,
+    "n_trades": 191
+  },
+  "7410f98e17bfd768": {
+    "round": 1,
+    "n_trades": 623
+  },
+  "4c79f708e35d2d16": {
+    "round": 1,
+    "n_trades": 476
+  },
+  "72848a9304c06f42": {
+    "round": 1,
+    "n_trades": 639
+  },
+  "c646cf55df2753a1": {
+    "round": 1,
+    "n_trades": 489
+  },
+  "69f4ec1ccb6d856e": {
+    "round": 1,
+    "n_trades": 530
+  },
+  "edb34c7658cd5977": {
+    "round": 1,
+    "n_trades": 512
+  },
+  "752b6aa62ef35f7e": {
+    "round": 1,
+    "n_trades": 416
+  },
+  "8f7b1db410d3b3bb": {
+    "round": 1,
+    "n_trades": 435
+  },
+  "6cc7e49335fcd686": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "f462d3b7fffd4e20": {
+    "round": 1,
+    "n_trades": 172
+  },
+  "d20fba9ac59b8a7c": {
+    "round": 1,
+    "n_trades": 437
+  },
+  "9a67bef678b5c23c": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "3a364f83d4cae7f3": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "835ae787774f73e7": {
+    "round": 1,
+    "n_trades": 728
+  },
+  "1f572a12bca0e928": {
+    "round": 1,
+    "n_trades": 509
+  },
+  "dd79410e09c16525": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "58d7287647550187": {
+    "round": 1,
+    "n_trades": 323
+  },
+  "83e61fab5b3e1ab8": {
+    "round": 1,
+    "n_trades": 272
+  },
+  "260639ea229f5f96": {
+    "round": 1,
+    "n_trades": 167
+  },
+  "430008671a73cb62": {
+    "round": 1,
+    "n_trades": 578
+  },
+  "9516fb8476a345cd": {
+    "round": 1,
+    "n_trades": 218
+  },
+  "e60278196eb8b40a": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "3b164b68ad9face1": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "cbedb414c12dd44e": {
+    "round": 1,
+    "n_trades": 485
+  },
+  "ad19ff5cf2e32120": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "1095fdd7e45fac59": {
+    "round": 1,
+    "n_trades": 297
+  },
+  "0e57ea91b0209029": {
+    "round": 1,
+    "n_trades": 256
+  },
+  "95a7dda9f5bb8db4": {
+    "round": 1,
+    "n_trades": 58
+  },
+  "352a4c045f4e9f21": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "ef1020523b56576e": {
+    "round": 1,
+    "n_trades": 2
+  },
+  "8e2497363f2406b0": {
+    "round": 1,
+    "n_trades": 497
+  },
+  "85ceeeaf220301ed": {
+    "round": 1,
+    "n_trades": 203
+  },
+  "0b80da6d62240b89": {
+    "round": 1,
+    "n_trades": 560
+  },
+  "9cb7199e3d3a4afe": {
+    "round": 1,
+    "n_trades": 483
+  },
+  "8de507ee2ed5ca9c": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "04d31a33ff03a831": {
+    "round": 1,
+    "n_trades": 146
+  },
+  "5f68c0842b25a456": {
+    "round": 1,
+    "n_trades": 460
+  },
+  "2e0da61816cd00c6": {
+    "round": 1,
+    "n_trades": 499
+  },
+  "8c405aa8db434c8c": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "327442d52ecbf5cb": {
+    "round": 1,
+    "n_trades": 369
+  },
+  "6f76c166d948b8dd": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "89c739823b0e726b": {
+    "round": 1,
+    "n_trades": 217
+  },
+  "fd1872b293de9eaa": {
+    "round": 1,
+    "n_trades": 394
+  },
+  "12c69b337f487267": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "15e9779c22fe993e": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "bfab511fd5eb9d4e": {
+    "round": 1,
+    "n_trades": 5
+  },
+  "76c6067a99e82d6c": {
+    "round": 1,
+    "n_trades": 506
+  },
+  "f7775db1fb1e8a75": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "e177e4a5b51d31b3": {
+    "round": 1,
+    "n_trades": 213
+  },
+  "e8b7a06b061fbace": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "0cced820f52e6500": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "5682480c807a40ef": {
+    "round": 1,
+    "n_trades": 370
+  },
+  "cc3863f5a88bcf3a": {
+    "round": 1,
+    "n_trades": 297
+  },
+  "f9114e3e4e166c24": {
+    "round": 1,
+    "n_trades": 458
+  },
+  "9df254f4ee2af410": {
+    "round": 1,
+    "n_trades": 447
+  },
+  "19c969fe7dd5e7b5": {
+    "round": 1,
+    "n_trades": 97
+  },
+  "e6852a4cc67ab5f8": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "b3ce848b32a82459": {
+    "round": 1,
+    "n_trades": 377
+  },
+  "a0778ee461bd2d83": {
+    "round": 1,
+    "n_trades": 340
+  },
+  "310620e35cebb3dd": {
+    "round": 1,
+    "n_trades": 356
+  },
+  "31713fd112c7ca94": {
+    "round": 1,
+    "n_trades": 134
+  },
+  "c2548be099bc78a7": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "1ed97b1300990226": {
+    "round": 1,
+    "n_trades": 113
+  },
+  "10f62ef9f7ceeb38": {
+    "round": 1,
+    "n_trades": 420
+  },
+  "5da56493fef62316": {
+    "round": 1,
+    "n_trades": 388
+  },
+  "b7344979131a370a": {
+    "round": 1,
+    "n_trades": 120
+  },
+  "78233291bd68fa1c": {
+    "round": 1,
+    "n_trades": 416
+  },
+  "cbb76c87fa588de4": {
+    "round": 1,
+    "n_trades": 0
+  },
+  "be9a02126cb2ae88": {
+    "round": 1,
+    "n_trades": 424
+  },
+  "25fb64238ab6388d": {
+    "round": 1,
+    "n_trades": 360
   }
 }

@@ -34,6 +34,7 @@ from datetime import time as dtime
 from backtest.ml.model import MLModel
 
 # ── Strategies — import all, pick one below ────────────────────────────────
+from strategies.asia_breakout_strategy          import AsiaBreakoutStrategy
 from strategies.dummy                            import DummyLongStrategy
 from strategies.enhanced_orb                    import EnhancedORBStrategy
 from strategies.intraday_momentum_baltussen      import IntradayMomentumBaltussen
@@ -50,7 +51,7 @@ from strategies.session_mean_rev                import SessionMeanRevStrategy
 
 # ── Active strategy ────────────────────────────────────────────────────────
 # Change this one line to switch strategies:
-STRATEGY = SessionMeanRevStrategy
+STRATEGY = AsiaBreakoutStrategy
 
 def _step(label):
     """Context manager that prints step name and elapsed time."""
@@ -71,8 +72,8 @@ if __name__ == "__main__":
 
     # ── Date range filter ──────────────────────────────────────────────────────
     # Set to None to use all available data, or "YYYY-MM-DD" to restrict the range.
-    DATE_FROM = "2022-01-01"   # 5-year backtest
-    DATE_TO   = "2025-06-01"
+    DATE_FROM = "2019-01-01"   # IS period
+    DATE_TO   = "2022-12-31"
 
     # ── Regime / HMM config ────────────────────────────────────────────────────
     # HMM_ENABLED      : run regime detection and add regime section to tearsheet
@@ -186,7 +187,7 @@ if __name__ == "__main__":
         eod_exit_time=dtime(23, 59),   # strategy handles its own session exits
         params={
             # Tuned: BOS + displacement≥2×ATR + ATR-10 + momentum-only + dynamic equity
-            # Result: 57.1% WR, +$50,841, Sharpe=3.93 (2022-2025)
+            # NOTE: params were tuned on 2022-2025 (contaminated); IS=2019-2022, OOS=2023-2024
             "atr_period":          10,
             "wick_threshold":      0.15,
             "rr_ratio":            1.25,
