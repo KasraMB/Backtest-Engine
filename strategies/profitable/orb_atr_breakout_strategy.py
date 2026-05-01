@@ -38,7 +38,7 @@ _RTH_OPEN_MIN  = 9  * 60 + 30  # 09:30
 _ORB_END_MIN   = 10 * 60        # 10:00 — first 30-min candle closes here
 _WIN_END_MIN   = 15 * 60        # 15:00 — last entry allowed
 
-_DAILY_DATA_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'NQ_1day_full_data.parquet')
+_DAILY_DATA_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'NQ_1day_full_data.parquet')
 
 
 def _tick(price: float) -> float:

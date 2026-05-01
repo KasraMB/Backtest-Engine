@@ -37,7 +37,7 @@ TICK        = 0.25
 
 _RTH_OPEN_MIN = 9 * 60 + 30  # 570
 
-_DAILY_DATA_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'NQ_1day_full_data.parquet')
+_DAILY_DATA_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'NQ_1day_full_data.parquet')
 
 
 def _tick(price: float) -> float:
