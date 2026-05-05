@@ -70,7 +70,7 @@ LUCIDFLEX_ACCOUNTS: dict[str, LucidFlexAccount] = {
     "50K": LucidFlexAccount(
         name="50K", starting_balance=50_000,
         profit_target=3_000, mll_amount=2_000,
-        max_micros=40, eval_fee=130, reset_fee=105,
+        max_micros=40, eval_fee=98, reset_fee=105,
         payout_cap=2_000,
     ),
     "100K": LucidFlexAccount(
@@ -82,7 +82,7 @@ LUCIDFLEX_ACCOUNTS: dict[str, LucidFlexAccount] = {
     "150K": LucidFlexAccount(
         name="150K", starting_balance=150_000,
         profit_target=9_000, mll_amount=4_500,
-        max_micros=100, eval_fee=241.50, reset_fee=225,
+        max_micros=100, eval_fee=294, reset_fee=225,
         payout_cap=3_000,
     ),
 }
