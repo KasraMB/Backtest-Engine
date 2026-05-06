@@ -108,6 +108,9 @@ FUNDED_RISK_PCT_OF_MLL= [0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 1
 MICRO_POINT_VALUE = 2.0
 MINI_POINT_VALUE  = 20.0
 
+MICRO_COMM_RT = 1.00   # MNQ: $0.50/side × 2
+MINI_COMM_RT  = 3.50   # NQ:  $1.75/side × 2
+
 # Integer scheme codes for Numba JIT (no string comparison in kernel)
 _SCHEME_FIXED_DOLLAR = np.int32(0)
 _SCHEME_PCT_BALANCE  = np.int32(1)
@@ -274,8 +277,10 @@ def _eval_loop_nb(
     risk_pct:    float,
     scheme_code: int,
     point_value: float,
-    max_t:       int,
-    comm_rt:     float,
+    max_t:        int,
+    comm_rt:      float,
+    max_minis:    int,
+    mini_comm_rt: float,
 ):
     n_sims   = all_counts.shape[0]
     max_days = all_counts.shape[1]
@@ -344,12 +349,17 @@ def _eval_loop_nb(
             last_trade_pnl = np.float32(0.0)
 
             for t in range(n_today):
-                raw_idx = all_idx[sim_i, day, t] % n_pool
-                pnl_t   = pool_pnl[raw_idx]
-                sl_t    = max(np.float32(0.25), pool_sl[raw_idx])
-                raw_c   = target / (sl_t * np.float32(point_value))
-                n_c     = max(1, min(max_micros, int(raw_c)))
-                dollar  = pnl_t * np.float32(n_c) * np.float32(point_value) - np.float32(comm_rt) * np.float32(n_c)
+                raw_idx      = all_idx[sim_i, day, t] % n_pool
+                pnl_t        = pool_pnl[raw_idx]
+                sl_t         = max(np.float32(0.25), pool_sl[raw_idx])
+                mini_risk_1c = sl_t * np.float32(20.0)
+                if max_minis > 0 and mini_risk_1c <= target:
+                    n_c    = max(1, min(max_minis, int(target / mini_risk_1c)))
+                    dollar = pnl_t * np.float32(n_c) * np.float32(20.0) - np.float32(mini_comm_rt) * np.float32(n_c)
+                else:
+                    raw_c  = target / (sl_t * np.float32(point_value))
+                    n_c    = max(1, min(max_micros, int(raw_c)))
+                    dollar = pnl_t * np.float32(n_c) * np.float32(point_value) - np.float32(comm_rt) * np.float32(n_c)
                 cum_pnl += dollar
                 day_pnl += dollar
                 last_trade_pnl = dollar
@@ -423,6 +433,8 @@ def _funded_loop_nb(
     payout_cap:       float,
     split:            float,
     comm_rt:          float,
+    max_minis:        int,
+    mini_comm_rt:     float,
 ):
     n_sims   = all_counts.shape[0]
     MAX_DAYS = all_counts.shape[1]
@@ -482,12 +494,17 @@ def _funded_loop_nb(
             last_trade_pnl = np.float32(0.0)
 
             for t in range(n_today_cap):
-                raw_idx = all_idx[sim_i, day, t] % pool_size
-                pnl_t   = pnl_pts[raw_idx]
-                sl_t    = max(np.float32(0.25), sl_dists[raw_idx])
-                raw_c   = target / (sl_t * np.float32(point_value))
-                n_c     = max(1, min(max_micros, int(raw_c)))
-                dollar  = pnl_t * np.float32(n_c) * np.float32(point_value) - np.float32(comm_rt) * np.float32(n_c)
+                raw_idx      = all_idx[sim_i, day, t] % pool_size
+                pnl_t        = pnl_pts[raw_idx]
+                sl_t         = max(np.float32(0.25), sl_dists[raw_idx])
+                mini_risk_1c = sl_t * np.float32(20.0)
+                if max_minis > 0 and mini_risk_1c <= target:
+                    n_c    = max(1, min(max_minis, int(target / mini_risk_1c)))
+                    dollar = pnl_t * np.float32(n_c) * np.float32(20.0) - np.float32(mini_comm_rt) * np.float32(n_c)
+                else:
+                    raw_c  = target / (sl_t * np.float32(point_value))
+                    n_c    = max(1, min(max_micros, int(raw_c)))
+                    dollar = pnl_t * np.float32(n_c) * np.float32(point_value) - np.float32(comm_rt) * np.float32(n_c)
                 cum_pnl += dollar
                 day_pnl += dollar
                 last_trade_pnl = dollar
@@ -569,6 +586,8 @@ def _eval_loop_nb_multi(
     point_value:      float,
     max_t:            int,
     comm_rt:          float,
+    max_minis:        int,
+    mini_comm_rt:     float,
 ):
     n_thr    = pnl_2d.shape[0]
     n_sims   = all_counts.shape[1]
@@ -641,12 +660,17 @@ def _eval_loop_nb_multi(
             breached = False; last_trade_pnl = np.float32(0.0)
 
             for t in range(n_today):
-                raw_idx = all_idx[sim_i, day, t] % n_pool_r
-                pnl_t   = pool_pnl[raw_idx]
-                sl_t    = max(np.float32(0.25), pool_sl[raw_idx])
-                raw_c   = target / (sl_t * np.float32(point_value))
-                n_c     = max(1, min(max_micros, int(raw_c)))
-                dollar  = pnl_t * np.float32(n_c) * np.float32(point_value) - np.float32(comm_rt) * np.float32(n_c)
+                raw_idx      = all_idx[sim_i, day, t] % n_pool_r
+                pnl_t        = pool_pnl[raw_idx]
+                sl_t         = max(np.float32(0.25), pool_sl[raw_idx])
+                mini_risk_1c = sl_t * np.float32(20.0)
+                if max_minis > 0 and mini_risk_1c <= target:
+                    n_c    = max(1, min(max_minis, int(target / mini_risk_1c)))
+                    dollar = pnl_t * np.float32(n_c) * np.float32(20.0) - np.float32(mini_comm_rt) * np.float32(n_c)
+                else:
+                    raw_c  = target / (sl_t * np.float32(point_value))
+                    n_c    = max(1, min(max_micros, int(raw_c)))
+                    dollar = pnl_t * np.float32(n_c) * np.float32(point_value) - np.float32(comm_rt) * np.float32(n_c)
                 cum_pnl += dollar; day_pnl += dollar; last_trade_pnl = dollar
                 if balance + cum_pnl <= mll_level:
                     breached = True; break
@@ -705,6 +729,8 @@ def _funded_loop_nb_multi(
     payout_cap:       float,
     split:            float,
     comm_rt:          float,
+    max_minis:        int,
+    mini_comm_rt:     float,
 ):
     n_thr    = pnl_2d.shape[0]
     n_sims   = all_counts.shape[1]
@@ -770,12 +796,17 @@ def _funded_loop_nb_multi(
             breached = False; last_trade_pnl = np.float32(0.0)
 
             for t in range(n_today_cap):
-                raw_idx = all_idx[sim_i, day, t] % n_pool
-                pnl_t   = pool_pnl[raw_idx]
-                sl_t    = max(np.float32(0.25), pool_sl[raw_idx])
-                raw_c   = target / (sl_t * np.float32(point_value))
-                n_c     = max(1, min(max_micros, int(raw_c)))
-                dollar  = pnl_t * np.float32(n_c) * np.float32(point_value) - np.float32(comm_rt) * np.float32(n_c)
+                raw_idx      = all_idx[sim_i, day, t] % n_pool
+                pnl_t        = pool_pnl[raw_idx]
+                sl_t         = max(np.float32(0.25), pool_sl[raw_idx])
+                mini_risk_1c = sl_t * np.float32(20.0)
+                if max_minis > 0 and mini_risk_1c <= target:
+                    n_c    = max(1, min(max_minis, int(target / mini_risk_1c)))
+                    dollar = pnl_t * np.float32(n_c) * np.float32(20.0) - np.float32(mini_comm_rt) * np.float32(n_c)
+                else:
+                    raw_c  = target / (sl_t * np.float32(point_value))
+                    n_c    = max(1, min(max_micros, int(raw_c)))
+                    dollar = pnl_t * np.float32(n_c) * np.float32(point_value) - np.float32(comm_rt) * np.float32(n_c)
                 cum_pnl += dollar; day_pnl += dollar; last_trade_pnl = dollar
                 if balance + cum_pnl <= mll_level:
                     breached = True; break
@@ -913,7 +944,9 @@ def simulate_eval_batch(
     n_sims: int,
     regime_labels: Optional[np.ndarray] = None,
     transition_matrix: Optional[np.ndarray] = None,
-    comm_rt: float = 1.30,
+    comm_rt: float = MICRO_COMM_RT,
+    max_minis: int = 0,
+    mini_comm_rt: float = MINI_COMM_RT,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Run n_sims eval simulations in parallel using Numba JIT kernel.
@@ -951,6 +984,8 @@ def simulate_eval_batch(
         float(MICRO_POINT_VALUE),
         int(MAX_T),
         float(comm_rt),
+        int(max_minis),
+        float(mini_comm_rt),
     )
     return passed, balance, days
 
@@ -969,7 +1004,9 @@ def simulate_funded_batch(
     rng: np.random.Generator,
     trades_per_day: float,
     starting_balances: np.ndarray,   # (n_passed,) — varies per sim
-    comm_rt: float = 1.30,
+    comm_rt: float = MICRO_COMM_RT,
+    max_minis: int = 0,
+    mini_comm_rt: float = MINI_COMM_RT,
 ) -> np.ndarray:
     """
     Simulate funded phase for all sims that passed eval.
@@ -1006,6 +1043,8 @@ def simulate_funded_batch(
             float(account.payout_cap),
             float(account.split),
             float(comm_rt),
+            int(max_minis),
+            float(mini_comm_rt),
         )
 
     # ── Fallback: pure NumPy path (Numba unavailable) ────────────────────────
@@ -1116,7 +1155,7 @@ def _run_scheme_worker(args: tuple) -> tuple[str, dict]:
     """
     (scheme, pnl_pts, sl_dists, account, eval_risk_pcts, funded_risk_pcts,
      sizing_mode, n_sims, seed, BS, trades_per_day,
-     regime_labels, transition_matrix, comm_rt) = args
+     regime_labels, transition_matrix, comm_rt, max_minis, mini_comm_rt) = args
 
     # Each worker gets its own RNG seeded deterministically per scheme
     scheme_seed = seed + hash(scheme) % 10_000
@@ -1136,6 +1175,8 @@ def _run_scheme_worker(args: tuple) -> tuple[str, dict]:
             regime_labels=regime_labels,
             transition_matrix=transition_matrix,
             comm_rt=comm_rt,
+            max_minis=max_minis,
+            mini_comm_rt=mini_comm_rt,
         )
         eval_cache[erp] = (passed, days_eval)
 
@@ -1147,6 +1188,8 @@ def _run_scheme_worker(args: tuple) -> tuple[str, dict]:
             pnl_pts, sl_dists, account, frp, scheme,
             sizing_mode, rng, trades_per_day, funded_start,
             comm_rt=comm_rt,
+            max_minis=max_minis,
+            mini_comm_rt=mini_comm_rt,
         )
         funded_cache[frp] = (w_all, dtw_all, n_pay_all, payout_days_all, payout_amounts_all, funded_days_all)
 
@@ -1363,7 +1406,8 @@ def run_propfirm_grid(
     _sl_dists: Optional[np.ndarray] = None,
     _trades_per_day: Optional[float] = None,
     n_trading_days: Optional[int] = None,
-    comm_rt: float = 1.30,
+    comm_rt: float = MICRO_COMM_RT,
+    prefer_nq: bool = True,
 ) -> dict:
     """
     Sweep scheme × eval_risk_pct × funded_risk_pct.
@@ -1438,16 +1482,20 @@ def run_propfirm_grid(
             _dummy_sl, _dummy_sl, _dummy_sl,
             4, 4, 4,
             25000.0, 1000.0, 1250.0, 20,
-            0.20, 0, 2.0, 3, 1.30,
+            0.20, 0, 2.0, 3, MICRO_COMM_RT, 2, MINI_COMM_RT,
         )
         _funded_loop_nb(
             _dummy, _dummy_sl, 4,
             np.ones((2, 5), dtype=np.int16),
             np.zeros((2, 5, 3), dtype=np.int32),
-            25000.0, 1000.0, 20, 0.20, 0, 2.0, 3, 6, 1500.0, 0.90, 1.30,
+            25000.0, 1000.0, 20, 0.20, 0, 2.0, 3, 6, 1500.0, 0.90,
+            MICRO_COMM_RT, 2, MINI_COMM_RT,
         )
 
     BS = 500
+
+    max_minis    = account.max_micros // 10 if prefer_nq else 0
+    mini_comm_rt = MINI_COMM_RT
 
     # ── Determine worker count ────────────────────────────────────────────────
     import os
@@ -1463,7 +1511,7 @@ def run_propfirm_grid(
     worker_args = [
         (scheme, pnl_pts, sl_dists, account, eval_risk_pcts, funded_risk_pcts,
          sizing_mode, n_sims, seed, BS, trades_per_day,
-         regime_labels, transition_matrix, comm_rt)
+         regime_labels, transition_matrix, comm_rt, max_minis, mini_comm_rt)
         for scheme in schemes
     ]
 
@@ -1529,7 +1577,9 @@ def simulate_eval_batch_multi(
     n_sims:         int,
     regime_labels_list: list[Optional[np.ndarray]],
     transition_matrix:  Optional[np.ndarray],
-    comm_rt: float = 1.30,
+    comm_rt: float = MICRO_COMM_RT,
+    max_minis: int = 0,
+    mini_comm_rt: float = MINI_COMM_RT,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Run eval simulation for all thresholds simultaneously.
@@ -1579,6 +1629,7 @@ def simulate_eval_batch_multi(
         float(risk_pct), int(SCHEME_CODE.get(scheme, 0)),
         float(MICRO_POINT_VALUE), int(MAX_T),
         float(comm_rt),
+        int(max_minis), float(mini_comm_rt),
     )
     return passed, balance, days
 
@@ -1591,8 +1642,10 @@ def simulate_funded_batch_multi(
     risk_pct:   float,
     scheme:     str,
     rng:        np.random.Generator,
-    n_sims:     int,
-    comm_rt:    float = 1.30,
+    n_sims:       int,
+    comm_rt:      float = MICRO_COMM_RT,
+    max_minis:    int = 0,
+    mini_comm_rt: float = MINI_COMM_RT,
 ) -> tuple:
     """
     Run funded simulation for all thresholds simultaneously.
@@ -1619,6 +1672,7 @@ def simulate_funded_batch_multi(
         int(MAX_T), int(account.max_payouts),
         float(account.payout_cap), float(account.split),
         float(comm_rt),
+        int(max_minis), float(mini_comm_rt),
     )
 
 
@@ -1638,7 +1692,8 @@ def run_propfirm_grid_threshold_sweep(
     schemes:        list[str] = None,
     seed:           int = 42,
     n_workers:      int = None,
-    comm_rt:        float = 1.30,
+    comm_rt:        float = MICRO_COMM_RT,
+    prefer_nq:      bool = True,
 ) -> list[dict]:
     """
     Run the full propfirm grid for all thresholds simultaneously.
@@ -1660,8 +1715,10 @@ def run_propfirm_grid_threshold_sweep(
     if funded_risk_pcts is None: funded_risk_pcts = FUNDED_RISK_PCT_OF_MLL
     if schemes         is None: schemes         = RISK_GEOMETRIES
 
-    n_thr = len(pnl_list)
-    BS    = 500
+    n_thr        = len(pnl_list)
+    BS           = 500
+    max_minis    = account.max_micros // 10 if prefer_nq else 0
+    mini_comm_rt = MINI_COMM_RT
 
     # ── Numba warmup ─────────────────────────────────────────────────────────
     if _NUMBA_AVAILABLE:
@@ -1676,13 +1733,14 @@ def run_propfirm_grid_threshold_sweep(
         _eval_loop_nb_multi(
             _d, _ds, _sz, _d, _d, _d, _ds, _ds, _ds, _rs,
             _ac, _ai, _rseq,
-            25000.0, 1000.0, 1250.0, 20, 0.20, 0, 2.0, 3, 1.30,
+            25000.0, 1000.0, 1250.0, 20, 0.20, 0, 2.0, 3, MICRO_COMM_RT, 2, MINI_COMM_RT,
         )
         _fac = np.ones((2, 2, 5), dtype=np.int16)
         _fai = np.zeros((2, 5, 3), dtype=np.int32)
         _funded_loop_nb_multi(
             _d, _ds, _sz, _fac, _fai,
-            25000.0, 1000.0, 20, 0.20, 0, 2.0, 3, 6, 1500.0, 0.90, 1.30,
+            25000.0, 1000.0, 20, 0.20, 0, 2.0, 3, 6, 1500.0, 0.90,
+            MICRO_COMM_RT, 2, MINI_COMM_RT,
         )
 
     # ── Regime transition matrix (shared across thresholds) ──────────────────
@@ -1707,6 +1765,8 @@ def run_propfirm_grid_threshold_sweep(
                 erp, scheme, rng, n_sims,
                 regime_labels_list, transition_matrix,
                 comm_rt=comm_rt,
+                max_minis=max_minis,
+                mini_comm_rt=mini_comm_rt,
             )
             eval_cache[erp] = (passed, days_eval)
 
@@ -1717,6 +1777,8 @@ def run_propfirm_grid_threshold_sweep(
                 pnl_list, sl_list, tpd_list, account,
                 frp, scheme, rng, n_sims,
                 comm_rt=comm_rt,
+                max_minis=max_minis,
+                mini_comm_rt=mini_comm_rt,
             )
 
         # ── Assemble per-threshold result dicts ────────────────────────────
