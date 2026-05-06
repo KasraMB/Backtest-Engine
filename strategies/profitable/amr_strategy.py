@@ -261,19 +261,12 @@ class AnchoredMeanReversionStrategy(BaseStrategy):
         self.sl_ticks_high  = int(p.get("sl_ticks_high",      200))
         self.window_mins    = int(p.get("window_mins",         90))
         self.sessions       = list(p.get("sessions",          ["930", "1400"]))
-        self.risk_per_trade = float(p.get("risk_per_trade",   0.01))
-        self.starting_equity= float(p.get("starting_equity",  100_000))
-        self.equity_mode    = str(p.get("equity_mode",        "dynamic"))
-
         self._times_min:  Optional[np.ndarray] = None
         self._long_sig:   Optional[np.ndarray] = None
         self._short_sig:  Optional[np.ndarray] = None
         self._sl_arr:     Optional[np.ndarray] = None
         self._tp_arr:     Optional[np.ndarray] = None
         self._sig_mask:   Optional[np.ndarray] = None
-
-        self._eq_cache   = self.starting_equity
-        self._eq_cache_n = 0
 
     def _setup(self, data: MarketData) -> None:
         if self._long_sig is not None:
@@ -310,15 +303,6 @@ class AnchoredMeanReversionStrategy(BaseStrategy):
         self._setup(data)
         return self._sig_mask
 
-    def _current_equity(self) -> float:
-        if self.equity_mode == "fixed":
-            return self.starting_equity
-        n = len(self.closed_trades)
-        while self._eq_cache_n < n:
-            self._eq_cache += self.closed_trades[self._eq_cache_n].net_pnl_dollars
-            self._eq_cache_n += 1
-        return self._eq_cache
-
     def generate_signals(self, data: MarketData, i: int) -> Optional[Order]:
         self._setup(data)
 
@@ -339,8 +323,13 @@ class AnchoredMeanReversionStrategy(BaseStrategy):
         sl_price = round(entry - direction * sl_dist, 2)
         tp_price = round(entry + direction * tp_dist, 2)
 
-        equity    = self._current_equity()
-        contracts = max(1, int(equity * self.risk_per_trade / (sl_dist * POINT_VALUE)))
+        # Fixed sizing by SL tier (NQ minis)
+        if sl_dist <= 16.5:    # 66 ticks
+            contracts = 3
+        elif sl_dist <= 25.0:  # 100 ticks
+            contracts = 2
+        else:                  # 200 ticks
+            contracts = 1
 
         return Order(
             direction    = direction,
