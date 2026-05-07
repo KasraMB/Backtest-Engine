@@ -1,62 +1,47 @@
-# New Strategies Implementation Plan
+# AnchoredMeanReversion v2 — Full Spec Parity + Parameter Sweep
 
-## Strategies to implement (from Profitable Strategies zip)
-1. IBS (Internal Bar Strength) — daily mean reversion
-2. TrendFollowing (TradingWithRayner) — swing/multi-day trend
-3. TurtleSoup (Linda Raschke) — 4H contrarian breakout fade
+## Approved plan (user approved 2026-05-07)
 
-## Data available
-- `data/NQ_1day_full_data.parquet` — D1 OHLCV (used by ORB already)
-- `data/NQ_1m.parquet` — 1m bars (engine backbone)
+### Phase 1: Save current strategy (v1 backup)
+- [x] Copy amr_strategy.py → amr_strategy_v1.py
 
----
+### Phase 2: Rewrite AnchoredMeanReversionStrategy — full spec parity
+Bugs to fix:
+- [x] BOS direction: long needs brokeHigh, short needs brokeLow (not OR of both)
+- [x] Direction filter: after against_fair_mins, only mean-rev trades allowed
+- [x] Window off-by-one: < window_mins (was <=)
 
-## Step 1: IBS Strategy [ ]
-File: `strategies/ibs_strategy.py`
+New features:
+- [x] displacement_style: "Upper Wick" (default) | "Marubozu"
+- [x] threshold_mw: float (Marubozu wick ratio, default 0.15)
+- [x] threshold_uw: float (Upper Wick close position, replaces old `threshold`, default 0.8)
+- [x] against_fair_mins: int (direction filter window, default 15)
+- [x] skip_first_mins: int (skip first N mins of session window, default 0)
+- [x] filter_tp_beyond_fair: bool (TP must cross fair price by pct%, default False)
+- [x] tp_beyond_fair_pct: float (default 50.0)
+- [x] move_sl_to_entry: bool (move SL to entry when price hits fair, default False)
+- [x] link1400to930: bool (1400 session fair = 930 fair, default False)
+- [x] window_mins_per_session: dict (per-session window override, e.g. {"930": 60, "1400": 90})
 
-Logic:
-- IBS = (D1_close - D1_low) / (D1_high - D1_low) from prior day
-- At RTH open (9:30 ET): if IBS < low_thresh → long; if IBS > high_thresh → short
-- SL = ATR(14) × sl_atr_mult
-- TP = SL × rr_ratio
-- Force exit at eod_exit_time (e.g. 15:00)
-- signal_bar_mask: only 9:30 bars → very fast sweep
+### Phase 3: Parameter sweep (tmp_amr_v2_sweep.py)
+Grid:
+- sessions × window_per_session: 13 combos
+- displacement_style: Upper Wick / Marubozu (2)
+- against_fair_mins: [0, 15, 30] (3)
+- tp_multiple: [1.0, 1.5, 2.0] (3)
+- swing_periods: [1, 2] (2)
+- filter_tp_beyond_fair: [False, True@50%] (2)
+Total: ~936 configs
 
-Grid params: ibs_low_thresh, ibs_high_thresh, sl_atr_mult, rr_ratio, use_200sma_filter
+Metric: P($0) asc in reinvestment MC (budget=$300, horizon=84d, goal=$10K)
+Fixed: account=25K LucidFlex, ERP=0.2, FRP=1.0
+- [x] Write sweep script
+- [x] Run sweep
+- [x] Report top configs in table
+- [x] Explain best config + account strategy
 
-## Step 2: TrendFollowing Strategy [ ]
-File: `strategies/trend_following_strategy.py`
-
-Logic:
-- D1 indicators: SMA(50), SMA(100), 200-bar highest-high, 200-bar lowest-low
-- At each RTH open: check if D1 close broke out of 200-bar range + SMA trend aligned
-- Enter market at 9:30 open, hold position (no EOD exit — eod_exit_time=23:59)
-- SL: ATR(14) × atr_mult trailing (updated each bar in manage_position)
-- No TP (pure trend following exits on stop only)
-- One position at a time, can hold multiple days
-
-Grid params: sma_fast, sma_slow, lookback, atr_mult (sl multiplier)
-
-## Step 3: TurtleSoup Strategy [ ]
-File: `strategies/turtle_soup_strategy.py`
-
-Logic:
-- Derive 4H bars from 1m data (bars at 00:00, 04:00, 08:00, 12:00, 16:00, 20:00)
-- Track 20-bar 4H rolling high/low
-- Breakout above 20H high: watch for reversal → enter SHORT when 1m closes back below high
-- Breakout below 20H low: watch for reversal → enter LONG when 1m closes back above low
-- SL at the breakout extreme (recent 4H bar high/low)
-- TP = SL × rr_ratio (2:1 or 3:1)
-
-Grid params: lookback_4h, rr_ratio, sl_buffer_atr, session filter
-
-## Step 4: Sweep scripts [ ]
-- `sweep7_ibs_trend.py` — sweep IBS + TrendFollowing on IS data (2019-2024)
-- `sweep8_turtle_soup.py` — sweep TurtleSoup
-
-## Step 5: Review results and pick best combos [ ]
-
-## Rules
-- Implement one at a time, test after each
-- signal_bar_mask on every strategy for sweep speed
-- IS data only (2019-2024) — same as sweep6
+## Notes
+- Numba kernel recompiles on first run after signature change (expected ~30-60s)
+- sweep uses ThreadPoolExecutor(4) for parallel runs
+- simulate_lifecycles N=5000, n_mc=1000 for sweep speed
+- v1 strategy preserved for continuity
