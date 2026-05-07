@@ -84,6 +84,7 @@ def _compute_signals(
     skip_first_mins:   int,       # skip first N bars of each session window
     filter_tp_beyond_fair: int,   # 1=require TP to extend past fair by pct
     tp_beyond_fair_pct:    float, # 0–100, portion of TP range that must be past fair
+    require_bos:   int,          # 1=require BOS for signal (Pine default), 0=allow without BOS
     atr_sl_low:    float,
     atr_sl_high:   float,
     sl_ticks_low:  int,
@@ -261,10 +262,12 @@ def _compute_signals(
                     ratio = (cl - active_fair) / tp_d
                     short_tp_ok = ratio >= (tp_beyond_fair_pct / 100.0)
 
-        # ── Signals: long↔brokeHigh, short↔brokeLow ───────────────────────
-        if bull_cond and broke_high and long_dir_ok and long_tp_ok:
+        # ── Signals: BOS condition gated by require_bos ───────────────────
+        bos_long  = (broke_high or not require_bos)
+        bos_short = (broke_low  or not require_bos)
+        if bull_cond and bos_long and long_dir_ok and long_tp_ok:
             long_sig[i]  = True
-        elif bear_cond and broke_low and short_dir_ok and short_tp_ok:
+        elif bear_cond and bos_short and short_dir_ok and short_tp_ok:
             short_sig[i] = True
 
     return long_sig, short_sig, sl_arr, tp_arr
@@ -300,6 +303,7 @@ class AnchoredMeanReversionStrategy(BaseStrategy):
         self.window_mins_per_session: dict = dict(p.get("window_mins_per_session", {}))
 
         # Spec-parity params
+        self.require_bos          = bool(p.get("require_bos",          True))
         self.against_fair_mins    = int(p.get("against_fair_mins",    15))
         self.skip_first_mins      = int(p.get("skip_first_mins",      0))
         self.filter_tp_beyond_fair = bool(p.get("filter_tp_beyond_fair", False))
@@ -365,6 +369,7 @@ class AnchoredMeanReversionStrategy(BaseStrategy):
             link_s2_to_s1,
             self.against_fair_mins, self.skip_first_mins,
             1 if self.filter_tp_beyond_fair else 0, self.tp_beyond_fair_pct,
+            1 if self.require_bos else 0,
             self.atr_sl_low, self.atr_sl_high,
             self.sl_ticks_low, self.sl_ticks_mid, self.sl_ticks_high,
             self.tp_multiple,
