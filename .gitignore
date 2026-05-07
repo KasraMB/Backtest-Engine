@@ -13,6 +13,8 @@ sweep_*
 successful*
 graphify-out*
 venv*
-sweeps*
+sweep*
 trade_logs/*
 CLAUDE*
+.claude/
+docs*
