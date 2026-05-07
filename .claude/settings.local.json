@@ -40,7 +40,16 @@
       "Bash(mv sweep_propfirm.py sweep_propfirm2.py sweep_orb.py sweep_asia.py sweep_gap.py sweep3_structural.py sweep4_aggressive.py sweep5_technical.py sweep6_orb_vwap.py sweep7_new_strategies.py sweeps/scripts/)",
       "Bash(mv sweep_log.txt sweep2_log.txt sweep3_log.txt sweep4_log.txt sweep5_log.txt sweep6_log.txt sweep7_log.txt sweeps/logs/)",
       "Bash(mv sweep5_err.txt sweep6_err.txt sweep7_err.txt sweeps/logs/)",
-      "Bash(mv sweep_results sweep_results2 sweep_results3 sweep_results4 sweep_results5 sweep_results6 sweep_results7 sweeps/)"
+      "Bash(mv sweep_results sweep_results2 sweep_results3 sweep_results4 sweep_results5 sweep_results6 sweep_results7 sweeps/)",
+      "Bash(grep -n \"_DAILY_DATA_PATH\" strategies/profitable/orb_atr_breakout_strategy.py strategies/profitable/trend_following_strategy.py strategies/profitable/ibs_strategy.py)",
+      "Bash(grep -n \"_DAILY_DATA_PATH\" strategies/no_edge/ibs_strategy.py)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(taskkill *)",
+      "Bash(echo \"---EXIT:$?---\")",
+      "Bash(python -u tmp_reinvest.py)",
+      "Bash(echo \"Started PID $!\")",
+      "Bash(grep *)",
+      "Bash(ping -n 90 127.0.0.1)"
     ]
   },
   "statusLine": {

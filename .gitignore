@@ -8,3 +8,11 @@ data/*
 **/__pycache__/
 **/.pytest_cache/
 verification_output.txt
+tmp*
+sweep_*
+successful*
+graphify-out*
+venv*
+sweeps*
+trade_logs/*
+CLAUDE*

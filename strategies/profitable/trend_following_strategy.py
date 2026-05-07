@@ -1,19 +1,24 @@
 """
 TradingWithRayner Trend Following Strategy — NQ Futures
 
-Adapted from the TradingWithRayner MQ5 EA.
+Adapted from the TradingWithRayner MQ5 EA (fxDreema-generated, original: USDJPY D1).
 
 Entry (LONG):
-  - D1 SMA(sma_fast) > D1 SMA(sma_slow)   (uptrend)
-  - Prior D1 close broke above the lookback-bar highest high
+  - D1 SMA(50) > D1 SMA(100)   (uptrend)
+  - Prior D1 close broke above the highest high of the prior 200 bars
 
 Entry (SHORT):
-  - D1 SMA(sma_fast) < D1 SMA(sma_slow)   (downtrend)
-  - Prior D1 close broke below the lookback-bar lowest low
+  - D1 SMA(50) < D1 SMA(100)   (downtrend)
+  - Prior D1 close broke below the lowest low of the prior 200 bars
 
-Exit:
-  - ATR(14) × atr_mult trailing stop — updated each bar in manage_position
-  - No fixed TP (pure trend following)
+Initial SL (matches original):
+  - Long:  SL = prior day's High  - ATR(14) × atr_mult
+  - Short: SL = prior day's Low   + ATR(14) × atr_mult
+
+Exit (matches original):
+  - ATR buffer is fixed at entry (not recalculated each bar)
+  - Trailing stop moves only when a new high/low watermark is made (from bar High/Low)
+  - No fixed TP
   - Set RunConfig.eod_exit_time = time(23, 59) to allow overnight holds
 
 Entry timing: checked at RTH open (9:30 ET) each day.
@@ -50,9 +55,9 @@ def _tick(price: float) -> float:
 
 def _load_daily_arrays(sma_fast: int, sma_slow: int, lookback: int) -> tuple:
     """
-    Returns (date_arr, fast_sma_arr, slow_sma_arr, hh_arr, ll_arr, atr14_arr, close_arr).
-    hh_arr[i] = highest high of the prior `lookback` bars (not including bar i).
-    ll_arr[i] = lowest  low  of the prior `lookback` bars.
+    Returns (date, sma_fast, sma_slow, hh, ll, atr14, close, prev_high, prev_low).
+    hh/ll = rolling max/min of prior `lookback` bars (excluding the bar itself).
+    prev_high/prev_low = the prior completed bar's actual high/low (for initial SL).
     """
     df = pd.read_parquet(_DAILY_DATA_PATH)
     df = df.rename(columns={'Last': 'Close'})
@@ -82,6 +87,8 @@ def _load_daily_arrays(sma_fast: int, sma_slow: int, lookback: int) -> tuple:
         df['ll'].values.astype(np.float64),
         df['atr14'].values.astype(np.float64),
         df['Close'].values.astype(np.float64),
+        df['High'].shift(1).values.astype(np.float64),  # prior bar's high
+        df['Low'].shift(1).values.astype(np.float64),   # prior bar's low
     )
 
 
@@ -119,17 +126,22 @@ class TrendFollowingStrategy(BaseStrategy):
 
         self._times_min:    Optional[np.ndarray] = None
         self._bar_day:      Optional[np.ndarray] = None
-        self._bar_sma_fast: Optional[np.ndarray] = None
-        self._bar_sma_slow: Optional[np.ndarray] = None
-        self._bar_hh:       Optional[np.ndarray] = None
-        self._bar_ll:       Optional[np.ndarray] = None
-        self._bar_atr14:    Optional[np.ndarray] = None
-        self._bar_prev_cls: Optional[np.ndarray] = None
-        self._sig_mask:     Optional[np.ndarray] = None
+        self._bar_sma_fast:   Optional[np.ndarray] = None
+        self._bar_sma_slow:   Optional[np.ndarray] = None
+        self._bar_hh:         Optional[np.ndarray] = None
+        self._bar_ll:         Optional[np.ndarray] = None
+        self._bar_atr14:      Optional[np.ndarray] = None
+        self._bar_prev_cls:   Optional[np.ndarray] = None
+        self._bar_prev_high:  Optional[np.ndarray] = None  # prior day's actual high
+        self._bar_prev_low:   Optional[np.ndarray] = None  # prior day's actual low
+        self._sig_mask:       Optional[np.ndarray] = None
 
-        # Trailing stop state
-        self._trail_sl:  float = 0.0
-        self._direction: int   = 0
+        # Trailing stop state (fixed ATR buffer from entry; trail from high/low watermark)
+        self._trail_sl:       float = 0.0
+        self._direction:      int   = 0
+        self._entry_atr_dist: float = 0.0  # ATR * mult fixed at entry
+        self._high_wm:        float = 0.0  # running high watermark for longs
+        self._low_wm:         float = 0.0  # running low watermark for shorts
 
         self._today        = None
         self._traded_today = False
@@ -153,8 +165,8 @@ class TrendFollowingStrategy(BaseStrategy):
         else:
             self._bar_day = idx.normalize().view(np.int64) // (86_400 * 10**9)
 
-        d_dates, d_sma_f, d_sma_s, d_hh, d_ll, d_atr14, d_close = _get_daily_arrays(
-            self.sma_fast, self.sma_slow, self.lookback
+        d_dates, d_sma_f, d_sma_s, d_hh, d_ll, d_atr14, d_close, d_phigh, d_plow = (
+            _get_daily_arrays(self.sma_fast, self.sma_slow, self.lookback)
         )
 
         bar_dates = idx.normalize().values.astype('datetime64[D]')
@@ -163,12 +175,14 @@ class TrendFollowingStrategy(BaseStrategy):
         valid    = pos >= 0
         idx_safe = np.clip(pos, 0, len(d_dates) - 1)
 
-        self._bar_sma_fast = np.where(valid, d_sma_f[idx_safe],  np.nan)
-        self._bar_sma_slow = np.where(valid, d_sma_s[idx_safe],  np.nan)
-        self._bar_hh       = np.where(valid, d_hh[idx_safe],     np.nan)
-        self._bar_ll       = np.where(valid, d_ll[idx_safe],     np.nan)
-        self._bar_atr14    = np.where(valid, d_atr14[idx_safe],  np.nan)
-        self._bar_prev_cls = np.where(valid, d_close[idx_safe],  np.nan)
+        self._bar_sma_fast  = np.where(valid, d_sma_f[idx_safe],  np.nan)
+        self._bar_sma_slow  = np.where(valid, d_sma_s[idx_safe],  np.nan)
+        self._bar_hh        = np.where(valid, d_hh[idx_safe],     np.nan)
+        self._bar_ll        = np.where(valid, d_ll[idx_safe],     np.nan)
+        self._bar_atr14     = np.where(valid, d_atr14[idx_safe],  np.nan)
+        self._bar_prev_cls  = np.where(valid, d_close[idx_safe],  np.nan)
+        self._bar_prev_high = np.where(valid, d_phigh[idx_safe],  np.nan)
+        self._bar_prev_low  = np.where(valid, d_plow[idx_safe],   np.nan)
 
         # signal_bar_mask: only 9:30 RTH open bars
         self._sig_mask = (self._times_min == _RTH_OPEN_MIN)
@@ -209,8 +223,14 @@ class TrendFollowingStrategy(BaseStrategy):
         if atr14 <= 0:
             return None
 
-        entry = float(data.open_1m[i])
-        sl_dist = self.atr_mult * atr14
+        prev_high = float(self._bar_prev_high[i])
+        prev_low  = float(self._bar_prev_low[i])
+
+        if any(np.isnan(v) for v in [prev_high, prev_low]):
+            return None
+
+        entry    = float(data.open_1m[i])
+        sl_dist  = self.atr_mult * atr14
 
         direction = 0
         if sma_f > sma_s and prev_cls > hh:
@@ -221,12 +241,15 @@ class TrendFollowingStrategy(BaseStrategy):
         if direction == 0:
             return None
 
+        # Original: SL anchored at prior bar's High/Low (not entry price), fixed ATR buffer
         if direction == 1:
-            sl_price = _tick(entry - sl_dist)
-            tp_price = None   # no TP — trailing stop only
-        else:
-            sl_price = _tick(entry + sl_dist)
+            sl_price = _tick(prev_high - sl_dist)
             tp_price = None
+        else:
+            sl_price = _tick(prev_low + sl_dist)
+            tp_price = None
+
+        self._entry_atr_dist = sl_dist  # stored for trailing — fixed for life of trade
 
         equity    = self._current_equity()
         contracts = max(1, int(equity * self.risk_per_trade / (sl_dist * POINT_VALUE)))
@@ -243,9 +266,13 @@ class TrendFollowingStrategy(BaseStrategy):
         )
 
     def on_fill(self, position: OpenPosition, data: MarketData, bar_index: int) -> None:
-        # Store initial trailing stop distance; trail_sl tracks the stop level
         self._trail_sl  = position.sl_price
         self._direction = position.direction
+        # Watermark starts at entry price; trails from the running intrabar high/low
+        if self._direction == 1:
+            self._high_wm = position.entry_price
+        else:
+            self._low_wm  = position.entry_price
         position.set_initial_sl_tp(position.sl_price, None)
 
     def manage_position(
@@ -253,22 +280,24 @@ class TrendFollowingStrategy(BaseStrategy):
     ) -> Optional[PositionUpdate]:
         self._setup(data)
 
-        atr14 = float(self._bar_atr14[i])
-        if np.isnan(atr14) or atr14 <= 0:
-            return None
-
-        close = float(data.close_1m[i])
-        sl_dist = self.atr_mult * atr14
+        # Use the bar's actual high/low (not close) to update the watermark,
+        # then trail the stop at watermark - fixed ATR buffer from entry.
+        bar_high = float(data.high_1m[i])
+        bar_low  = float(data.low_1m[i])
 
         if self._direction == 1:
-            new_sl = _tick(close - sl_dist)
-            if new_sl > self._trail_sl:
-                self._trail_sl = new_sl
-                return PositionUpdate(new_sl_price=new_sl)
+            if bar_high > self._high_wm:
+                self._high_wm = bar_high
+                new_sl = _tick(self._high_wm - self._entry_atr_dist)
+                if new_sl > self._trail_sl:
+                    self._trail_sl = new_sl
+                    return PositionUpdate(new_sl_price=new_sl)
         else:
-            new_sl = _tick(close + sl_dist)
-            if new_sl < self._trail_sl:
-                self._trail_sl = new_sl
-                return PositionUpdate(new_sl_price=new_sl)
+            if bar_low < self._low_wm:
+                self._low_wm = bar_low
+                new_sl = _tick(self._low_wm + self._entry_atr_dist)
+                if new_sl < self._trail_sl:
+                    self._trail_sl = new_sl
+                    return PositionUpdate(new_sl_price=new_sl)
 
         return None
