@@ -10,6 +10,7 @@ from backtest.propfirm.correlated_mc import (
     AccountSlot,
     AccountManagementStrategy,
     _sample_regime_sequences,
+    _draw_day_trades,
 )
 from backtest.regime.hmm import RegimeResult
 
@@ -115,3 +116,49 @@ class TestRegimeSequences:
         seqs = _sample_regime_sequences(rr, 10_000, 1, np.random.default_rng(0))
         regime_0_frac = (seqs[:, 0] == 0).mean()
         assert abs(regime_0_frac - 0.2) < 0.03, f"Expected ~0.2, got {regime_0_frac}"
+
+
+class TestDrawDayTrades:
+    def test_no_trade_when_tpd_zero(self):
+        cfg = _make_cfg()
+        cfg.tpd_by_regime[0] = 0.0
+        result = _draw_day_trades([cfg], regime=0, rng=np.random.default_rng(0))
+        assert result["A"] is None
+
+    def test_trade_fires_when_tpd_high(self):
+        cfg = StrategyConfig(
+            "A",
+            {0: np.array([5.0], dtype=np.float32)},
+            {0: np.array([4.0], dtype=np.float32)},
+            {0: 100.0}, 30, 0.2, 0.4,
+        )
+        result = _draw_day_trades([cfg], regime=0, rng=np.random.default_rng(0))
+        assert result["A"] is not None
+        pnl, sl = result["A"]
+        assert pnl == pytest.approx(5.0)
+        assert sl == pytest.approx(4.0)
+
+    def test_same_config_appears_once(self):
+        cfg = _make_cfg()
+        # Pass the same config twice — should deduplicate by name
+        result = _draw_day_trades([cfg, cfg], regime=0, rng=np.random.default_rng(0))
+        assert list(result.keys()) == ["A"]
+
+    def test_different_configs_independent(self):
+        cfg_a = _make_cfg("A")
+        cfg_b = _make_cfg("B")
+        cfg_a.tpd_by_regime[0] = 100.0
+        cfg_b.tpd_by_regime[0] = 100.0
+        result = _draw_day_trades([cfg_a, cfg_b], regime=0, rng=np.random.default_rng(0))
+        assert "A" in result and "B" in result
+
+    def test_regime_selects_correct_pool(self):
+        cfg = StrategyConfig(
+            "A",
+            {0: np.array([1.0], dtype=np.float32), 1: np.array([99.0], dtype=np.float32)},
+            {0: np.array([4.0], dtype=np.float32), 1: np.array([4.0], dtype=np.float32)},
+            {0: 100.0, 1: 100.0}, 30, 0.2, 0.4,
+        )
+        result = _draw_day_trades([cfg], regime=1, rng=np.random.default_rng(0))
+        assert result["A"] is not None
+        assert result["A"][0] == pytest.approx(99.0)

@@ -79,3 +79,31 @@ def _sample_regime_sequences(
                     n_regimes, size=int(mask.sum()), p=trans[r]
                 )
     return seqs
+
+
+def _draw_day_trades(
+    configs: List[StrategyConfig],
+    regime: int,
+    rng: np.random.Generator,
+) -> Dict[str, Optional[Tuple[float, float]]]:
+    """
+    For each unique config (by name), determine whether a trade fires today.
+    Returns {name: (pnl_pts, sl_dist)} or {name: None}.
+    Draws are SHARED — all slots running the same config see the same outcome.
+    """
+    results: Dict[str, Optional[Tuple[float, float]]] = {}
+    seen: set = set()
+    for cfg in configs:
+        if cfg.name in seen:
+            continue
+        seen.add(cfg.name)
+        tpd = cfg.tpd_by_regime[regime]
+        n_trades = int(rng.poisson(tpd))
+        if n_trades == 0:
+            results[cfg.name] = None
+        else:
+            pool_pnl = cfg.pnl_pts_by_regime[regime]
+            pool_sl  = cfg.sl_dists_by_regime[regime]
+            idx = int(rng.integers(0, len(pool_pnl)))
+            results[cfg.name] = (float(pool_pnl[idx]), float(pool_sl[idx]))
+    return results
