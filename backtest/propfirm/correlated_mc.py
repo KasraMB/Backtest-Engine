@@ -107,3 +107,25 @@ def _draw_day_trades(
             idx = int(rng.integers(0, len(pool_pnl)))
             results[cfg.name] = (float(pool_pnl[idx]), float(pool_sl[idx]))
     return results
+
+
+def _resolve_slot_trade(
+    slot: AccountSlot,
+    day_trades: Dict[str, Optional[Tuple[float, float]]],
+) -> Optional[Tuple[StrategyConfig, float, float]]:
+    """
+    Returns (config, pnl_pts, sl_dist) for the config that fires earliest today,
+    or None if no config fired. Ties broken by list index (lower = higher priority).
+    """
+    candidates = [
+        cfg for cfg in slot.configs
+        if day_trades.get(cfg.name) is not None
+    ]
+    if not candidates:
+        return None
+    winner = min(
+        candidates,
+        key=lambda c: (c.entry_time_min, slot.configs.index(c)),
+    )
+    pnl, sl = day_trades[winner.name]  # type: ignore[misc]
+    return (winner, pnl, sl)

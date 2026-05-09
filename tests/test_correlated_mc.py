@@ -11,6 +11,7 @@ from backtest.propfirm.correlated_mc import (
     AccountManagementStrategy,
     _sample_regime_sequences,
     _draw_day_trades,
+    _resolve_slot_trade,
 )
 from backtest.regime.hmm import RegimeResult
 
@@ -162,3 +163,44 @@ class TestDrawDayTrades:
         result = _draw_day_trades([cfg], regime=1, rng=np.random.default_rng(0))
         assert result["A"] is not None
         assert result["A"][0] == pytest.approx(99.0)
+
+
+class TestResolveSlotTrade:
+    def test_no_trade_when_none(self):
+        cfg = _make_cfg()
+        slot = AccountSlot([cfg])
+        assert _resolve_slot_trade(slot, {"A": None}) is None
+
+    def test_single_config_fires(self):
+        cfg = _make_cfg()
+        slot = AccountSlot([cfg])
+        result = _resolve_slot_trade(slot, {"A": (5.0, 4.0)})
+        assert result is not None
+        winner, pnl, sl = result
+        assert winner.name == "A"
+        assert pnl == 5.0
+
+    def test_earliest_entry_wins(self):
+        cfg_a = _make_cfg("A", entry_time_min=60)
+        cfg_b = _make_cfg("B", entry_time_min=30)
+        slot = AccountSlot([cfg_a, cfg_b])
+        trades = {"A": (1.0, 4.0), "B": (2.0, 4.0)}
+        winner, pnl, _ = _resolve_slot_trade(slot, trades)
+        assert winner.name == "B"
+        assert pnl == 2.0
+
+    def test_tie_uses_list_priority(self):
+        cfg_a = _make_cfg("A", entry_time_min=30)
+        cfg_b = _make_cfg("B", entry_time_min=30)
+        slot = AccountSlot([cfg_a, cfg_b])  # A at index 0 = priority
+        trades = {"A": (1.0, 4.0), "B": (2.0, 4.0)}
+        winner, _, _ = _resolve_slot_trade(slot, trades)
+        assert winner.name == "A"
+
+    def test_only_fired_configs_eligible(self):
+        cfg_a = _make_cfg("A", entry_time_min=30)
+        cfg_b = _make_cfg("B", entry_time_min=10)  # earlier, but didn't fire
+        slot = AccountSlot([cfg_a, cfg_b])
+        trades = {"A": (1.0, 4.0), "B": None}
+        winner, _, _ = _resolve_slot_trade(slot, trades)
+        assert winner.name == "A"
