@@ -9,6 +9,7 @@ data/*
 **/.pytest_cache/
 verification_output.txt
 md_cache.pkl
+tasks/
 tmp*
 sweep_*
 successful*
