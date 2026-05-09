@@ -8,6 +8,7 @@ from backtest.propfirm.correlated_mc import (
     StrategyConfig,
     AccountSlot,
     AccountManagementStrategy,
+    _sample_regime_sequences,
 )
 
 
@@ -48,3 +49,34 @@ class TestDataclasses:
         )
         assert s.trigger == "greedy"
         assert s.max_concurrent == 3
+
+
+class TestRegimeSequences:
+    def _rm(self, trans=None):
+        if trans is None:
+            trans = np.array([[0.7, 0.2, 0.1],
+                               [0.1, 0.8, 0.1],
+                               [0.1, 0.2, 0.7]])
+        return RegimeModel(3, trans, np.full(3, 1/3))
+
+    def test_shape(self):
+        seqs = _sample_regime_sequences(self._rm(), 100, 84, np.random.default_rng(0))
+        assert seqs.shape == (100, 84)
+
+    def test_valid_states(self):
+        seqs = _sample_regime_sequences(self._rm(), 200, 84, np.random.default_rng(1))
+        assert int(seqs.min()) >= 0
+        assert int(seqs.max()) <= 2
+
+    def test_absorbing_state(self):
+        rm = RegimeModel(3, np.eye(3), np.array([1.0, 0.0, 0.0]))
+        seqs = _sample_regime_sequences(rm, 10, 10, np.random.default_rng(0))
+        assert np.all(seqs == 0), "Absorbing state 0 should persist"
+
+    def test_two_regime_transitions(self):
+        # Always transition: 0→1, 1→0
+        trans = np.array([[0.0, 1.0], [1.0, 0.0]])
+        rm = RegimeModel(2, trans, np.array([1.0, 0.0]))
+        seqs = _sample_regime_sequences(rm, 5, 6, np.random.default_rng(0))
+        expected = np.tile([0, 1, 0, 1, 0, 1], (5, 1))
+        np.testing.assert_array_equal(seqs, expected)

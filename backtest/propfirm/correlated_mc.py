@@ -53,3 +53,23 @@ class AccountManagementStrategy:
     max_concurrent:  int   # 1–5
     reserve_n_evals: int   # eval fees to keep as cash cushion
     stagger_days:    int = 0   # days between opens; only for trigger="staggered"
+
+
+def _sample_regime_sequences(
+    model: RegimeModel,
+    n_sims: int,
+    horizon: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Pre-generate (n_sims, horizon) int8 regime array via Markov chain."""
+    seqs = np.empty((n_sims, horizon), dtype=np.int8)
+    seqs[:, 0] = rng.choice(model.n_regimes, size=n_sims, p=model.initial_dist)
+    for d in range(1, horizon):
+        prev = seqs[:, d - 1]
+        for r in range(model.n_regimes):
+            mask = prev == r
+            if mask.any():
+                seqs[mask, d] = rng.choice(
+                    model.n_regimes, size=int(mask.sum()), p=model.transition[r]
+                )
+    return seqs
