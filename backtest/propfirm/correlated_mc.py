@@ -129,3 +129,161 @@ def _resolve_slot_trade(
     )
     pnl, sl = day_trades[winner.name]  # type: ignore[misc]
     return (winner, pnl, sl)
+
+
+# ---------------------------------------------------------------------------
+# Internal account state dataclasses
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _EvalState:
+    balance:        float
+    mll:            float
+    peak_eod:       float
+    total_profit:   float = 0.0
+    max_day_profit: float = 0.0
+    n_prof_days:    int   = 0
+
+
+@dataclass
+class _FundedState:
+    balance:         float
+    mll:             float
+    peak_eod:        float
+    mll_locked:      bool = False
+    cycle_prof_days: int  = 0
+    payout_count:    int  = 0
+
+
+# ---------------------------------------------------------------------------
+# Sizing helper (nq_first: minis when possible, micros otherwise)
+# ---------------------------------------------------------------------------
+
+def _size_and_pnl(
+    pnl_pts:      float,
+    sl_dist:      float,
+    risk_dollars: float,
+    account:      LucidFlexAccount,
+) -> float:
+    """Compute dollar PnL for one trade using nq_first sizing."""
+    sl_safe      = max(0.25, sl_dist)
+    max_minis    = account.max_micros // 10
+    mini_risk_1c = sl_safe * MINI_POINT_VALUE
+    if max_minis > 0 and mini_risk_1c <= risk_dollars:
+        n_c    = max(1, min(max_minis, int(risk_dollars / mini_risk_1c)))
+        return pnl_pts * n_c * MINI_POINT_VALUE - MINI_COMM_RT * n_c
+    else:
+        n_c = max(1, min(account.max_micros,
+                         int(risk_dollars / (sl_safe * MICRO_POINT_VALUE))))
+        return pnl_pts * n_c * MICRO_POINT_VALUE - MICRO_COMM_RT * n_c
+
+
+# ---------------------------------------------------------------------------
+# Eval stepper
+# ---------------------------------------------------------------------------
+
+def _eval_step(
+    state:        _EvalState,
+    pnl_pts:      float,
+    sl_dist:      float,
+    risk_dollars: float,
+    account:      LucidFlexAccount,
+) -> Tuple[_EvalState, str]:
+    """
+    Apply one trade to eval state.
+    Returns (new_state, event) where event ∈ {"running", "passed", "failed"}.
+    Implements: trailing EOD MLL, consistency rule (max_day ≤ 50% total, ≥ 2 prof days).
+    """
+    dollar = _size_and_pnl(pnl_pts, sl_dist, risk_dollars, account)
+
+    new_balance = state.balance + dollar
+    if new_balance <= state.mll:
+        return state, "failed"
+
+    new_peak = max(state.peak_eod, new_balance)
+    new_mll  = max(state.mll, new_peak - account.mll_amount)
+    if new_balance <= new_mll:
+        return state, "failed"
+
+    total_profit   = new_balance - account.starting_balance
+    n_prof_days    = state.n_prof_days
+    max_day_profit = state.max_day_profit
+    if dollar > 0.0:
+        n_prof_days    += 1
+        max_day_profit  = max(max_day_profit, dollar)
+
+    new_state = _EvalState(
+        balance=new_balance, mll=new_mll, peak_eod=new_peak,
+        total_profit=total_profit, max_day_profit=max_day_profit,
+        n_prof_days=n_prof_days,
+    )
+
+    if (total_profit >= account.profit_target
+            and max_day_profit <= total_profit * 0.5
+            and n_prof_days >= 2):
+        return new_state, "passed"
+
+    return new_state, "running"
+
+
+# ---------------------------------------------------------------------------
+# Funded stepper
+# ---------------------------------------------------------------------------
+
+def _funded_step(
+    state:        _FundedState,
+    pnl_pts:      float,
+    sl_dist:      float,
+    risk_dollars: float,
+    account:      LucidFlexAccount,
+) -> Tuple[_FundedState, str, float]:
+    """
+    Apply one trade to funded state.
+    Returns (new_state, event, payout_net) where:
+      event ∈ {"running", "payout", "closed", "blown"}
+      payout_net: net dollars received (0 if no payout this step).
+    Implements: trailing MLL (locks at starting_balance−$100 once balance ≥ starting),
+    5-profitable-day payout cycle, max 6 payouts then "closed".
+    """
+    dollar = _size_and_pnl(pnl_pts, sl_dist, risk_dollars, account)
+
+    new_balance = state.balance + dollar
+    mll_locked  = state.mll_locked
+
+    if not mll_locked and new_balance >= account.starting_balance:
+        mll_locked = True
+
+    if mll_locked:
+        new_mll = account.starting_balance - 100.0
+    else:
+        new_peak_pre = max(state.peak_eod, new_balance)
+        new_mll      = max(state.mll, new_peak_pre - account.mll_amount)
+
+    if new_balance <= new_mll:
+        return state, "blown", 0.0
+
+    new_peak        = max(state.peak_eod, new_balance)
+    cycle_prof_days = state.cycle_prof_days
+    if dollar > 0.0:
+        cycle_prof_days += 1
+
+    payout_net   = 0.0
+    payout_count = state.payout_count
+    event        = "running"
+
+    if cycle_prof_days >= 5 and payout_count < account.max_payouts:
+        profits = max(0.0, new_balance - account.starting_balance)
+        gross   = min(profits * 0.5, account.payout_cap)
+        if gross >= 500.0:
+            payout_net       = gross * account.split
+            new_balance     -= gross
+            payout_count    += 1
+            cycle_prof_days  = 0
+            event            = "closed" if payout_count >= account.max_payouts else "payout"
+
+    new_state = _FundedState(
+        balance=new_balance, mll=new_mll, peak_eod=new_peak,
+        mll_locked=mll_locked, cycle_prof_days=cycle_prof_days,
+        payout_count=payout_count,
+    )
+    return new_state, event, payout_net

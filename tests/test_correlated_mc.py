@@ -12,7 +12,12 @@ from backtest.propfirm.correlated_mc import (
     _sample_regime_sequences,
     _draw_day_trades,
     _resolve_slot_trade,
+    _EvalState,
+    _eval_step,
+    _FundedState,
+    _funded_step,
 )
+from backtest.propfirm.lucidflex import LUCIDFLEX_ACCOUNTS
 from backtest.regime.hmm import RegimeResult
 
 
@@ -204,3 +209,123 @@ class TestResolveSlotTrade:
         trades = {"A": (1.0, 4.0), "B": None}
         winner, _, _ = _resolve_slot_trade(slot, trades)
         assert winner.name == "A"
+
+
+ACC = LUCIDFLEX_ACCOUNTS['25K']
+# 25K account: starting_balance=25000, profit_target=1250, mll_amount=1000,
+# max_micros=20, split=0.90, payout_cap=1500
+
+
+class TestEvalStep:
+    def _fresh_state(self):
+        return _EvalState(
+            balance=ACC.starting_balance,
+            mll=ACC.starting_balance - ACC.mll_amount,
+            peak_eod=ACC.starting_balance,
+        )
+
+    def test_running_on_small_loss(self):
+        state = self._fresh_state()
+        new_state, event = _eval_step(state, pnl_pts=-1.0, sl_dist=4.0,
+                                       risk_dollars=200.0, account=ACC)
+        assert event == "running"
+        assert new_state.balance < state.balance
+
+    def test_fail_on_mll_breach(self):
+        # Start just above MLL, take big loss
+        state = _EvalState(
+            balance=ACC.starting_balance - ACC.mll_amount + 10,
+            mll=ACC.starting_balance - ACC.mll_amount,
+            peak_eod=ACC.starting_balance,
+        )
+        _, event = _eval_step(state, pnl_pts=-50.0, sl_dist=4.0,
+                               risk_dollars=200.0, account=ACC)
+        assert event == "failed"
+
+    def test_mll_trails_up_with_balance(self):
+        state = self._fresh_state()
+        new_state, _ = _eval_step(state, pnl_pts=50.0, sl_dist=4.0,
+                                   risk_dollars=200.0, account=ACC)
+        assert new_state.peak_eod > state.peak_eod
+        assert new_state.mll > state.mll
+
+    def test_pass_when_consistent(self):
+        # 2 profitable days, max_day <= 50% of total — consistent pass
+        state = _EvalState(
+            balance=ACC.starting_balance + 900,
+            mll=ACC.starting_balance - ACC.mll_amount + 900,
+            peak_eod=ACC.starting_balance + 900,
+            total_profit=900.0,
+            max_day_profit=300.0,
+            n_prof_days=2,
+        )
+        # risk_dollars=80 → exactly 1 mini (sl_safe×20=80 ≤ 80)
+        # dollar = 25 × 1 × 20 − 3.50 = $496.50 → total ~$1396, max=496 ≤ 698 ✓
+        new_state, event = _eval_step(state, pnl_pts=25.0, sl_dist=4.0,
+                                       risk_dollars=80.0, account=ACC)
+        assert event == "passed"
+
+
+class TestFundedStep:
+    def _fresh_funded(self):
+        return _FundedState(
+            balance=ACC.starting_balance,
+            mll=ACC.starting_balance - ACC.mll_amount,
+            peak_eod=ACC.starting_balance,
+        )
+
+    def test_running_on_small_win(self):
+        state = self._fresh_funded()
+        new_state, event, payout = _funded_step(state, 5.0, 4.0, 400.0, ACC)
+        assert event == "running"
+        assert payout == 0.0
+        assert new_state.cycle_prof_days == 1
+
+    def test_blown_on_mll_breach(self):
+        state = _FundedState(
+            balance=ACC.starting_balance - ACC.mll_amount + 10,
+            mll=ACC.starting_balance - ACC.mll_amount,
+            peak_eod=ACC.starting_balance,
+        )
+        _, event, payout = _funded_step(state, -50.0, 4.0, 400.0, ACC)
+        assert event == "blown"
+        assert payout == 0.0
+
+    def test_mll_locks_when_balance_reaches_start(self):
+        state = _FundedState(
+            balance=ACC.starting_balance - 50,
+            mll=ACC.starting_balance - ACC.mll_amount,
+            peak_eod=ACC.starting_balance,
+            mll_locked=False,
+        )
+        new_state, _, _ = _funded_step(state, 20.0, 4.0, 400.0, ACC)
+        assert new_state.mll_locked
+        assert new_state.mll == pytest.approx(ACC.starting_balance - 100.0)
+
+    def test_payout_after_five_prof_days(self):
+        state = _FundedState(
+            balance=ACC.starting_balance + 5000,
+            mll=ACC.starting_balance - 100,
+            peak_eod=ACC.starting_balance + 5000,
+            mll_locked=True,
+            cycle_prof_days=4,
+            payout_count=0,
+        )
+        new_state, event, payout = _funded_step(state, 10.0, 4.0, 400.0, ACC)
+        assert event == "payout"
+        assert payout > 0
+        assert new_state.cycle_prof_days == 0
+        assert new_state.payout_count == 1
+
+    def test_sixth_payout_closes_account(self):
+        state = _FundedState(
+            balance=ACC.starting_balance + 5000,
+            mll=ACC.starting_balance - 100,
+            peak_eod=ACC.starting_balance + 5000,
+            mll_locked=True,
+            cycle_prof_days=4,
+            payout_count=5,  # one more → closes
+        )
+        _, event, payout = _funded_step(state, 10.0, 4.0, 400.0, ACC)
+        assert event == "closed"
+        assert payout > 0
