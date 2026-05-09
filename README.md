@@ -104,8 +104,8 @@ Optionally override `signal_bar_mask(data)` to return a boolean array marking ca
 
 ---
 
-## Propfirm Context
+## Propfirm Simulation
 
-All strategies are evaluated against **LucidFlex** evaluation and funded account structures. The Monte Carlo simulation models the full lifecycle: eval phase (consistency rule, MLL trailing → lock), funded phase (payout triggers, balance deduction, up to 6 payouts), and a reinvestment loop that cascades payouts into new eval accounts over an 84-day horizon.
+The `backtest/propfirm/` module simulates the full **LucidFlex** account lifecycle — eval phase (consistency rule, trailing MLL → lock), funded phase (payout triggers, balance deduction, up to 6 payouts), and a reinvestment loop that cascades payouts into new eval accounts over a configurable horizon.
 
-Metric: `P($0)` (ruin probability) and `P(>$10K)` (goal probability) across 500–1000 independent reinvestment paths, with ERP and FRP risk parameters optimised per strategy config.
+ERP (eval risk %) and FRP (funded risk %) are swept across a full grid per strategy config rather than fixed, so optimal risk sizing is found rather than assumed. Configurable for any account size, budget, horizon, and profit goal.
