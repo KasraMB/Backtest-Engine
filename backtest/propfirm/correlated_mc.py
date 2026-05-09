@@ -365,3 +365,186 @@ def _should_open(
         return False, False
 
     return _trigger_fires(strategy, trigger_event, day, last_open_day), False
+
+
+# ---------------------------------------------------------------------------
+# Per-sim account instance
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _AccountInstance:
+    template_idx:  int
+    phase:         str                          # "eval" | "funded"
+    eval_state:    Optional[_EvalState]   = None
+    funded_state:  Optional[_FundedState] = None
+
+
+# ---------------------------------------------------------------------------
+# Single-sim runner
+# ---------------------------------------------------------------------------
+
+def _run_single_sim(
+    regime_seq:    np.ndarray,           # (horizon,) int8
+    slot_template: List[AccountSlot],
+    account:       LucidFlexAccount,
+    eval_fee:      float,
+    strategy:      AccountManagementStrategy,
+    budget:        float,
+    horizon:       int,
+    rng:           np.random.Generator,
+) -> float:
+    cash:           float = budget
+    accounts:       List[_AccountInstance] = []
+    queue:          int   = 0
+    template_cycle: int   = 0
+    last_open_day:  int   = -(strategy.stagger_days + 1)  # allow open on day 0
+
+    def _open(day: int) -> None:
+        nonlocal cash, template_cycle, last_open_day
+        if cash < eval_fee:
+            return
+        idx             = template_cycle % len(slot_template)
+        template_cycle += 1
+        cash           -= eval_fee
+        last_open_day   = day
+        accounts.append(_AccountInstance(
+            template_idx=idx,
+            phase="eval",
+            eval_state=_EvalState(
+                balance=account.starting_balance,
+                mll=account.starting_balance - account.mll_amount,
+                peak_eod=account.starting_balance,
+            ),
+        ))
+
+    # Day-0 initial opens
+    while True:
+        open_now, _ = _should_open(strategy, None, len(accounts), cash, eval_fee,
+                                    0, last_open_day, queue)
+        if not open_now or len(accounts) >= strategy.max_concurrent or cash < eval_fee:
+            break
+        _open(0)
+
+    for day in range(horizon):
+        regime = int(regime_seq[day])
+
+        # Collect unique configs active in this sim
+        seen_names: set = set()
+        active_configs: List[StrategyConfig] = []
+        for acc_inst in accounts:
+            for cfg in slot_template[acc_inst.template_idx].configs:
+                if cfg.name not in seen_names:
+                    seen_names.add(cfg.name)
+                    active_configs.append(cfg)
+
+        day_trades = _draw_day_trades(active_configs, regime, rng)
+
+        closed_idxs:    List[int] = []
+        trigger_events: List[str] = []
+
+        for i, acc_inst in enumerate(accounts):
+            slot   = slot_template[acc_inst.template_idx]
+            n_cfgs = len(slot.configs)
+            trade  = _resolve_slot_trade(slot, day_trades)
+            if trade is None:
+                continue
+            cfg, pnl_pts, sl_dist = trade
+
+            if acc_inst.phase == "eval":
+                risk_d = (cfg.eval_risk / n_cfgs) * account.mll_amount
+                new_es, event = _eval_step(acc_inst.eval_state, pnl_pts, sl_dist,
+                                            risk_d, account)
+                acc_inst.eval_state = new_es
+                if event == "passed":
+                    acc_inst.phase        = "funded"
+                    acc_inst.funded_state = _FundedState(
+                        balance=account.starting_balance,
+                        mll=account.starting_balance - account.mll_amount,
+                        peak_eod=account.starting_balance,
+                    )
+                    trigger_events.append("pass")
+                elif event == "failed":
+                    closed_idxs.append(i)
+                    trigger_events.append("fail")
+            else:
+                risk_d = (cfg.fund_risk / n_cfgs) * account.mll_amount
+                new_fs, event, payout_net = _funded_step(acc_inst.funded_state, pnl_pts,
+                                                          sl_dist, risk_d, account)
+                acc_inst.funded_state = new_fs
+                if event in ("payout", "closed"):
+                    cash += payout_net
+                    trigger_events.append("payout")
+                    if event == "closed":
+                        closed_idxs.append(i)
+                        trigger_events.append("close")
+                elif event == "blown":
+                    closed_idxs.append(i)
+                    trigger_events.append("close")
+
+        # Remove closed accounts (reverse to preserve indices)
+        for i in sorted(set(closed_idxs), reverse=True):
+            accounts.pop(i)
+
+        # Drain queue into freed slots
+        while queue > 0 and len(accounts) < strategy.max_concurrent and cash >= eval_fee:
+            _open(day)
+            queue -= 1
+
+        # Fire triggers for each event that occurred today
+        all_events: List[Optional[str]] = trigger_events if trigger_events else [None]
+        for ev in all_events:
+            open_now, add_q = _should_open(strategy, ev, len(accounts), cash,
+                                            eval_fee, day, last_open_day, queue)
+            if open_now and cash >= eval_fee and len(accounts) < strategy.max_concurrent:
+                _open(day)
+            elif add_q:
+                queue += 1
+
+        # Greedy/staggered daily check
+        while True:
+            open_now, _ = _should_open(strategy, None, len(accounts), cash,
+                                        eval_fee, day, last_open_day, queue)
+            if not open_now or len(accounts) >= strategy.max_concurrent or cash < eval_fee:
+                break
+            _open(day)
+
+    return cash
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def correlated_reinvestment_mc(
+    slot_template:  List[AccountSlot],
+    regime_result:  RegimeResult,
+    account:        LucidFlexAccount,
+    eval_fee:       float,
+    strategy:       AccountManagementStrategy,
+    budget:         float = 300.0,
+    horizon:        int   = 84,
+    n_sims:         int   = 1_000,
+    seed:           int   = 42,
+) -> np.ndarray:
+    """
+    Run correlated reinvestment MC.
+
+    Returns (n_sims,) float64 array of final cash per simulated investor.
+    Accounts within one sim share daily market draws (correlated).
+    Sims are independent.
+    """
+    rng         = np.random.default_rng(seed)
+    regime_seqs = _sample_regime_sequences(regime_result, n_sims, horizon, rng)
+    final_cash  = np.empty(n_sims, dtype=np.float64)
+    for s in range(n_sims):
+        final_cash[s] = _run_single_sim(
+            regime_seq=regime_seqs[s],
+            slot_template=slot_template,
+            account=account,
+            eval_fee=eval_fee,
+            strategy=strategy,
+            budget=budget,
+            horizon=horizon,
+            rng=rng,
+        )
+    return final_cash

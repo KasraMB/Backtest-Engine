@@ -18,6 +18,7 @@ from backtest.propfirm.correlated_mc import (
     _eval_step,
     _FundedState,
     _funded_step,
+    correlated_reinvestment_mc,
 )
 from backtest.propfirm.lucidflex import LUCIDFLEX_ACCOUNTS
 from backtest.regime.hmm import RegimeResult
@@ -399,3 +400,86 @@ class TestShouldOpen:
     def test_not_enough_cash(self):
         open_now, _ = _should_open(self._s(), None, 0, 50, 70, 0, -999, 0)
         assert not open_now
+
+
+def _single_regime_result():
+    """Minimal RegimeResult with one absorbing regime."""
+    from datetime import date
+    labels = {date(2020, 1, i + 1): 0 for i in range(30)}
+    return _make_regime_result(np.array([[1.0]]), labels=labels)
+
+def _winning_cfg(name="A"):
+    """Config that always wins — 10 pts, 1.0 tpd, single regime."""
+    return StrategyConfig(
+        name=name,
+        pnl_pts_by_regime={0: np.array([10.0], dtype=np.float32)},
+        sl_dists_by_regime={0: np.array([4.0], dtype=np.float32)},
+        tpd_by_regime={0: 1.0},
+        entry_time_min=30,
+        eval_risk=0.2,
+        fund_risk=0.4,
+    )
+
+class TestCorrelatedMC:
+    def test_output_shape(self):
+        result = correlated_reinvestment_mc(
+            slot_template=[AccountSlot([_winning_cfg()])],
+            regime_result=_single_regime_result(),
+            account=ACC,
+            eval_fee=ACC.eval_fee,
+            strategy=AccountManagementStrategy("greedy", 2, 0, 0),
+            budget=300.0, horizon=84, n_sims=50, seed=0,
+        )
+        assert result.shape == (50,)
+
+    def test_zero_budget_returns_zero(self):
+        result = correlated_reinvestment_mc(
+            slot_template=[AccountSlot([_winning_cfg()])],
+            regime_result=_single_regime_result(),
+            account=ACC,
+            eval_fee=ACC.eval_fee,
+            strategy=AccountManagementStrategy("greedy", 1, 0, 0),
+            budget=0.0, horizon=84, n_sims=20, seed=0,
+        )
+        assert np.all(result == 0.0)
+
+    def test_losing_config_loses_money(self):
+        losing_cfg = StrategyConfig(
+            "loser",
+            {0: np.array([-50.0], dtype=np.float32)},
+            {0: np.array([4.0], dtype=np.float32)},
+            {0: 1.0}, 30, 0.2, 0.4,
+        )
+        result = correlated_reinvestment_mc(
+            slot_template=[AccountSlot([losing_cfg])],
+            regime_result=_single_regime_result(),
+            account=ACC,
+            eval_fee=ACC.eval_fee,
+            strategy=AccountManagementStrategy("greedy", 1, 0, 0),
+            budget=300.0, horizon=84, n_sims=100, seed=0,
+        )
+        assert float(result.mean()) < 200.0
+
+    def test_seed_reproducibility(self):
+        kwargs = dict(
+            slot_template=[AccountSlot([_winning_cfg()])],
+            regime_result=_single_regime_result(),
+            account=ACC, eval_fee=ACC.eval_fee,
+            strategy=AccountManagementStrategy("greedy", 2, 0, 0),
+            budget=300.0, horizon=84, n_sims=30,
+        )
+        r1 = correlated_reinvestment_mc(**kwargs, seed=7)
+        r2 = correlated_reinvestment_mc(**kwargs, seed=7)
+        np.testing.assert_array_equal(r1, r2)
+
+    def test_two_slot_templates_cycle(self):
+        cfg_a = _winning_cfg("A")
+        cfg_b = _winning_cfg("B")
+        result = correlated_reinvestment_mc(
+            slot_template=[AccountSlot([cfg_a]), AccountSlot([cfg_b])],
+            regime_result=_single_regime_result(),
+            account=ACC, eval_fee=ACC.eval_fee,
+            strategy=AccountManagementStrategy("greedy", 4, 0, 0),
+            budget=300.0, horizon=84, n_sims=20, seed=0,
+        )
+        assert result.shape == (20,)
