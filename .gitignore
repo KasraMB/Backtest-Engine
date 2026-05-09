@@ -1,23 +1,38 @@
-# Ignore contents of data folder, but keep the folder
+# Data — ignore raw/cache files, keep key outputs
 data/*
 !data/.gitkeep
 !data/ml_dataset.parquet
 !data/validated_configs.json
 
-# Ignore cache directories
+# Python cache
 **/__pycache__/
 **/.pytest_cache/
-verification_output.txt
+
+# Local-only / generated files
 md_cache.pkl
+verification_output.txt
+tearsheet.html
+*.stackdump
+
+# Claude-internal files (task tracking, session docs)
 tasks/
-tmp*
-sweep_*
-successful*
-graphify-out*
-venv*
-sweep*
-!sweep_results_amr_v2/
-trade_logs/*
-CLAUDE*
 .claude/
-docs*
+CLAUDE*
+graphify-out*/
+docs/superpowers/
+
+# Temporary scripts and results (local working files)
+tmp*
+sweep_results_*/
+!sweep_results_amr_v2/
+sweep_results2/
+sweep_results3/
+sweep_results4/
+sweep_results5/
+sweep_results6/
+sweep_results7/
+
+# Misc
+successful_strategies/
+venv*/
+trade_logs/*

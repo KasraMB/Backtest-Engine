@@ -34,7 +34,7 @@ from itertools import product
 
 import numpy as np
 
-# ── Checkpoint directory ────────────────────────────────────────────────────────
+# -- Checkpoint directory --──────────────────────────────────────────────────────
 CKPT_DIR     = "sweep_results_amr_v2"
 os.makedirs(CKPT_DIR, exist_ok=True)
 CKPT_A       = os.path.join(CKPT_DIR, "checkpoint_A.pkl")
@@ -52,7 +52,7 @@ _bar_day_ord = np.array([d.toordinal() for d in md.df_1m.index.date], dtype=np.i
 
 from backtest.runner.runner import run_backtest
 from backtest.runner.config import RunConfig
-from backtest.propfirm.lucidflex import LUCIDFLEX_ACCOUNTS, extract_normalised_trades
+from backtest.propfirm.lucidflex import LUCIDFLEX_ACCOUNTS, extract_normalised_trades, simulate_eval_batch, simulate_funded_batch, MICRO_COMM_RT, MINI_COMM_RT
 from strategies.profitable.amr_strategy import AnchoredMeanReversionStrategy
 from tmp_reinvest import simulate_lifecycles, reinvestment_mc, BUDGET, HORIZON, GOAL
 
@@ -66,17 +66,17 @@ ERP_GRID    = [round(x * 0.1, 1) for x in range(1, 11)]
 FRP_GRID    = [round(x * 0.1, 1) for x in range(1, 11)]
 RISK_COMBOS = list(product(ERP_GRID, FRP_GRID))   # 100 combos
 
-# Phase 2 large pool
-P2_NPOOL = 5_000
-P2_NMC   = 1_000
+# Phase 2 pool (smaller = faster, still accurate enough for ranking)
+P2_NPOOL = 2_000
+P2_NMC   = 500
 
-TOP_A     = 500   # survivors from Sweep A into Sweep B
-TOP_FINAL = 250   # survivors total for Phase 2
+TOP_A     = 200   # survivors from Sweep A into Sweep B
+TOP_FINAL = 200   # survivors total for Phase 2
 
 MIN_TRADES = 20   # minimum absolute trade count
 MIN_TPD    = 0.5  # minimum trades/day (~2.5/week)
 
-# ── Session/window combos (15) ─────────────────────────────────────────────────
+# -- Session/window combos (15) --───────────────────────────────────────────────
 SESSION_WINDOW_COMBOS = [
     # NY Morning (930): 60, 90
     (["930"],        {"930":  60}),
@@ -166,24 +166,22 @@ def _build_sweep_a():
 
 
 def _sortino(trades, pnl_pts, sl_dists) -> float:
-    """Daily Sortino on R-multiples. Groups by exit bar's trading day."""
+    """Daily Sortino on R-multiples. Vectorized via numpy unique."""
     sl_safe     = np.where(sl_dists > 0, sl_dists, 1.0)
     r_per_trade = pnl_pts / sl_safe
-    daily: dict[int, float] = {}
-    for t, r in zip(trades, r_per_trade):
-        day = int(_bar_day_ord[t.exit_bar])
-        daily[day] = daily.get(day, 0.0) + r
-    daily_r = np.array(list(daily.values()))
+    exit_bars   = np.array([t.exit_bar for t in trades], dtype=np.int32)
+    days_ord    = _bar_day_ord[exit_bars]
+    u, inv      = np.unique(days_ord, return_inverse=True)
+    daily_r     = np.zeros(len(u), dtype=np.float64)
+    np.add.at(daily_r, inv, r_per_trade)
     if len(daily_r) < 5:
         return -np.inf
-    mean_r  = daily_r.mean()
-    down    = daily_r[daily_r < 0]
+    mean_r   = daily_r.mean()
+    down     = daily_r[daily_r < 0]
     if len(down) == 0:
         return np.inf
     down_std = down.std()
-    if down_std == 0:
-        return np.inf
-    return float(mean_r / down_std)
+    return float(mean_r / down_std) if down_std > 0 else np.inf
 
 
 def _run_one(params):
@@ -210,7 +208,7 @@ def _run_one(params):
 
 
 def _phase2_optimize(rec):
-    """Re-evaluate one record across all 100 ERP×FRP combos with large accurate pool."""
+    """Re-evaluate one record across all 100 ERP x FRP combos with large accurate pool."""
     pnl_pts  = rec["pnl_pts"]
     sl_dists = rec["sl_dists"]
     tpd      = rec["tpd"]
@@ -264,11 +262,20 @@ def _run_parallel(configs, label, n_workers, ckpt_path=None, resume_done=None):
     return results
 
 
-# ── Numba warm-up ──────────────────────────────────────────────────────────────
+# -- Numba warm-up --────────────────────────────────────────────────────────────
 print("Warming up Numba...", flush=True)
 _t0 = _time.perf_counter()
 run_backtest(AnchoredMeanReversionStrategy, RunConfig(starting_capital=100_000, params={}),
              data=md, validate=False)
+# Also compile lucidflex eval/funded kernels so Phase 2 doesn't stall
+_dummy_pnl = np.zeros(10, dtype=np.float32)
+_dummy_sl  = np.ones(10,  dtype=np.float32) * 5.0
+_dummy_rng = np.random.default_rng(0)
+simulate_eval_batch(_dummy_pnl, _dummy_sl, ACCOUNT, 0.2, "fixed_dollar", "nq_first",
+                    _dummy_rng, 1.0, 50)
+_dummy_sb = np.full(10, float(ACCOUNT.starting_balance), dtype=np.float32)
+simulate_funded_batch(_dummy_pnl, _dummy_sl, ACCOUNT, 0.2, "fixed_dollar", "nq_first",
+                      _dummy_rng, 1.0, _dummy_sb)
 print(f"  Numba ready in {_time.perf_counter()-_t0:.1f}s", flush=True)
 
 
@@ -288,7 +295,7 @@ if os.path.exists(CKPT_A):
     print(f"  Resuming from checkpoint: {a_done_prev} done, "
           f"{len(a_results_extra)} valid", flush=True)
 
-print(f"\n── SWEEP A: structural params ({N_WORKERS} workers) ──", flush=True)
+print(f"\n-- SWEEP A: structural params ({N_WORKERS} workers) --", flush=True)
 t_a = _time.perf_counter()
 a_results_new = _run_parallel(sweep_a_configs, "A", N_WORKERS,
                                ckpt_path=CKPT_A, resume_done=a_resume)
@@ -334,7 +341,7 @@ if os.path.exists(CKPT_B):
     print(f"  Resuming from checkpoint: {b_done_prev} done, "
           f"{len(b_results_extra)} valid", flush=True)
 
-print(f"\n── SWEEP B: filter params ({N_WORKERS} workers) ──", flush=True)
+print(f"\n-- SWEEP B: filter params ({N_WORKERS} workers) --", flush=True)
 t_b = _time.perf_counter()
 b_results_new = _run_parallel(sweep_b_configs, "B", N_WORKERS,
                                ckpt_path=CKPT_B, resume_done=b_resume)
@@ -355,7 +362,7 @@ print(f"\nCombined {len(all_results)} valid → top {len(top_final)} enter Phase
 # ══════════════════════════════════════════════════════════════════════════════
 # PHASE 2 — ERP × FRP optimization
 # ══════════════════════════════════════════════════════════════════════════════
-print(f"\n── PHASE 2: ERP×FRP sweep for top {len(top_final)} ({N_WORKERS} workers) ──",
+print(f"\n-- PHASE 2: ERP x FRP sweep for top {len(top_final)} ({N_WORKERS} workers) --",
       flush=True)
 p2_results = []
 t_p2 = _time.perf_counter()
@@ -423,3 +430,41 @@ if p2_results:
     print(f"    Funded risk (FRP):{frp:.0%} of funded drawdown limit per trade")
     print(f"    Reinvest rule:    deposit every payout into new evals immediately")
     print(f"    Payout:           min(profits×50%, $1500) × 90% net to trader")
+
+# ── Save to git-tracked location so results survive push/pull ─────────────────
+import io as _io, shutil as _sh
+
+_LOG_DIR = "sweeps/logs"
+os.makedirs(_LOG_DIR, exist_ok=True)
+
+# pkl — full results for programmatic reload
+_pkl_dst = os.path.join(_LOG_DIR, "amr_v2_results.pkl")
+with open(_pkl_dst, "wb") as _f:
+    pickle.dump(p2_results, _f)
+
+# txt — human-readable table (same as stdout above)
+_txt_dst = os.path.join(_LOG_DIR, "amr_v2_results.txt")
+_buf = _io.StringIO()
+_buf.write("ANCHORED MEAN REVERSION V2 SWEEP RESULTS\n")
+_buf.write(f"Dataset: {n_days} days (2019+)  Account: 25K LucidFlex  Budget=$300  Horizon=84d  Goal=$10K\n")
+_buf.write(f"ERP/FRP: 0.1-1.0 x 0.1-1.0 (100 combos, optimized per config)\n\n")
+_buf.write(f"{'#':>3}  {'Config':<78}  {'N':>5}  {'tpd':>5}  {'WR':>6}  {'avgR':>7}  "
+           f"{'Sortino':>8}  {'P($0)':>7}  {'P>10K':>7}  {'EV/d':>7}  {'ERP':>5}  {'FRP':>5}\n")
+_buf.write("-"*165 + "\n")
+for rank, r in enumerate(p2_results, 1):
+    label = _make_label(r["params"])
+    _buf.write(f"{rank:>3}  {label:<78}  {r['n_t']:>5}  {r['tpd']:>5.2f}  "
+               f"{r['wr']:>6.1%}  {r['avgR']:>+7.4f}  {r['sortino']:>8.3f}  "
+               f"{r['best_p0']:>7.1%}  {r['best_p10']:>7.1%}  {r['best_ev']:>7.2f}  "
+               f"{r['best_erp']:>5.2f}  {r['best_frp']:>5.2f}\n")
+with open(_txt_dst, "w", encoding="utf-8") as _f:
+    _f.write(_buf.getvalue())
+
+# Copy sweep log too
+_sh.copy2("sweep_results_amr_v2/sweep.log", os.path.join(_LOG_DIR, "amr_v2_sweep.log"))
+
+print(f"\nResults saved to git-tracked paths:")
+print(f"  {_pkl_dst}")
+print(f"  {_txt_dst}")
+print(f"  {_LOG_DIR}/amr_v2_sweep.log")
+print(f"\nYour friend can now: git add sweeps/logs/ && git commit -m 'results: AnchoredMeanReversion v2 sweep' && git push")
