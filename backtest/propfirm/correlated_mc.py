@@ -285,3 +285,83 @@ def _funded_step(
         payout_count=payout_count,
     )
     return new_state, event, payout_net
+
+
+# ---------------------------------------------------------------------------
+# Account management trigger logic
+# ---------------------------------------------------------------------------
+
+def _trigger_fires(
+    strategy:      AccountManagementStrategy,
+    trigger_event: Optional[str],
+    day:           int,
+    last_open_day: int,
+) -> bool:
+    """
+    Determine if the account opening trigger fires.
+
+    Trigger semantics:
+    - "greedy" → always True
+    - "on_fail" → trigger_event == "fail"
+    - "on_pass" → trigger_event == "pass"
+    - "on_close" → trigger_event in ("fail", "closed", "blown")
+    - "on_payout" → trigger_event == "payout"
+    - "staggered" → (day - last_open_day) >= stagger_days
+    """
+    t = strategy.trigger
+    if t == "greedy":
+        return True
+    if t == "on_fail":
+        return trigger_event == "fail"
+    if t == "on_pass":
+        return trigger_event == "pass"
+    if t == "on_close":
+        return trigger_event in ("fail", "closed", "blown")
+    if t == "on_payout":
+        return trigger_event == "payout"
+    if t == "staggered":
+        return (day - last_open_day) >= strategy.stagger_days
+    return False
+
+
+def _should_open(
+    strategy:         AccountManagementStrategy,
+    trigger_event:    Optional[str],
+    n_active:         int,
+    cash:             float,
+    eval_fee:         float,
+    day:              int,
+    last_open_day:    int,
+    pending_in_queue: int,
+) -> Tuple[bool, bool]:
+    """
+    Determine whether to open a new account and whether to queue the request.
+
+    Returns (open_now, add_to_queue) where:
+    - open_now: True if we should open an account right now
+    - add_to_queue: True if we should queue the open request (only if full)
+
+    Fallback rule: if n_active + pending_in_queue == 0 and cash >= eval_fee,
+    always open one regardless of trigger or reserve (prevents dormancy).
+
+    Queue rule: if at max_concurrent, don't open now but queue if trigger fires.
+
+    Reserve rule: normally don't open if cash - eval_fee < reserve_n_evals × eval_fee,
+    but fallback overrides this.
+    """
+    if cash < eval_fee:
+        return False, False
+
+    # Fallback: prevent dormancy
+    if n_active + pending_in_queue == 0:
+        return True, False
+
+    if n_active >= strategy.max_concurrent:
+        # Full — queue if trigger fires
+        return False, _trigger_fires(strategy, trigger_event, day, last_open_day)
+
+    reserve = strategy.reserve_n_evals * eval_fee
+    if cash - eval_fee < reserve:
+        return False, False
+
+    return _trigger_fires(strategy, trigger_event, day, last_open_day), False

@@ -12,6 +12,8 @@ from backtest.propfirm.correlated_mc import (
     _sample_regime_sequences,
     _draw_day_trades,
     _resolve_slot_trade,
+    _trigger_fires,
+    _should_open,
     _EvalState,
     _eval_step,
     _FundedState,
@@ -329,3 +331,71 @@ class TestFundedStep:
         _, event, payout = _funded_step(state, 10.0, 4.0, 400.0, ACC)
         assert event == "closed"
         assert payout > 0
+
+
+class TestTriggerFires:
+    def _s(self, trigger, stagger=0):
+        return AccountManagementStrategy(trigger, 3, 0, stagger)
+
+    def test_greedy_always_fires(self):
+        assert _trigger_fires(self._s("greedy"), None, 0, -1) is True
+
+    def test_on_fail_fires_on_fail(self):
+        assert _trigger_fires(self._s("on_fail"), "fail", 0, -1) is True
+        assert _trigger_fires(self._s("on_fail"), "payout", 0, -1) is False
+        assert _trigger_fires(self._s("on_fail"), None, 0, -1) is False
+
+    def test_on_pass_fires_on_pass(self):
+        assert _trigger_fires(self._s("on_pass"), "pass", 0, -1) is True
+        assert _trigger_fires(self._s("on_pass"), "fail", 0, -1) is False
+
+    def test_on_close_fires_on_close_events(self):
+        for ev in ("fail", "closed", "blown"):
+            assert _trigger_fires(self._s("on_close"), ev, 0, -1) is True
+        assert _trigger_fires(self._s("on_close"), "pass", 0, -1) is False
+
+    def test_on_payout_fires_on_payout(self):
+        assert _trigger_fires(self._s("on_payout"), "payout", 0, -1) is True
+        assert _trigger_fires(self._s("on_payout"), "fail", 0, -1) is False
+
+    def test_staggered_respects_interval(self):
+        s = self._s("staggered", stagger=7)
+        assert _trigger_fires(s, None, day=7,  last_open_day=0) is True
+        assert _trigger_fires(s, None, day=6,  last_open_day=0) is False
+        assert _trigger_fires(s, None, day=14, last_open_day=7) is True
+
+
+class TestShouldOpen:
+    def _s(self, trigger="greedy", max_c=3, reserve=0, stagger=0):
+        return AccountManagementStrategy(trigger, max_c, reserve, stagger)
+
+    def test_greedy_opens_when_slots_and_cash(self):
+        open_now, _ = _should_open(self._s(), None, 0, 500, 70, 0, -999, 0)
+        assert open_now
+
+    def test_does_not_open_when_at_max(self):
+        open_now, queue = _should_open(self._s("greedy", max_c=2), "fail", 2, 500, 70, 0, -999, 0)
+        assert not open_now
+
+    def test_queues_when_full_and_trigger_fires(self):
+        _, add_q = _should_open(self._s("on_fail", max_c=2), "fail", 2, 500, 70, 0, -999, 0)
+        assert add_q
+
+    def test_reserve_blocks_open(self):
+        # reserve=2: keep 2×70=140, cash=140 → after open cash=70 < 140 → blocked
+        open_now, _ = _should_open(self._s("greedy", reserve=2), None, 1, 140, 70, 0, -999, 0)
+        assert not open_now
+
+    def test_fallback_when_no_accounts(self):
+        # on_payout trigger, no payout event — but n_active=0 and pending=0 → fallback fires
+        open_now, _ = _should_open(self._s("on_payout", reserve=2), None, 0, 300, 70, 0, -999, 0)
+        assert open_now
+
+    def test_fallback_not_when_pending_in_queue(self):
+        # n_active=0 but pending_in_queue=1 → no fallback
+        open_now, _ = _should_open(self._s("on_payout"), None, 0, 300, 70, 0, -999, pending_in_queue=1)
+        assert not open_now
+
+    def test_not_enough_cash(self):
+        open_now, _ = _should_open(self._s(), None, 0, 50, 70, 0, -999, 0)
+        assert not open_now
