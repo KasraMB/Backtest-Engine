@@ -14,6 +14,7 @@ successful*
 graphify-out*
 venv*
 sweep*
+!sweep_results_amr_v2/
 trade_logs/*
 CLAUDE*
 .claude/

@@ -1,0 +1,9 @@
+Loaded 3113 days of market data
+Imports done
+Warming up Numba...
+  Numba ready in 17.4s
+
+Sweep A configs: 16200
+  Resuming from checkpoint: 300 done, 258 valid
+
+-- SWEEP A: structural params (2 workers) --
