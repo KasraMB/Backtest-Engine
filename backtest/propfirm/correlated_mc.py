@@ -476,10 +476,10 @@ def _run_single_sim(
                     trigger_events.append("payout")
                     if event == "closed":
                         closed_idxs.append(i)
-                        trigger_events.append("close")
+                        trigger_events.append("closed")
                 elif event == "blown":
                     closed_idxs.append(i)
-                    trigger_events.append("close")
+                    trigger_events.append("blown")
 
         # Remove closed accounts (reverse to preserve indices)
         for i in sorted(set(closed_idxs), reverse=True):
