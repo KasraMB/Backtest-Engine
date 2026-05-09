@@ -22,13 +22,7 @@ from backtest.propfirm.lucidflex import (
     MICRO_COMM_RT,
     MINI_COMM_RT,
 )
-
-
-@dataclass
-class RegimeModel:
-    n_regimes:    int
-    transition:   np.ndarray   # (n_regimes, n_regimes) row-stochastic
-    initial_dist: np.ndarray   # (n_regimes,)
+from backtest.regime.hmm import RegimeResult
 
 
 @dataclass
@@ -55,21 +49,33 @@ class AccountManagementStrategy:
     stagger_days:    int = 0   # days between opens; only for trigger="staggered"
 
 
+def _regime_initial_dist(regime_result: RegimeResult) -> np.ndarray:
+    """Derive empirical initial distribution from historical regime label counts."""
+    counts = np.zeros(regime_result.n_states, dtype=np.float64)
+    for r in regime_result.labels.values():
+        counts[r] += 1
+    total = counts.sum()
+    return counts / total if total > 0 else np.full(regime_result.n_states, 1.0 / regime_result.n_states)
+
+
 def _sample_regime_sequences(
-    model: RegimeModel,
+    regime_result: RegimeResult,
     n_sims: int,
     horizon: int,
     rng: np.random.Generator,
 ) -> np.ndarray:
     """Pre-generate (n_sims, horizon) int8 regime array via Markov chain."""
+    trans      = regime_result.transition_matrix
+    n_regimes  = regime_result.n_states
+    initial    = _regime_initial_dist(regime_result)
     seqs = np.empty((n_sims, horizon), dtype=np.int8)
-    seqs[:, 0] = rng.choice(model.n_regimes, size=n_sims, p=model.initial_dist)
+    seqs[:, 0] = rng.choice(n_regimes, size=n_sims, p=initial)
     for d in range(1, horizon):
         prev = seqs[:, d - 1]
-        for r in range(model.n_regimes):
+        for r in range(n_regimes):
             mask = prev == r
             if mask.any():
                 seqs[mask, d] = rng.choice(
-                    model.n_regimes, size=int(mask.sum()), p=model.transition[r]
+                    n_regimes, size=int(mask.sum()), p=trans[r]
                 )
     return seqs
