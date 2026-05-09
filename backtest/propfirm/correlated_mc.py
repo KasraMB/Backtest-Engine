@@ -202,8 +202,6 @@ def _eval_step(
 
     new_peak = max(state.peak_eod, new_balance)
     new_mll  = max(state.mll, new_peak - account.mll_amount)
-    if new_balance <= new_mll:
-        return state, "failed"
 
     total_profit   = new_balance - account.starting_balance
     n_prof_days    = state.n_prof_days
@@ -262,7 +260,7 @@ def _funded_step(
     if new_balance <= new_mll:
         return state, "blown", 0.0
 
-    new_peak        = max(state.peak_eod, new_balance)
+    new_peak        = new_peak_pre if not mll_locked else max(state.peak_eod, new_balance)
     cycle_prof_days = state.cycle_prof_days
     if dollar > 0.0:
         cycle_prof_days += 1
