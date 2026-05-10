@@ -70,7 +70,11 @@ RISK_COMBOS = list(product(ERP_GRID, FRP_GRID))   # 100 combos
 P2_NPOOL = 2_000
 P2_NMC   = 500
 
-BUDGET    = 300.0  # reinvestment budget for account strategy section
+# Phase 3 reinvestment MC settings
+P3_NPOOL = 5_000   # lifecycle pool size
+P3_NMC   = 2_000   # reinvestment MC sims
+
+BUDGET    = 1_000.0  # reinvestment starting budget
 TOP_A     = 9999  # all valid A results enter Sweep B (capped by actual count)
 TOP_FINAL = 500   # survivors total for Phase 2
 
@@ -536,36 +540,84 @@ with ThreadPoolExecutor(max_workers=N_WORKERS) as ex:
             print(f"  {done2}/{len(top_final)}  elapsed={el:.0f}s", flush=True)
 
 print(f"\nPhase 2 done in {_time.perf_counter()-t_p2:.0f}s", flush=True)
-p2_results.sort(key=lambda r: -r["best_ev"])
-
+p2_results.sort(key=lambda r: -r["best_ev"])   # interim sort for checkpoint
 with open(RESULTS_FILE, "wb") as f:
     pickle.dump(p2_results, f)
+print(f"Phase 2 interim results saved -> {RESULTS_FILE}", flush=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHASE 3 — Reinvestment MC: compute P($0) and P(>BUDGET), re-rank
+# ══════════════════════════════════════════════════════════════════════════════
+from tmp_reinvest import simulate_lifecycles, reinvestment_mc
+
+print(f"\n-- PHASE 3: reinvestment MC (budget=${BUDGET:.0f}, horizon={HORIZON}d) --",
+      flush=True)
+t_p3 = _time.perf_counter()
+
+
+def _phase3_mc(rec):
+    pnl_pts, sl_dists, _ = _get_arrays(rec)
+    pool = simulate_lifecycles(
+        pnl_pts, sl_dists, rec["tpd"], ACCOUNT,
+        eval_risk=rec["best_erp"], fund_risk=rec["best_frp"],
+        N=P3_NPOOL, seed=42,
+    )
+    cash = reinvestment_mc(
+        pool, eval_fee=ACCOUNT.eval_fee,
+        budget=BUDGET, horizon=HORIZON, n_sims=P3_NMC, seed=99,
+    )
+    return dict(**rec,
+                p_zero=float((cash <= 0).mean()),
+                p_goal=float((cash >= GOAL).mean()),
+                p_profit=float((cash > BUDGET).mean()),
+                median_cash=float(np.median(cash)),
+                mean_cash=float(cash.mean()))
+
+
+done3 = 0
+with ThreadPoolExecutor(max_workers=N_WORKERS) as ex:
+    futs3 = {ex.submit(_phase3_mc, r): r for r in p2_results}
+    p3_results = []
+    for fut in as_completed(futs3):
+        done3 += 1
+        p3_results.append(fut.result())
+        if done3 % 50 == 0 or done3 == len(p2_results):
+            el = _time.perf_counter() - t_p3
+            print(f"  {done3}/{len(p2_results)}  elapsed={el:.0f}s", flush=True)
+
+p3_results.sort(key=lambda r: r["p_zero"])   # final rank: min P($0) first
+print(f"\nPhase 3 done in {_time.perf_counter()-t_p3:.0f}s", flush=True)
+
+with open(RESULTS_FILE, "wb") as f:
+    pickle.dump(p3_results, f)
 print(f"Results saved -> {RESULTS_FILE}", flush=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # RESULTS TABLE
 # ══════════════════════════════════════════════════════════════════════════════
-W = 165
+W = 185
 print("\n" + "="*W)
-print("  ANCHORED MEAN REVERSION V2 SWEEP — ranked P($0) asc -> P(>$10K) desc  [Phase-2 propfirm optimal]")
-print(f"  Account: 25K LucidFlex  Budget=$300  Horizon=84d  Goal=$10K")
-print(f"  Sweep A/B ranked by daily Sortino | Phase 2: ERP/FRP 0.1–1.0 × 0.1–1.0 (100 combos)")
+print(f"  ANCHORED MEAN REVERSION V2 SWEEP — ranked min P($0)  [budget=${BUDGET:.0f}  horizon={HORIZON}d  goal=${GOAL:.0f}]")
+print(f"  Account: 25K LucidFlex")
+print(f"  Sweep A/B: daily Sortino | Phase 2: ERP/FRP optimised by EV/day | Phase 3: MC re-rank by P($0)")
 print("="*W)
 hdr = (f"{'#':>3}  {'Config':<78}  {'N':>5}  {'tpd':>5}  {'WR':>6}  {'avgR':>7}  "
-       f"{'Sortino':>8}  {'pass%':>6}  {'payout':>8}  {'EV/d(mean)':>11}  {'EV/d(med)':>10}  {'ERP':>5}  {'FRP':>5}")
+       f"{'Sortino':>8}  {'P($0)':>7}  {'P(>bgt)':>8}  {'P(goal)':>8}  "
+       f"{'med$':>7}  {'EV/d':>7}  {'ERP':>5}  {'FRP':>5}")
 print(hdr)
 print("-"*W)
-for rank, r in enumerate(p2_results[:50], 1):
+for rank, r in enumerate(p3_results[:50], 1):
     label = _make_label(r["params"])
     print(f"{rank:>3}  {label:<78}  {r['n_t']:>5}  {r['tpd']:>5.2f}  "
           f"{r['wr']:>6.1%}  {r['avgR']:>+7.4f}  {r['sortino']:>8.3f}  "
-          f"{r['best_pass']:>6.1%}  {r['best_payout']:>8.0f}  "
-          f"{r['best_ev']:>11.2f}  {r['best_ev_med']:>10.2f}  "
+          f"{r['p_zero']:>7.1%}  {r['p_profit']:>8.1%}  {r['p_goal']:>8.1%}  "
+          f"{r['median_cash']:>7.0f}  {r['best_ev']:>+7.2f}  "
           f"{r['best_erp']:>5.2f}  {r['best_frp']:>5.2f}")
 
-if p2_results:
-    best = p2_results[0]
+if p3_results:
+    best = p3_results[0]
     p    = best["params"]
     print("\n" + "="*W)
     print("  BEST CONFIG — FULL DETAIL")
@@ -577,6 +629,9 @@ if p2_results:
     print(f"\n  Propfirm outcome (optimal risk):")
     print(f"    Pass rate={best['best_pass']:.1%}  Mean payout=${best['best_payout']:.0f}  Median payout=${best['best_pay_med']:.0f}")
     print(f"    EV/day(mean)=${best['best_ev']:.2f}  EV/day(median)=${best['best_ev_med']:.2f}")
+    print(f"\n  Reinvestment MC (budget=${BUDGET:.0f}, horizon={HORIZON}d):")
+    print(f"    P($0)={best['p_zero']:.1%}  P(>budget)={best['p_profit']:.1%}  "
+          f"P(goal)={best['p_goal']:.1%}  median=${best['median_cash']:.0f}")
     print(f"\n  Full parameters:")
     for k, v in sorted(p.items()):
         print(f"    {k}: {v}")
@@ -600,23 +655,25 @@ os.makedirs(_LOG_DIR, exist_ok=True)
 # pkl — full results for programmatic reload
 _pkl_dst = os.path.join(_LOG_DIR, "amr_v2_results.pkl")
 with open(_pkl_dst, "wb") as _f:
-    pickle.dump(p2_results, _f)
+    pickle.dump(p3_results, _f)
 
 # txt — human-readable table (same as stdout above)
 _txt_dst = os.path.join(_LOG_DIR, "amr_v2_results.txt")
 _buf = _io.StringIO()
 _buf.write("ANCHORED MEAN REVERSION V2 SWEEP RESULTS\n")
-_buf.write(f"Dataset: {n_days} days (2019+)  Account: 25K LucidFlex  Budget=$300  Horizon=84d  Goal=$10K\n")
-_buf.write(f"ERP/FRP: 0.1-1.0 x 0.1-1.0 (100 combos, optimized per config)\n\n")
+_buf.write(f"Dataset: {n_days} days (2019+)  Account: 25K LucidFlex  "
+           f"Budget=${BUDGET:.0f}  Horizon={HORIZON}d  Goal=${GOAL:.0f}\n")
+_buf.write(f"Phase 2: ERP/FRP 0.1-1.0 x 0.1-1.0 (EV/day) | Phase 3: MC ranked by min P($0)\n\n")
 _buf.write(f"{'#':>3}  {'Config':<78}  {'N':>5}  {'tpd':>5}  {'WR':>6}  {'avgR':>7}  "
-           f"{'Sortino':>8}  {'pass%':>6}  {'payout':>8}  {'EV/d(mean)':>11}  {'EV/d(med)':>10}  {'ERP':>5}  {'FRP':>5}\n")
-_buf.write("-"*175 + "\n")
-for rank, r in enumerate(p2_results, 1):
+           f"{'Sortino':>8}  {'P($0)':>7}  {'P(>bgt)':>8}  {'P(goal)':>8}  "
+           f"{'med$':>7}  {'EV/d':>7}  {'ERP':>5}  {'FRP':>5}\n")
+_buf.write("-"*185 + "\n")
+for rank, r in enumerate(p3_results, 1):
     label = _make_label(r["params"])
     _buf.write(f"{rank:>3}  {label:<78}  {r['n_t']:>5}  {r['tpd']:>5.2f}  "
                f"{r['wr']:>6.1%}  {r['avgR']:>+7.4f}  {r['sortino']:>8.3f}  "
-               f"{r['best_pass']:>6.1%}  {r['best_payout']:>8.0f}  "
-               f"{r['best_ev']:>11.2f}  {r['best_ev_med']:>10.2f}  "
+               f"{r['p_zero']:>7.1%}  {r['p_profit']:>8.1%}  {r['p_goal']:>8.1%}  "
+               f"{r['median_cash']:>7.0f}  {r['best_ev']:>+7.2f}  "
                f"{r['best_erp']:>5.2f}  {r['best_frp']:>5.2f}\n")
 with open(_txt_dst, "w", encoding="utf-8") as _f:
     _f.write(_buf.getvalue())
