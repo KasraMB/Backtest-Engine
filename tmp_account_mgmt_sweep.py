@@ -8,7 +8,9 @@ Ranked by min P($0).
 """
 from __future__ import annotations
 
+import os
 import pickle
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
@@ -35,6 +37,9 @@ N_SIMS    = 5_000    # per combo
 SEED      = 42
 N_WORKERS = 2
 TOP_N     = 100      # how many AnchoredMeanReversion configs to load
+
+CHECKPOINT_FILE = "account_mgmt_checkpoint.pkl"
+CHECKPOINT_EVERY = 200    # save every N completed combos
 
 # ── SESSION START TIMES (minutes from midnight) ───────────────────────────
 _SESS_ENTRY_MIN = {'930': 9*60+30, '1400': 14*60, '2000': 20*60, '300': 3*60}
@@ -163,23 +168,65 @@ def _run_one(args):
     )
 
 
+def _atomic_save(path: str, data) -> None:
+    """Write to a tmp file and atomically rename. Survives mid-write crashes."""
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        pickle.dump(data, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)   # atomic on Windows + POSIX
+
+
+def _combo_key(combo) -> tuple:
+    """Serialisable, hashable key uniquely identifying a combo."""
+    tmpl_name, trigger, max_c, reserve, stagger = combo
+    return (tmpl_name, trigger, int(max_c), int(reserve), int(stagger))
+
+
+# ── Resume from checkpoint ──────────────────────────────────────────────
 rows = []
-t0   = time.time()
-done = 0
+done_keys: set = set()
+if os.path.exists(CHECKPOINT_FILE):
+    try:
+        with open(CHECKPOINT_FILE, "rb") as f:
+            ckpt = pickle.load(f)
+        rows      = ckpt.get("rows", [])
+        done_keys = {_combo_key((r["slot_template"], r["trigger"],
+                                  r["max_concurrent"], r["reserve_n_evals"],
+                                  r["stagger_days"])) for r in rows}
+        print(f"  Resumed from checkpoint: {len(rows)} combos already done", flush=True)
+    except Exception as e:
+        print(f"  Checkpoint load failed ({e}), starting fresh", flush=True)
+        rows = []
+        done_keys = set()
+
+# Filter remaining combos to skip already-done ones
+remaining = [(i, c) for i, c in enumerate(combos) if _combo_key(c) not in done_keys]
+print(f"  {len(remaining)}/{total} combos remaining", flush=True)
+
+t0    = time.time()
+done  = len(rows)            # already-done count
+lock  = threading.Lock()     # protects rows + checkpoint writes
+last_ckpt = done
 
 with ThreadPoolExecutor(max_workers=N_WORKERS) as ex:
-    futs = {
-        ex.submit(_run_one, (*combo, SEED + i)): combo
-        for i, combo in enumerate(combos)
-    }
+    futs = {ex.submit(_run_one, (*c, SEED + i)): c for i, c in remaining}
     for fut in as_completed(futs):
-        done += 1
-        rows.append(fut.result())
-        if done % 200 == 0 or done == total:
-            el   = time.time() - t0
-            rate = done / el
-            eta  = (total - done) / rate if rate > 0 else 0
-            print(f"  {done}/{total}  elapsed={el:.0f}s  ETA={eta:.0f}s", flush=True)
+        result = fut.result()
+        with lock:
+            rows.append(result)
+            done += 1
+
+            if done - last_ckpt >= CHECKPOINT_EVERY or done == total:
+                _atomic_save(CHECKPOINT_FILE, {"rows": rows})
+                last_ckpt = done
+                el   = time.time() - t0
+                done_this_run = done - len(done_keys)
+                rate = done_this_run / el if el > 0 else 0
+                eta  = (total - done) / rate if rate > 0 else 0
+                print(f"  {done}/{total}  elapsed={el:.0f}s  ETA={eta:.0f}s  "
+                      f"[ckpt saved]", flush=True)
 
 df = (pd.DataFrame(rows)
         .sort_values("p_zero")
@@ -189,4 +236,5 @@ print(f"\n-- Top 30 by min P($0) --")
 print(df.head(30).to_string(index=False))
 
 df.to_csv("account_mgmt_results.csv", index=False)
-print(f"\nSaved to account_mgmt_results.csv  ({total} rows)")
+print(f"\nSaved to account_mgmt_results.csv  ({len(rows)} rows)")
+print(f"Checkpoint: {CHECKPOINT_FILE}")
