@@ -31,7 +31,7 @@ from backtest.regime.hmm import RegimeResult
 BUDGET    = 1_000.0
 HORIZON   = 84
 GOAL      = 10_000.0
-N_SIMS    = 300      # per combo — enough for ranking
+N_SIMS    = 5_000    # per combo
 SEED      = 42
 N_WORKERS = 2
 TOP_N     = 100      # how many AnchoredMeanReversion configs to load
