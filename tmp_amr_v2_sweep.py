@@ -1,4 +1,4 @@
-﻿"""
+"""
 AnchoredMeanReversion v2 — decomposed parameter sweep.
 
 Sweep A  (structural params, ~16K configs)
@@ -292,8 +292,7 @@ def _phase2_optimize(rec):
     EV/day = (pass_rate * mean_funded_payout - eval_fee) / mean_total_days
     Ranked by EV/day(mean) descending.
     """
-    pnl_pts  = rec["pnl_pts"]
-    sl_dists = rec["sl_dists"]
+    pnl_pts, sl_dists, _ = _get_arrays(rec)
     tpd      = rec["tpd"]
     max_minis = int(ACCOUNT.max_micros) // 10
 
@@ -438,8 +437,18 @@ print(f"Top {len(top_a)} from Sweep A (by Sortino) enter Sweep B", flush=True)
 # ══════════════════════════════════════════════════════════════════════════════
 # SWEEP B  (fast post-processing — no new backtests)
 # ══════════════════════════════════════════════════════════════════════════════
+def _get_arrays(rec):
+    """Return (pnl_pts, sl_dists, exit_bars) — works for both A and lazy B records."""
+    if '_parent' in rec:
+        idx = rec['_indices']
+        p   = rec['_parent']
+        return p['pnl_pts'][idx], p['sl_dists'][idx], p['exit_bars'][idx]
+    return rec['pnl_pts'], rec['sl_dists'], rec['exit_bars']
+
+
 def _score_filtered(rec, skip_first: int, filter_tp: bool, ftp_pct: float):
-    """Apply skip_first / filter_tp as NumPy masks on a cached A record."""
+    """Apply skip_first / filter_tp masks on a cached A record.
+    Returns a lightweight record: stats + parent ref + indices (no array copies)."""
     mask = np.ones(rec['n_t'], dtype=bool)
     if skip_first > 0:
         mask &= rec['elapsed_mins'] >= skip_first
@@ -448,46 +457,58 @@ def _score_filtered(rec, skip_first: int, filter_tp: bool, ftp_pct: float):
     n_kept = int(mask.sum())
     if n_kept < MIN_TRADES:
         return None
-    pnl_f = rec['pnl_pts'][mask]
-    sl_f  = rec['sl_dists'][mask]
-    eb_f  = rec['exit_bars'][mask]
-    tpd   = n_kept / n_days
+    tpd = n_kept / n_days
     if tpd < MIN_TPD:
         return None
+    indices = np.where(mask)[0].astype(np.int32)   # ~4KB vs ~20KB for full arrays
+    pnl_f   = rec['pnl_pts'][indices]
+    sl_f    = rec['sl_dists'][indices]
+    eb_f    = rec['exit_bars'][indices]
     sl_safe = np.where(sl_f > 0, sl_f, 1.0)
     wr      = float((pnl_f > 0).mean())
     avgR    = float((pnl_f / sl_safe).mean())
     sortino = _sortino_from_r(pnl_f / sl_safe, eb_f)
     new_params = dict(rec['params'])
-    new_params['skip_first_mins']     = skip_first
+    new_params['skip_first_mins']       = skip_first
     new_params['filter_tp_beyond_fair'] = filter_tp
-    new_params['tp_beyond_fair_pct']  = ftp_pct
-    return dict(params=new_params, pnl_pts=pnl_f, sl_dists=sl_f, exit_bars=eb_f,
-                elapsed_mins=rec['elapsed_mins'][mask],
-                beyond_ratio=rec['beyond_ratio'][mask],
+    new_params['tp_beyond_fair_pct']    = ftp_pct
+    # Store parent ref + indices — arrays reconstructed on demand in Phase 2
+    return dict(params=new_params, _parent=rec, _indices=indices,
                 n_t=n_kept, tpd=tpd, wr=wr, avgR=avgR, sortino=sortino)
 
 
-n_b_combos = len(SKIP_FIRST_VALS_B) * len(FILTER_TP_VALS_B) - 1  # minus skip_first=0,no_filter
+import heapq as _hq
+
+_B_CAP = TOP_FINAL * 20   # keep at most this many B results in memory at once
+
+n_b_combos = len(SKIP_FIRST_VALS_B) * len(FILTER_TP_VALS_B) - 1
 print(f"\nSweep B: {len(top_a)} base configs x {n_b_combos} filter combos "
       f"= {len(top_a)*n_b_combos} scored (no new backtests)", flush=True)
+print(f"  Memory-capped heap: keeping best {_B_CAP} B results")
 print(f"\n-- SWEEP B: fast filter post-processing --", flush=True)
-t_b = _time.perf_counter()
-b_results = []
+t_b     = _time.perf_counter()
+b_heap  = []   # min-heap of (-sortino, counter, rec) — counter breaks sortino ties
+_b_ctr  = 0
 total_b = len(top_a) * (len(SKIP_FIRST_VALS_B) * len(FILTER_TP_VALS_B))
-done_b   = 0
+done_b  = 0
 for rec in top_a:
     for sf, (ftp, ftp_pct) in product(SKIP_FIRST_VALS_B, FILTER_TP_VALS_B):
         if sf == 0 and not ftp:
             done_b += 1
-            continue  # already in A results
+            continue
         r = _score_filtered(rec, sf, ftp, ftp_pct)
         if r is not None:
-            b_results.append(r)
+            entry = (-r['sortino'], _b_ctr, r)
+            _b_ctr += 1
+            if len(b_heap) < _B_CAP:
+                _hq.heappush(b_heap, entry)
+            elif entry[0] < b_heap[0][0]:   # better than worst in heap
+                _hq.heapreplace(b_heap, entry)
         done_b += 1
-        if done_b % 5000 == 0:
-            print(f"  [B] {done_b}/{total_b}  valid={len(b_results)}", flush=True)
-print(f"\nSweep B done: {len(b_results)} valid in {_time.perf_counter()-t_b:.1f}s",
+        if done_b % 50000 == 0:
+            print(f"  [B] {done_b}/{total_b}  heap={len(b_heap)}", flush=True)
+b_results = [r for _, _, r in b_heap]
+print(f"\nSweep B done: {len(b_results)} in heap in {_time.perf_counter()-t_b:.1f}s",
       flush=True)
 
 all_results = top_a + b_results
