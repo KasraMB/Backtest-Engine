@@ -1,16 +1,16 @@
-"""
+﻿"""
 AnchoredMeanReversion v2 — decomposed parameter sweep.
 
 Sweep A  (structural params, ~16K configs)
   skip_first=0, filter_tp=False, move_sl_to_entry=False, link1400to930=False fixed.
   Ranked by daily Sortino ratio. Min 0.5 tpd required.
-  → top 500 survive into Sweep B
+  -> top 500 survive into Sweep B
 
 Sweep B  (filter params: top-500 × skip_first × filter_tp combos)
-  → top 250 overall survive into Phase 2
+  -> top 250 overall survive into Phase 2
 
 Phase 2  (ERP × FRP 0.1–1.0 × 0.1–1.0, 100 combos, large pool, no new backtests)
-  → final ranked table with per-config optimal risk levels
+  -> final ranked table with per-config optimal risk levels
 
 Parameters swept:
   Sessions × window  (15 combos)
@@ -24,7 +24,7 @@ Parameters swept:
   skip_first_mins    [0, 1, 2, 3, 4, 5, 10]
   filter_tp × pct    (False) | (True, 0%..100% in 5% steps)
 
-Metric: Sortino (A/B ranking) → P($0) asc / P(>$10K) desc (Phase 2 final).
+Metric: Sortino (A/B ranking) -> P($0) asc / P(>$10K) desc (Phase 2 final).
 Checkpoints every 100 configs.
 """
 import os, pickle
@@ -47,7 +47,7 @@ md     = _cache["md"]
 n_days = _cache["n_days"]
 print(f"Loaded {n_days} days of market data", flush=True)
 
-# Precompute bar → trading-day ordinal for Sortino grouping
+# Precompute bar -> trading-day ordinal for Sortino grouping
 _bar_day_ord = np.array([d.toordinal() for d in md.df_1m.index.date], dtype=np.int32)
 
 from backtest.runner.runner import run_backtest
@@ -120,7 +120,7 @@ TP_MULT_VALS     = [1.0, 1.5, 2.0]
 SKIP_FIRST_VALS_B = [0, 1, 2, 3, 4, 5, 10]
 FILTER_TP_VALS_B  = [(False, 50.0)] + [(True, float(p)) for p in range(0, 105, 5)]
 
-# NQ mini commission matching lucidflex (MINI_COMM_RT = $3.50 RT → $1.75/side)
+# NQ mini commission matching lucidflex (MINI_COMM_RT = $3.50 RT -> $1.75/side)
 COMM_PER_CONTRACT = MINI_COMM_RT / 2.0   # $1.75 per contract per side
 
 # -- Fair-price cache: {(date, sess_label) -> 1m open at session start} --────────
@@ -251,7 +251,7 @@ def _extract_filter_meta(trades, params) -> tuple[np.ndarray, np.ndarray]:
         elif trade.direction == -1 and entry > fair: # short toward fair
             if itp < fair:
                 beyond_ratio[j] = (entry - fair) / tp_dist
-        # away-from-fair or TP doesn't cross fair → stays inf
+        # away-from-fair or TP doesn't cross fair -> stays inf
 
     return elapsed_mins, beyond_ratio
 
@@ -493,7 +493,7 @@ print(f"\nSweep B done: {len(b_results)} valid in {_time.perf_counter()-t_b:.1f}
 all_results = top_a + b_results
 all_results.sort(key=lambda r: -r["sortino"])
 top_final = all_results[:TOP_FINAL]
-print(f"Combined {len(all_results)} valid → top {len(top_final)} enter Phase 2",
+print(f"Combined {len(all_results)} valid -> top {len(top_final)} enter Phase 2",
       flush=True)
 
 
@@ -519,7 +519,7 @@ p2_results.sort(key=lambda r: -r["best_ev"])
 
 with open(RESULTS_FILE, "wb") as f:
     pickle.dump(p2_results, f)
-print(f"Results saved → {RESULTS_FILE}", flush=True)
+print(f"Results saved -> {RESULTS_FILE}", flush=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -527,7 +527,7 @@ print(f"Results saved → {RESULTS_FILE}", flush=True)
 # ══════════════════════════════════════════════════════════════════════════════
 W = 165
 print("\n" + "="*W)
-print("  ANCHORED MEAN REVERSION V2 SWEEP — ranked P($0) asc → P(>$10K) desc  [Phase-2 propfirm optimal]")
+print("  ANCHORED MEAN REVERSION V2 SWEEP — ranked P($0) asc -> P(>$10K) desc  [Phase-2 propfirm optimal]")
 print(f"  Account: 25K LucidFlex  Budget=$300  Horizon=84d  Goal=$10K")
 print(f"  Sweep A/B ranked by daily Sortino | Phase 2: ERP/FRP 0.1–1.0 × 0.1–1.0 (100 combos)")
 print("="*W)
@@ -564,7 +564,7 @@ if p2_results:
     n_accounts = int(BUDGET // ACCOUNT.eval_fee)
     print(f"\n  Account strategy:")
     print(f"    Account:          25K LucidFlex  (eval fee=${ACCOUNT.eval_fee:.0f})")
-    print(f"    Starting capital: ${BUDGET:.0f} → {n_accounts} accounts at once")
+    print(f"    Starting capital: ${BUDGET:.0f} -> {n_accounts} accounts at once")
     print(f"    Eval risk (ERP):  {erp:.0%} of MLL = ${erp * ACCOUNT.mll_amount:.0f}/trade target risk")
     print(f"    Funded risk (FRP):{frp:.0%} of funded drawdown limit per trade")
     print(f"    Reinvest rule:    deposit every payout into new evals immediately")
