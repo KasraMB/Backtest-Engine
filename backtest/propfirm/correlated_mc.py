@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+from numba import njit, prange
 
 from backtest.propfirm.lucidflex import (
     LucidFlexAccount,
@@ -26,6 +27,21 @@ from backtest.propfirm.lucidflex import (
     MINI_COMM_RT,
 )
 from backtest.regime.hmm import RegimeResult
+
+
+# ---------------------------------------------------------------------------
+# Trigger encoding (string → int for Numba)
+# ---------------------------------------------------------------------------
+_TRIG_GREEDY    = 0
+_TRIG_ON_FAIL   = 1
+_TRIG_ON_PASS   = 2
+_TRIG_ON_CLOSE  = 3
+_TRIG_ON_PAYOUT = 4
+_TRIG_STAGGERED = 5
+_TRIG_MAP = {
+    "greedy": _TRIG_GREEDY, "on_fail": _TRIG_ON_FAIL, "on_pass": _TRIG_ON_PASS,
+    "on_close": _TRIG_ON_CLOSE, "on_payout": _TRIG_ON_PAYOUT, "staggered": _TRIG_STAGGERED,
+}
 
 
 @dataclass
@@ -726,6 +742,365 @@ def _run_batch(
 
 
 # ---------------------------------------------------------------------------
+# Numba JIT kernel — fastest single-combo runner
+# ---------------------------------------------------------------------------
+
+@njit(parallel=True, cache=True, fastmath=True)
+def _run_batch_jit(
+    cfg_fired,        # (n_cfg, n_sims, horizon) bool
+    cfg_pnl,          # (n_cfg, n_sims, horizon) float64
+    cfg_sl,           # (n_cfg, n_sims, horizon) float64
+    tpl_cfg_indices,  # (n_tpl, max_cfgs_per_tpl) int32 — priority-sorted, -1 = unused
+    tpl_n_cfgs,       # (n_tpl,) int32
+    tpl_risk_eval,    # (n_tpl,) float64
+    tpl_risk_fund,    # (n_tpl,) float64
+    SB,               # starting_balance
+    MLL_AMT,          # mll_amount
+    PT,               # profit_target
+    MAX_PAY,          # max_payouts
+    PAY_CAP,          # payout_cap
+    SPLIT,            # 0.90
+    MAX_MINIS,        # account.max_micros // 10
+    MAX_MICROS,       # account.max_micros
+    EVAL_FEE,         # eval_fee
+    max_c,            # strategy.max_concurrent
+    trigger_code,     # 0..5
+    reserve,          # reserve_n_evals * eval_fee
+    stagger_days,     # strategy.stagger_days
+    n_tpl,            # number of slot templates
+    budget,           # initial cash
+    horizon,          # number of trading days
+):
+    """
+    Per-sim scalar simulation loop, JIT-compiled and parallelised across sims.
+    Equivalent to _run_batch / _run_single_sim but ~50–100x faster.
+    """
+    n_sims = cfg_fired.shape[1]
+    cash_out = np.empty(n_sims, dtype=np.float64)
+
+    for s in prange(n_sims):
+        # ── Per-sim state ───────────────────────────────────────────
+        cash       = budget
+        queue      = 0
+        tpl_cyc    = 0
+        last_day   = -(stagger_days + 1)
+        n_active   = 0
+
+        phase     = np.zeros(max_c, dtype=np.int8)
+        tpl_idx   = np.zeros(max_c, dtype=np.int8)
+        ev_bal    = np.empty(max_c, dtype=np.float64)
+        ev_mll    = np.empty(max_c, dtype=np.float64)
+        ev_peak   = np.empty(max_c, dtype=np.float64)
+        ev_tot    = np.zeros(max_c, dtype=np.float64)
+        ev_max    = np.zeros(max_c, dtype=np.float64)
+        ev_np     = np.zeros(max_c, dtype=np.int32)
+        fu_bal    = np.empty(max_c, dtype=np.float64)
+        fu_mll    = np.empty(max_c, dtype=np.float64)
+        fu_peak   = np.empty(max_c, dtype=np.float64)
+        fu_locked = np.zeros(max_c, dtype=np.bool_)
+        fu_cyc    = np.zeros(max_c, dtype=np.int32)
+        fu_cnt    = np.zeros(max_c, dtype=np.int32)
+
+        # ── Day-0 initial opens (always greedy regardless of trigger) ──
+        while n_active < max_c and cash >= EVAL_FEE:
+            a = -1
+            for i in range(max_c):
+                if phase[i] == 0:
+                    a = i
+                    break
+            if a < 0:
+                break
+            phase[a]   = 1
+            tpl_idx[a] = tpl_cyc % n_tpl
+            ev_bal[a]  = SB
+            ev_mll[a]  = SB - MLL_AMT
+            ev_peak[a] = SB
+            ev_tot[a]  = 0.0
+            ev_max[a]  = 0.0
+            ev_np[a]   = 0
+            cash      -= EVAL_FEE
+            tpl_cyc   += 1
+            last_day   = 0
+            n_active  += 1
+
+        # ── Day loop ────────────────────────────────────────────────
+        for day in range(horizon):
+            any_fail   = False
+            any_pass   = False
+            any_payout = False
+            any_close  = False
+
+            for a in range(max_c):
+                if phase[a] == 0:
+                    continue
+
+                ti   = tpl_idx[a]
+                ncfg = tpl_n_cfgs[ti]
+
+                # Resolve which config fires (priority-sorted, first wins)
+                won = -1
+                for ci in range(ncfg):
+                    cidx = tpl_cfg_indices[ti, ci]
+                    if cfg_fired[cidx, s, day]:
+                        won = cidx
+                        break
+                if won < 0:
+                    continue
+
+                pnl = cfg_pnl[won, s, day]
+                sl  = cfg_sl[won, s, day]
+
+                # nq_first sizing
+                sl_safe = sl if sl > 0.25 else 0.25
+                mini_risk_1c = sl_safe * 20.0
+                if phase[a] == 1:
+                    risk_d = tpl_risk_eval[ti]
+                else:
+                    risk_d = tpl_risk_fund[ti]
+
+                if MAX_MINIS > 0 and mini_risk_1c <= risk_d:
+                    n_c = int(risk_d / mini_risk_1c)
+                    if n_c < 1: n_c = 1
+                    if n_c > MAX_MINIS: n_c = MAX_MINIS
+                    dollar = pnl * n_c * 20.0 - 3.5 * n_c
+                else:
+                    n_c = int(risk_d / (sl_safe * 2.0))
+                    if n_c < 1: n_c = 1
+                    if n_c > MAX_MICROS: n_c = MAX_MICROS
+                    dollar = pnl * n_c * 2.0 - 1.0 * n_c
+
+                if phase[a] == 1:
+                    # ── EVAL step ──
+                    new_b = ev_bal[a] + dollar
+                    if new_b <= ev_mll[a]:
+                        phase[a] = 0
+                        any_fail = True
+                        any_close = True
+                        n_active -= 1
+                    else:
+                        ev_bal[a] = new_b
+                        if new_b > ev_peak[a]:
+                            ev_peak[a] = new_b
+                        cand = ev_peak[a] - MLL_AMT
+                        if cand > ev_mll[a]:
+                            ev_mll[a] = cand
+                        ev_tot[a] = new_b - SB
+                        if dollar > 0.0:
+                            ev_np[a] += 1
+                            if dollar > ev_max[a]:
+                                ev_max[a] = dollar
+                        if (ev_tot[a] >= PT
+                                and ev_max[a] <= ev_tot[a] * 0.5
+                                and ev_np[a] >= 2):
+                            phase[a]     = 2
+                            fu_bal[a]    = SB
+                            fu_mll[a]    = SB - MLL_AMT
+                            fu_peak[a]   = SB
+                            fu_locked[a] = False
+                            fu_cyc[a]    = 0
+                            fu_cnt[a]    = 0
+                            any_pass     = True
+                else:
+                    # ── FUNDED step ──
+                    new_b = fu_bal[a] + dollar
+                    if (not fu_locked[a]) and new_b >= SB:
+                        fu_locked[a] = True
+                    if fu_locked[a]:
+                        new_mll = SB - 100.0
+                    else:
+                        new_peak_pre = fu_peak[a] if fu_peak[a] > new_b else new_b
+                        cand = new_peak_pre - MLL_AMT
+                        new_mll = fu_mll[a] if fu_mll[a] > cand else cand
+                    if new_b <= new_mll:
+                        phase[a] = 0
+                        any_close = True
+                        n_active -= 1
+                    else:
+                        fu_bal[a]  = new_b
+                        fu_mll[a]  = new_mll
+                        if new_b > fu_peak[a]:
+                            fu_peak[a] = new_b
+                        if dollar > 0.0:
+                            fu_cyc[a] += 1
+                        if fu_cyc[a] >= 5 and fu_cnt[a] < MAX_PAY:
+                            profits = new_b - SB
+                            if profits < 0.0:
+                                profits = 0.0
+                            half = profits * 0.5
+                            gross = half if half < PAY_CAP else PAY_CAP
+                            if gross >= 500.0:
+                                cash      += gross * SPLIT
+                                fu_bal[a]  = new_b - gross
+                                fu_cnt[a] += 1
+                                fu_cyc[a]  = 0
+                                any_payout = True
+                                if fu_cnt[a] >= MAX_PAY:
+                                    phase[a]  = 0
+                                    any_close = True
+                                    n_active -= 1
+
+            # ── Drain queue ────────────────────────────────────────
+            while queue > 0 and n_active < max_c and cash >= EVAL_FEE:
+                a = -1
+                for i in range(max_c):
+                    if phase[i] == 0:
+                        a = i
+                        break
+                if a < 0:
+                    break
+                phase[a]   = 1
+                tpl_idx[a] = tpl_cyc % n_tpl
+                ev_bal[a]  = SB
+                ev_mll[a]  = SB - MLL_AMT
+                ev_peak[a] = SB
+                ev_tot[a]  = 0.0
+                ev_max[a]  = 0.0
+                ev_np[a]   = 0
+                cash      -= EVAL_FEE
+                tpl_cyc   += 1
+                last_day   = day
+                queue     -= 1
+                n_active  += 1
+
+            # ── Fallback: dormant ──────────────────────────────────
+            dormant = (n_active + queue == 0) and (cash >= EVAL_FEE)
+            if dormant:
+                a = -1
+                for i in range(max_c):
+                    if phase[i] == 0:
+                        a = i
+                        break
+                if a >= 0:
+                    phase[a]   = 1
+                    tpl_idx[a] = tpl_cyc % n_tpl
+                    ev_bal[a]  = SB
+                    ev_mll[a]  = SB - MLL_AMT
+                    ev_peak[a] = SB
+                    ev_tot[a]  = 0.0
+                    ev_max[a]  = 0.0
+                    ev_np[a]   = 0
+                    cash      -= EVAL_FEE
+                    tpl_cyc   += 1
+                    last_day   = day
+                    n_active  += 1
+
+            # ── Trigger-based ──────────────────────────────────────
+            trig = False
+            if   trigger_code == 0: trig = True
+            elif trigger_code == 1: trig = any_fail
+            elif trigger_code == 2: trig = any_pass
+            elif trigger_code == 3: trig = any_close
+            elif trigger_code == 4: trig = any_payout
+            elif trigger_code == 5: trig = (day - last_day) >= stagger_days
+
+            if trig and not dormant:
+                if n_active < max_c and (cash - EVAL_FEE) >= reserve:
+                    a = -1
+                    for i in range(max_c):
+                        if phase[i] == 0:
+                            a = i
+                            break
+                    if a >= 0:
+                        phase[a]   = 1
+                        tpl_idx[a] = tpl_cyc % n_tpl
+                        ev_bal[a]  = SB
+                        ev_mll[a]  = SB - MLL_AMT
+                        ev_peak[a] = SB
+                        ev_tot[a]  = 0.0
+                        ev_max[a]  = 0.0
+                        ev_np[a]   = 0
+                        cash      -= EVAL_FEE
+                        tpl_cyc   += 1
+                        last_day   = day
+                        n_active  += 1
+                elif n_active >= max_c and cash >= EVAL_FEE:
+                    queue += 1
+
+            # ── Greedy daily fill ──────────────────────────────────
+            if trigger_code == 0:
+                while n_active < max_c and (cash - EVAL_FEE) >= reserve:
+                    a = -1
+                    for i in range(max_c):
+                        if phase[i] == 0:
+                            a = i
+                            break
+                    if a < 0:
+                        break
+                    phase[a]   = 1
+                    tpl_idx[a] = tpl_cyc % n_tpl
+                    ev_bal[a]  = SB
+                    ev_mll[a]  = SB - MLL_AMT
+                    ev_peak[a] = SB
+                    ev_tot[a]  = 0.0
+                    ev_max[a]  = 0.0
+                    ev_np[a]   = 0
+                    cash      -= EVAL_FEE
+                    tpl_cyc   += 1
+                    last_day   = day
+                    n_active  += 1
+
+        cash_out[s] = cash
+
+    return cash_out
+
+
+def _build_jit_inputs(slot_template, regime_seqs, account, rng):
+    """Pre-compute flat numpy arrays for the Numba kernel."""
+    n_sims, horizon = regime_seqs.shape
+
+    unique_cfgs = []
+    name_to_idx = {}
+    for slot in slot_template:
+        for cfg in slot.configs:
+            if cfg.name not in name_to_idx:
+                name_to_idx[cfg.name] = len(unique_cfgs)
+                unique_cfgs.append(cfg)
+    n_cfg = len(unique_cfgs)
+    n_states = int(regime_seqs.max()) + 1
+
+    cfg_fired = np.zeros((n_cfg, n_sims, horizon), dtype=np.bool_)
+    cfg_pnl   = np.zeros((n_cfg, n_sims, horizon), dtype=np.float64)
+    cfg_sl    = np.ones( (n_cfg, n_sims, horizon), dtype=np.float64)
+
+    regime_int = regime_seqs.astype(np.int32)
+    for ci, cfg in enumerate(unique_cfgs):
+        tpd_lookup = np.array([cfg.tpd_by_regime.get(r, 0.0) for r in range(n_states)])
+        tpd_arr    = tpd_lookup[regime_int]
+        fired      = rng.poisson(tpd_arr) > 0
+        cfg_fired[ci] = fired
+
+        max_pool = max(len(v) for v in cfg.pnl_pts_by_regime.values())
+        raw_idx  = rng.integers(0, max(max_pool, 1), size=(n_sims, horizon), dtype=np.int32)
+
+        for r, pnl_pool in cfg.pnl_pts_by_regime.items():
+            sl_pool = cfg.sl_dists_by_regime[r]
+            mask_r  = (regime_int == r) & fired
+            if mask_r.any():
+                idx_r = raw_idx[mask_r] % len(pnl_pool)
+                cfg_pnl[ci][mask_r] = pnl_pool[idx_r]
+                cfg_sl[ci][mask_r]  = sl_pool[idx_r]
+
+    n_tpl = len(slot_template)
+    max_cfgs = max(len(s.configs) for s in slot_template)
+    tpl_cfg_indices = np.full((n_tpl, max_cfgs), -1, dtype=np.int32)
+    tpl_n_cfgs      = np.zeros(n_tpl, dtype=np.int32)
+    tpl_risk_eval   = np.zeros(n_tpl, dtype=np.float64)
+    tpl_risk_fund   = np.zeros(n_tpl, dtype=np.float64)
+
+    for t, slot in enumerate(slot_template):
+        n = len(slot.configs)
+        tpl_n_cfgs[t] = n
+        priorities = sorted(range(n), key=lambda i: (slot.configs[i].entry_time_min, i))
+        for ci, orig_idx in enumerate(priorities):
+            tpl_cfg_indices[t, ci] = name_to_idx[slot.configs[orig_idx].name]
+        tpl_risk_eval[t] = slot.configs[0].eval_risk / n * account.mll_amount
+        tpl_risk_fund[t] = slot.configs[0].fund_risk / n * account.mll_amount
+
+    return (cfg_fired, cfg_pnl, cfg_sl,
+            tpl_cfg_indices, tpl_n_cfgs, tpl_risk_eval, tpl_risk_fund)
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -744,10 +1119,32 @@ def correlated_reinvestment_mc(
     Run correlated reinvestment MC.
 
     Returns (n_sims,) float64 array of final cash per simulated investor.
-    Uses vectorised batch simulation: all sims run simultaneously via
-    (n_sims, max_c) numpy arrays and pre-generated random draws.
+    Uses a Numba JIT-compiled kernel parallelised across sims via prange.
     """
     rng         = np.random.default_rng(seed)
     regime_seqs = _sample_regime_sequences(regime_result, n_sims, horizon, rng)
-    return _run_batch(slot_template, regime_seqs, account, eval_fee,
-                      strategy, budget, horizon, rng)
+
+    (cfg_fired, cfg_pnl, cfg_sl,
+     tpl_cfg_indices, tpl_n_cfgs, tpl_risk_eval, tpl_risk_fund
+     ) = _build_jit_inputs(slot_template, regime_seqs, account, rng)
+
+    return _run_batch_jit(
+        cfg_fired, cfg_pnl, cfg_sl,
+        tpl_cfg_indices, tpl_n_cfgs, tpl_risk_eval, tpl_risk_fund,
+        float(account.starting_balance),
+        float(account.mll_amount),
+        float(account.profit_target),
+        np.int32(account.max_payouts),
+        float(account.payout_cap),
+        float(account.split),
+        np.int32(account.max_micros // 10),
+        np.int32(account.max_micros),
+        float(eval_fee),
+        np.int32(strategy.max_concurrent),
+        np.int32(_TRIG_MAP[strategy.trigger]),
+        float(strategy.reserve_n_evals * eval_fee),
+        np.int32(strategy.stagger_days),
+        np.int32(len(slot_template)),
+        float(budget),
+        np.int32(horizon),
+    )
