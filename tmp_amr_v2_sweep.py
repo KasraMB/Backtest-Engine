@@ -290,72 +290,84 @@ def _run_one(params):
 
 def _phase2_optimize(rec):
     """
-    Re-evaluate one record across all 100 ERP x FRP combos using lucidflex
-    eval + funded kernels directly. All metrics from single-account analysis.
+    Find optimal (account, ERP, FRP) across all LucidFlex accounts and the
+    10x10 ERP x FRP grid, ranked by median EV/day.
 
-    EV/day = (pass_rate * mean_funded_payout - eval_fee) / mean_total_days
-    Ranked by EV/day(mean) descending.
+    Key optimization: eval depends only on ERP; funded depends only on FRP.
+    So we run 10 eval + 10 funded calls per account instead of 100x2 = 200.
+    With 4 accounts: 80 kernel calls vs 800. Results combined as cross-product.
     """
     pnl_pts, sl_dists, _ = _get_arrays(rec)
-    tpd      = rec["tpd"]
-    max_minis = int(ACCOUNT.max_micros) // 10
+    tpd = rec["tpd"]
 
-    best_ev     = -np.inf
-    best_ev_med = 0.0
-    best_erp    = ERP_GRID[0]
-    best_frp    = FRP_GRID[0]
-    best_pass   = 0.0
-    best_payout = 0.0
-    best_pay_med= 0.0
+    best_ev_med  = -np.inf
+    best_ev      = 0.0
+    best_erp     = ERP_GRID[0]
+    best_frp     = FRP_GRID[0]
+    best_pass    = 0.0
+    best_payout  = 0.0
+    best_pay_med = 0.0
+    best_acct    = "25K"
 
-    rng = np.random.default_rng(42)
+    for acct in LUCIDFLEX_ACCOUNTS.values():
+        max_minis = int(acct.max_micros) // 10
+        sb_f      = np.full(P2_NPOOL, float(acct.starting_balance), dtype=np.float32)
+        rng       = np.random.default_rng(42)
 
-    for erp, frp in RISK_COMBOS:
-        try:
-            passed, _, eval_days = simulate_eval_batch(
-                pnl_pts, sl_dists, ACCOUNT,
-                risk_pct=erp, scheme="fixed_dollar", sizing_mode="nq_first",
-                rng=rng, trades_per_day=tpd, n_sims=P2_NPOOL,
-                max_minis=max_minis, mini_comm_rt=MINI_COMM_RT,
-            )
-            pass_rate      = float(passed.mean())
-            mean_eval_days = float(eval_days.mean())
-            n_passed       = int(passed.sum())
+        # --- Eval: one kernel call per ERP value ---
+        eval_cache: dict = {}
+        for erp in ERP_GRID:
+            try:
+                passed, _, eval_days = simulate_eval_batch(
+                    pnl_pts, sl_dists, acct,
+                    risk_pct=erp, scheme="fixed_dollar", sizing_mode="nq_first",
+                    rng=rng, trades_per_day=tpd, n_sims=P2_NPOOL,
+                    max_minis=max_minis, mini_comm_rt=MINI_COMM_RT,
+                )
+                eval_cache[erp] = (float(passed.mean()), float(eval_days.mean()))
+            except Exception:
+                eval_cache[erp] = (0.0, 1.0)
 
-            if n_passed > 0:
-                sb_f = np.full(n_passed, float(ACCOUNT.starting_balance), dtype=np.float32)
+        # --- Funded: one kernel call per FRP value (P2_NPOOL fixed sims) ---
+        funded_cache: dict = {}
+        for frp in FRP_GRID:
+            try:
                 total_w, _, _, _, _, funded_days = simulate_funded_batch(
-                    pnl_pts, sl_dists, ACCOUNT,
+                    pnl_pts, sl_dists, acct,
                     risk_pct=frp, scheme="fixed_dollar", sizing_mode="nq_first",
                     rng=rng, trades_per_day=tpd, starting_balances=sb_f,
                     max_minis=max_minis, mini_comm_rt=MINI_COMM_RT,
                 )
-                mean_payout   = float(total_w.mean())
-                median_payout = float(np.median(total_w))
-                mean_fund_days= float(funded_days.mean())
-            else:
-                mean_payout = median_payout = mean_fund_days = 0.0
+                funded_cache[frp] = (float(total_w.mean()), float(np.median(total_w)),
+                                     float(funded_days.mean()))
+            except Exception:
+                funded_cache[frp] = (0.0, 0.0, 1.0)
 
-            total_days  = mean_eval_days + pass_rate * mean_fund_days
-            ev_day      = (pass_rate * mean_payout    - ACCOUNT.eval_fee) / max(total_days, 1.0)
-            ev_day_med  = (pass_rate * median_payout  - ACCOUNT.eval_fee) / max(total_days, 1.0)
-
-            if ev_day > best_ev:
-                best_ev     = ev_day
-                best_ev_med = ev_day_med
-                best_erp    = erp
-                best_frp    = frp
-                best_pass   = pass_rate
-                best_payout = mean_payout
-                best_pay_med= median_payout
-        except Exception:
-            pass
+        # --- Cross-product: 100 pure-Python scalar ops, no kernel calls ---
+        for erp in ERP_GRID:
+            pass_rate, mean_eval_days = eval_cache[erp]
+            for frp in FRP_GRID:
+                mean_payout, median_payout, mean_fund_days = funded_cache[frp]
+                total_days = mean_eval_days + pass_rate * mean_fund_days
+                denom      = max(total_days, 1.0)
+                ev_day     = (pass_rate * mean_payout   - acct.eval_fee) / denom
+                ev_day_med = (pass_rate * median_payout - acct.eval_fee) / denom
+                if ev_day_med > best_ev_med:
+                    best_ev_med  = ev_day_med
+                    best_ev      = ev_day
+                    best_erp     = erp
+                    best_frp     = frp
+                    best_pass    = pass_rate
+                    best_payout  = mean_payout
+                    best_pay_med = median_payout
+                    best_acct    = acct.name
 
     return dict(**rec,
                 best_ev=best_ev, best_ev_med=best_ev_med,
                 best_erp=best_erp, best_frp=best_frp,
                 best_pass=best_pass,
-                best_payout=best_payout, best_pay_med=best_pay_med)
+                best_payout=best_payout, best_pay_med=best_pay_med,
+                best_account=best_acct)
 
 
 def _run_parallel(configs, label, n_workers, ckpt_path=None, resume_done=None,
@@ -558,13 +570,14 @@ t_p3 = _time.perf_counter()
 
 def _phase3_mc(rec):
     pnl_pts, sl_dists, _ = _get_arrays(rec)
+    acct = LUCIDFLEX_ACCOUNTS[rec.get("best_account", "25K")]
     pool = simulate_lifecycles(
-        pnl_pts, sl_dists, rec["tpd"], ACCOUNT,
+        pnl_pts, sl_dists, rec["tpd"], acct,
         eval_risk=rec["best_erp"], fund_risk=rec["best_frp"],
         N=P3_NPOOL, seed=42,
     )
     cash = reinvestment_mc(
-        pool, eval_fee=ACCOUNT.eval_fee,
+        pool, eval_fee=acct.eval_fee,
         budget=BUDGET, horizon=HORIZON, n_sims=P3_NMC, seed=99,
     )
     return dict(**rec,
@@ -603,22 +616,24 @@ print(f"  ANCHORED MEAN REVERSION V2 SWEEP — ranked min P($0)  [budget=${BUDGE
 print(f"  Account: 25K LucidFlex")
 print(f"  Sweep A/B: daily Sortino | Phase 2: ERP/FRP optimised by EV/day | Phase 3: MC re-rank by P($0)")
 print("="*W)
-hdr = (f"{'#':>3}  {'Config':<78}  {'N':>5}  {'tpd':>5}  {'WR':>6}  {'avgR':>7}  "
+hdr = (f"{'#':>3}  {'Config':<72}  {'Acct':>5}  {'N':>5}  {'tpd':>5}  {'WR':>6}  {'avgR':>7}  "
        f"{'Sortino':>8}  {'P($0)':>7}  {'P(>bgt)':>8}  {'P(goal)':>8}  "
-       f"{'med$':>7}  {'EV/d':>7}  {'ERP':>5}  {'FRP':>5}")
+       f"{'med$':>7}  {'EV/d(med)':>10}  {'ERP':>5}  {'FRP':>5}")
 print(hdr)
 print("-"*W)
 for rank, r in enumerate(p3_results[:50], 1):
     label = _make_label(r["params"])
-    print(f"{rank:>3}  {label:<78}  {r['n_t']:>5}  {r['tpd']:>5.2f}  "
+    print(f"{rank:>3}  {label:<72}  {r.get('best_account','25K'):>5}  "
+          f"{r['n_t']:>5}  {r['tpd']:>5.2f}  "
           f"{r['wr']:>6.1%}  {r['avgR']:>+7.4f}  {r['sortino']:>8.3f}  "
           f"{r['p_zero']:>7.1%}  {r['p_profit']:>8.1%}  {r['p_goal']:>8.1%}  "
-          f"{r['median_cash']:>7.0f}  {r['best_ev']:>+7.2f}  "
+          f"{r['median_cash']:>7.0f}  {r['best_ev_med']:>+10.2f}  "
           f"{r['best_erp']:>5.2f}  {r['best_frp']:>5.2f}")
 
 if p3_results:
-    best = p3_results[0]
-    p    = best["params"]
+    best  = p3_results[0]
+    p     = best["params"]
+    ba    = LUCIDFLEX_ACCOUNTS[best.get("best_account", "25K")]
     print("\n" + "="*W)
     print("  BEST CONFIG — FULL DETAIL")
     print("="*W)
@@ -626,8 +641,9 @@ if p3_results:
     print(f"\n  Trade stats:")
     print(f"    Trades={best['n_t']}  tpd={best['tpd']:.3f}  "
           f"WR={best['wr']:.1%}  avgR={best['avgR']:+.4f}  Sortino={best['sortino']:.3f}")
-    print(f"\n  Propfirm outcome (optimal risk):")
-    print(f"    Pass rate={best['best_pass']:.1%}  Mean payout=${best['best_payout']:.0f}  Median payout=${best['best_pay_med']:.0f}")
+    print(f"\n  Propfirm outcome  [{ba.name} LucidFlex — optimal ERP/FRP by median EV/day]:")
+    print(f"    Pass rate={best['best_pass']:.1%}  Mean payout=${best['best_payout']:.0f}  "
+          f"Median payout=${best['best_pay_med']:.0f}")
     print(f"    EV/day(mean)=${best['best_ev']:.2f}  EV/day(median)=${best['best_ev_med']:.2f}")
     print(f"\n  Reinvestment MC (budget=${BUDGET:.0f}, horizon={HORIZON}d):")
     print(f"    P($0)={best['p_zero']:.1%}  P(>budget)={best['p_profit']:.1%}  "
@@ -635,16 +651,15 @@ if p3_results:
     print(f"\n  Full parameters:")
     for k, v in sorted(p.items()):
         print(f"    {k}: {v}")
-    erp = best["best_erp"]
-    frp = best["best_frp"]
-    n_accounts = int(BUDGET // ACCOUNT.eval_fee)
+    erp          = best["best_erp"]
+    frp          = best["best_frp"]
+    n_accounts   = int(BUDGET // ba.eval_fee)
     print(f"\n  Account strategy:")
-    print(f"    Account:          25K LucidFlex  (eval fee=${ACCOUNT.eval_fee:.0f})")
+    print(f"    Account:          {ba.name} LucidFlex  (eval fee=${ba.eval_fee:.0f})")
     print(f"    Starting capital: ${BUDGET:.0f} -> {n_accounts} accounts at once")
-    print(f"    Eval risk (ERP):  {erp:.0%} of MLL = ${erp * ACCOUNT.mll_amount:.0f}/trade target risk")
+    print(f"    Eval risk (ERP):  {erp:.0%} of MLL = ${erp * ba.mll_amount:.0f}/trade target risk")
     print(f"    Funded risk (FRP):{frp:.0%} of funded drawdown limit per trade")
     print(f"    Reinvest rule:    deposit every payout into new evals immediately")
-    print(f"    Payout:           min(profits×50%, $1500) × 90% net to trader")
 
 # ── Save to git-tracked location so results survive push/pull ─────────────────
 import io as _io, shutil as _sh
@@ -661,19 +676,20 @@ with open(_pkl_dst, "wb") as _f:
 _txt_dst = os.path.join(_LOG_DIR, "amr_v2_results.txt")
 _buf = _io.StringIO()
 _buf.write("ANCHORED MEAN REVERSION V2 SWEEP RESULTS\n")
-_buf.write(f"Dataset: {n_days} days (2019+)  Account: 25K LucidFlex  "
+_buf.write(f"Dataset: {n_days} days (2019+)  All LucidFlex accounts  "
            f"Budget=${BUDGET:.0f}  Horizon={HORIZON}d  Goal=${GOAL:.0f}\n")
 _buf.write(f"Phase 2: ERP/FRP 0.1-1.0 x 0.1-1.0 (EV/day) | Phase 3: MC ranked by min P($0)\n\n")
-_buf.write(f"{'#':>3}  {'Config':<78}  {'N':>5}  {'tpd':>5}  {'WR':>6}  {'avgR':>7}  "
+_buf.write(f"{'#':>3}  {'Config':<72}  {'Acct':>5}  {'N':>5}  {'tpd':>5}  {'WR':>6}  {'avgR':>7}  "
            f"{'Sortino':>8}  {'P($0)':>7}  {'P(>bgt)':>8}  {'P(goal)':>8}  "
-           f"{'med$':>7}  {'EV/d':>7}  {'ERP':>5}  {'FRP':>5}\n")
-_buf.write("-"*185 + "\n")
+           f"{'med$':>7}  {'EV/d(med)':>10}  {'ERP':>5}  {'FRP':>5}\n")
+_buf.write("-"*190 + "\n")
 for rank, r in enumerate(p3_results, 1):
     label = _make_label(r["params"])
-    _buf.write(f"{rank:>3}  {label:<78}  {r['n_t']:>5}  {r['tpd']:>5.2f}  "
+    _buf.write(f"{rank:>3}  {label:<72}  {r.get('best_account','25K'):>5}  "
+               f"{r['n_t']:>5}  {r['tpd']:>5.2f}  "
                f"{r['wr']:>6.1%}  {r['avgR']:>+7.4f}  {r['sortino']:>8.3f}  "
                f"{r['p_zero']:>7.1%}  {r['p_profit']:>8.1%}  {r['p_goal']:>8.1%}  "
-               f"{r['median_cash']:>7.0f}  {r['best_ev']:>+7.2f}  "
+               f"{r['median_cash']:>7.0f}  {r['best_ev_med']:>+10.2f}  "
                f"{r['best_erp']:>5.2f}  {r['best_frp']:>5.2f}\n")
 with open(_txt_dst, "w", encoding="utf-8") as _f:
     _f.write(_buf.getvalue())
