@@ -75,6 +75,8 @@ P3_NPOOL = 5_000   # lifecycle pool size
 P3_NMC   = 2_000   # reinvestment MC sims
 
 BUDGET    = 1_000.0  # reinvestment starting budget
+HORIZON   = 84       # trading days
+GOAL      = 10_000.0 # target cash
 TOP_A     = 9999  # all valid A results enter Sweep B (capped by actual count)
 TOP_FINAL = 500   # survivors total for Phase 2
 
