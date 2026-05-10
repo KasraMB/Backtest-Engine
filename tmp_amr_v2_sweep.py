@@ -345,24 +345,33 @@ def _phase2_optimize(rec):
             except Exception:
                 funded_cache[frp] = (0.0, 0.0, 1.0)
 
-        # --- Cross-product: 100 pure-Python scalar ops, no kernel calls ---
-        for erp in ERP_GRID:
-            pass_rate, mean_eval_days = eval_cache[erp]
-            for frp in FRP_GRID:
-                mean_payout, median_payout, mean_fund_days = funded_cache[frp]
-                total_days = mean_eval_days + pass_rate * mean_fund_days
-                denom      = max(total_days, 1.0)
-                ev_day     = (pass_rate * mean_payout   - acct.eval_fee) / denom
-                ev_day_med = (pass_rate * median_payout - acct.eval_fee) / denom
-                if ev_day_med > best_ev_med:
-                    best_ev_med  = ev_day_med
-                    best_ev      = ev_day
-                    best_erp     = erp
-                    best_frp     = frp
-                    best_pass    = pass_rate
-                    best_payout  = mean_payout
-                    best_pay_med = median_payout
-                    best_acct    = acct.name
+        # --- Step 1: pick ERP that maximises pass rate ---
+        best_erp_acct = max(ERP_GRID, key=lambda e: eval_cache[e][0])
+        pass_rate, mean_eval_days = eval_cache[best_erp_acct]
+
+        # --- Step 2: given best ERP, pick FRP that maximises median EV/day ---
+        best_frp_acct = max(
+            FRP_GRID,
+            key=lambda f: (
+                (pass_rate * funded_cache[f][1] - acct.eval_fee)
+                / max(mean_eval_days + pass_rate * funded_cache[f][2], 1.0)
+            ),
+        )
+        mean_payout, median_payout, _ = funded_cache[best_frp_acct]
+        total_days = mean_eval_days + pass_rate * funded_cache[best_frp_acct][2]
+        denom      = max(total_days, 1.0)
+        ev_day     = (pass_rate * mean_payout   - acct.eval_fee) / denom
+        ev_day_med = (pass_rate * median_payout - acct.eval_fee) / denom
+
+        if ev_day_med > best_ev_med:
+            best_ev_med  = ev_day_med
+            best_ev      = ev_day
+            best_erp     = best_erp_acct
+            best_frp     = best_frp_acct
+            best_pass    = pass_rate
+            best_payout  = mean_payout
+            best_pay_med = median_payout
+            best_acct    = acct.name
 
     return dict(**rec,
                 best_ev=best_ev, best_ev_med=best_ev_med,
