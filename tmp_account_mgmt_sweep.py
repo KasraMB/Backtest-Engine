@@ -39,7 +39,8 @@ N_WORKERS = 2
 TOP_N     = 100      # how many AnchoredMeanReversion configs to load
 
 CHECKPOINT_FILE = "account_mgmt_checkpoint.pkl"
-CHECKPOINT_EVERY = 200    # save every N completed combos
+CHECKPOINT_EVERY = 10_000_000_000   # effectively disabled mid-run; final save only
+PROGRESS_EVERY   = 1_000             # print progress every N combos
 
 # ── SESSION START TIMES (minutes from midnight) ───────────────────────────
 _SESS_ENTRY_MIN = {'930': 9*60+30, '1400': 14*60, '2000': 20*60, '300': 3*60}
@@ -222,12 +223,14 @@ with ThreadPoolExecutor(max_workers=N_WORKERS) as ex:
             if done - last_ckpt >= CHECKPOINT_EVERY or done == total:
                 _atomic_save(CHECKPOINT_FILE, {"rows": rows})
                 last_ckpt = done
+
+            if done % PROGRESS_EVERY == 0 or done == total:
                 el   = time.time() - t0
                 done_this_run = done - len(done_keys)
                 rate = done_this_run / el if el > 0 else 0
                 eta  = (total - done) / rate if rate > 0 else 0
-                print(f"  {done}/{total}  elapsed={el:.0f}s  ETA={eta:.0f}s  "
-                      f"[ckpt saved]", flush=True)
+                print(f"  {done}/{total}  elapsed={el:.0f}s  ETA={eta:.0f}s",
+                      flush=True)
 
 df = (pd.DataFrame(rows)
         .sort_values("p_zero")
