@@ -71,8 +71,8 @@ P2_NPOOL = 2_000
 P2_NMC   = 500
 
 BUDGET    = 300.0  # reinvestment budget for account strategy section
-TOP_A     = 200   # survivors from Sweep A into Sweep B
-TOP_FINAL = 200   # survivors total for Phase 2
+TOP_A     = 9999  # all valid A results enter Sweep B (capped by actual count)
+TOP_FINAL = 500   # survivors total for Phase 2
 
 MIN_TRADES = 20   # minimum absolute trade count
 MIN_TPD    = 0.5  # minimum trades/day (~2.5/week)
