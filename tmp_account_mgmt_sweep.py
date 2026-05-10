@@ -104,21 +104,22 @@ REGIME_RESULT = RegimeResult(
 ACCOUNT = LUCIDFLEX_ACCOUNTS['25K']
 
 # ── SLOT TEMPLATES ────────────────────────────────────────────────────────
-# Each config individually as a single-config slot.
-# The management strategy grid tests how to run it across 1-5 accounts.
+# Each config individually + all pairs of top N (entry_time_min priority).
 slot_templates = {cfg.name: [AccountSlot([cfg])] for cfg in configs}
 
-# Also test top-5 two-config combinations (A+B on same account, A priority)
-top5 = configs[:5]
-for i, ca in enumerate(top5):
-    for j, cb in enumerate(top5):
-        if j <= i:
-            continue
+# All pairs of top N — both (A,B) and (B,A) priority orderings? No: priority
+# is determined by entry_time_min, so (A,B) and (B,A) yield the same slot.
+# Just generate i<j pairs.
+n_pairs = 0
+for i, ca in enumerate(configs):
+    for j in range(i + 1, len(configs)):
+        cb = configs[j]
         key = f"{ca.name}+{cb.name}"
         slot_templates[key] = [AccountSlot([ca, cb])]
+        n_pairs += 1
 
 print(f"  {len(slot_templates)} slot templates total "
-      f"({TOP_N} single + {len(slot_templates)-TOP_N} two-config)", flush=True)
+      f"({TOP_N} single + {n_pairs} pairs)", flush=True)
 
 # ── MANAGEMENT STRATEGY GRID ──────────────────────────────────────────────
 TRIGGERS        = ["greedy", "on_fail", "on_close", "on_payout", "staggered"]
