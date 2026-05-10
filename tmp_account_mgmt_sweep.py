@@ -1,17 +1,18 @@
 """
 Account management strategy sweep — correlated reinvestment MC.
 
-Usage:
-  1. Build your StrategyConfig objects below (load pnl_pts_by_regime from
-     backtest results split by HMM regime label).
-  2. Build REGIME_RESULT from a fitted RegimeResult (backtest/regime/hmm.py).
-  3. Run: python tmp_account_mgmt_sweep.py
-  4. Results ranked by P($10K) printed to stdout and saved to
-     account_mgmt_results.csv.
+Loads top N configs from the AnchoredMeanReversion sweep results and tests all
+account management strategy combinations against each config.
+
+Ranked by min P($0).
 """
 from __future__ import annotations
 
+import pickle
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, timedelta
+from itertools import product
 
 import numpy as np
 import pandas as pd
@@ -27,120 +28,118 @@ from backtest.regime.hmm import RegimeResult
 
 # ── CONFIG ────────────────────────────────────────────────────────────────
 
-ACCOUNT  = LUCIDFLEX_ACCOUNTS['25K']
-BUDGET   = 300.0
-HORIZON  = 84
-GOAL     = 10_000.0
-N_SIMS   = 1_000
-SEED     = 42
+BUDGET    = 1_000.0
+HORIZON   = 84
+GOAL      = 10_000.0
+N_SIMS    = 300      # per combo — enough for ranking
+SEED      = 42
+N_WORKERS = 2
+TOP_N     = 100      # how many AnchoredMeanReversion configs to load
 
-# ── POPULATE THESE ────────────────────────────────────────────────────────
-# Build StrategyConfig from a backtest run's trade log:
-#
-#   from backtest.regime.hmm import fit_regimes
-#   from collections import Counter
-#   import numpy as np
-#
-#   regime_result = fit_regimes(daily_returns, daily_dates, n_states=3)
-#   labels = regime_result.labels  # dict[date, int]
-#
-#   pnl_by_regime  = {r: [] for r in range(regime_result.n_states)}
-#   sl_by_regime   = {r: [] for r in range(regime_result.n_states)}
-#   days_by_regime = Counter(labels.values())
-#
-#   for trade in trades:
-#       r = labels.get(trade.entry_date, 0)
-#       pnl_by_regime[r].append(trade.pnl_pts)
-#       sl_by_regime[r].append(trade.sl_dist_pts)
-#
-#   pnl_by_regime_arr = {
-#       r: np.array(v, dtype=np.float32) if v else np.array([0.0], dtype=np.float32)
-#       for r, v in pnl_by_regime.items()
-#   }
-#   sl_by_regime_arr = {
-#       r: np.array(v, dtype=np.float32) if v else np.array([4.0], dtype=np.float32)
-#       for r, v in sl_by_regime.items()
-#   }
-#   tpd_by_regime = {
-#       r: len(pnl_by_regime[r]) / max(1, days_by_regime[r])
-#       for r in range(regime_result.n_states)
-#   }
-#
-#   cfg_A = StrategyConfig(
-#       name="my_strategy_best",
-#       pnl_pts_by_regime=pnl_by_regime_arr,
-#       sl_dists_by_regime=sl_by_regime_arr,
-#       tpd_by_regime=tpd_by_regime,
-#       entry_time_min=30,
-#       eval_risk=0.20,   # best ERP from lucidflex sweep
-#       fund_risk=0.40,   # best FRP from lucidflex sweep
-#   )
+# ── SESSION START TIMES (minutes from midnight) ───────────────────────────
+_SESS_ENTRY_MIN = {'930': 9*60+30, '1400': 14*60, '2000': 20*60, '300': 3*60}
 
-# ── PLACEHOLDER — replace with real configs ───────────────────────────────
-from datetime import date, timedelta
+# ── LOAD TOP N CONFIGS FROM ANCHORED MEAN REVERSION SWEEP ────────────────────────────────
 
-_base = date(2020, 1, 1)
-_dummy_labels = {_base + timedelta(days=i): i % 3 for i in range(252)}
-_dummy_trans = np.array([[0.7, 0.2, 0.1], [0.1, 0.8, 0.1], [0.1, 0.2, 0.7]])
-_dummy_pnl = {r: np.array([5.0, -3.0, 2.0, -1.0], dtype=np.float32) for r in range(3)}
-_dummy_sl  = {r: np.array([4.0,  4.0, 4.0,  4.0], dtype=np.float32) for r in range(3)}
-_dummy_tpd = {0: 0.3, 1: 0.5, 2: 0.4}
+def _get_arrays(r):
+    """Reconstruct pnl_pts/sl_dists for both A and lazy B records."""
+    if '_parent' in r:
+        idx = r['_indices']
+        return r['_parent']['pnl_pts'][idx], r['_parent']['sl_dists'][idx]
+    return r['pnl_pts'], r['sl_dists']
 
-cfg_A = StrategyConfig("config_A", _dummy_pnl, _dummy_sl, _dummy_tpd, 30, 0.20, 0.40)
-cfg_B = StrategyConfig("config_B", _dummy_pnl, _dummy_sl, _dummy_tpd, 60, 0.15, 0.30)
 
-from backtest.regime.hmm import RegimeResult
+def _make_strategy_config(r, name: str) -> StrategyConfig:
+    """Build a single-regime StrategyConfig from a AnchoredMeanReversion sweep result."""
+    pnl_pts, sl_dists = _get_arrays(r)
+    sessions = r['params']['sessions']
+    # Use the first session's start time as entry_time_min
+    entry_min = _SESS_ENTRY_MIN.get(sessions[0], 570)
+    return StrategyConfig(
+        name=name,
+        pnl_pts_by_regime={0: pnl_pts.astype(np.float32)},
+        sl_dists_by_regime={0: sl_dists.astype(np.float32)},
+        tpd_by_regime={0: float(r['tpd'])},
+        entry_time_min=entry_min,
+        eval_risk=float(r['best_erp']),
+        fund_risk=float(r['best_frp']),
+    )
+
+
+print("Loading AnchoredMeanReversion sweep results...", flush=True)
+with open('sweeps/logs/amr_v2_results.pkl', 'rb') as f:
+    jj_results = pickle.load(f)
+
+top_results = jj_results[:TOP_N]
+print(f"  Loaded top {len(top_results)} configs (ranked by min P($0))", flush=True)
+
+# Build StrategyConfig objects
+configs = [_make_strategy_config(r, f"cfg_{i:03d}") for i, r in enumerate(top_results)]
+
+# ── REGIME RESULT (single absorbing regime — no regime split) ─────────────
+# Using 1 state means all trades are drawn from the same distribution.
+# Regime-aware splits can be added later once HMM labels are available.
+_base_date = date(2019, 1, 1)
+_labels = {_base_date + timedelta(days=i): 0 for i in range(2000)}
 REGIME_RESULT = RegimeResult(
-    labels=_dummy_labels,
-    label_names={0: "bear", 1: "neutral", 2: "bull"},
+    labels=_labels,
+    label_names={0: 'all'},
     train_end_date=None,
     in_sample_dates=[],
     out_of_sample_dates=[],
-    transition_matrix=_dummy_trans,
-    state_means=np.zeros(3),
-    state_stds=np.ones(3),
-    avg_duration_days={"bear": 5.0, "neutral": 5.0, "bull": 5.0},
-    n_states=3,
+    transition_matrix=np.array([[1.0]]),
+    state_means=np.zeros(1),
+    state_stds=np.ones(1),
+    avg_duration_days={'all': 2000.0},
+    n_states=1,
 )
-# ─────────────────────────────────────────────────────────────────────────
+
+# ── ACCOUNT ───────────────────────────────────────────────────────────────
+# All top configs had best_account='25K'; use that.
+ACCOUNT = LUCIDFLEX_ACCOUNTS['25K']
 
 # ── SLOT TEMPLATES ────────────────────────────────────────────────────────
+# Each config individually as a single-config slot.
+# The management strategy grid tests how to run it across 1-5 accounts.
+slot_templates = {cfg.name: [AccountSlot([cfg])] for cfg in configs}
 
-SLOT_TEMPLATES: dict[str, list[AccountSlot]] = {
-    "single_A":    [AccountSlot([cfg_A])],
-    "single_B":    [AccountSlot([cfg_B])],
-    "both_A_prio": [AccountSlot([cfg_A, cfg_B])],
-    "both_B_prio": [AccountSlot([cfg_B, cfg_A])],
-    "alternating": [AccountSlot([cfg_A]), AccountSlot([cfg_B])],
-}
+# Also test top-5 two-config combinations (A+B on same account, A priority)
+top5 = configs[:5]
+for i, ca in enumerate(top5):
+    for j, cb in enumerate(top5):
+        if j <= i:
+            continue
+        key = f"{ca.name}+{cb.name}"
+        slot_templates[key] = [AccountSlot([ca, cb])]
 
-# ── SWEEP GRID ────────────────────────────────────────────────────────────
+print(f"  {len(slot_templates)} slot templates total "
+      f"({TOP_N} single + {len(slot_templates)-TOP_N} two-config)", flush=True)
 
-TRIGGERS        = ["greedy", "on_fail", "on_pass", "on_close", "on_payout", "staggered"]
-MAX_CONCURRENTS = [1, 2, 3, 4, 5]
-RESERVE_EVALS   = [0, 1, 2]
-STAGGER_DAYS    = [7, 14]   # only used when trigger="staggered"
-
-# ── RUN ──────────────────────────────────────────────────────────────────
+# ── MANAGEMENT STRATEGY GRID ──────────────────────────────────────────────
+TRIGGERS        = ["greedy", "on_fail", "on_close", "on_payout", "staggered"]
+MAX_CONCURRENTS = [1, 3, 5]
+RESERVE_EVALS   = [0, 1]
+STAGGER_DAYS    = [7, 14]
 
 combos = [
     (tmpl_name, trigger, max_c, reserve, stagger)
-    for tmpl_name in SLOT_TEMPLATES
+    for tmpl_name in slot_templates
     for trigger in TRIGGERS
     for max_c in MAX_CONCURRENTS
     for reserve in RESERVE_EVALS
     for stagger in (STAGGER_DAYS if trigger == "staggered" else [0])
 ]
 total = len(combos)
-print(f"Running {total} configs × {N_SIMS} sims each…")
+print(f"\n{total} total combos  ({N_SIMS} sims each,  {N_WORKERS} workers)", flush=True)
 
-rows = []
-t0   = time.time()
 
-for i, (tmpl_name, trigger, max_c, reserve, stagger) in enumerate(combos):
+# ── RUN ──────────────────────────────────────────────────────────────────
+
+def _run_one(args):
+    tmpl_name, trigger, max_c, reserve, stagger, seed = args
     strat = AccountManagementStrategy(trigger, max_c, reserve, stagger)
     cash  = correlated_reinvestment_mc(
-        slot_template=SLOT_TEMPLATES[tmpl_name],
+        slot_template=slot_templates[tmpl_name],
         regime_result=REGIME_RESULT,
         account=ACCOUNT,
         eval_fee=ACCOUNT.eval_fee,
@@ -148,27 +147,46 @@ for i, (tmpl_name, trigger, max_c, reserve, stagger) in enumerate(combos):
         budget=BUDGET,
         horizon=HORIZON,
         n_sims=N_SIMS,
-        seed=SEED,
+        seed=seed,
     )
-    rows.append({
-        "slot_template":   tmpl_name,
-        "trigger":         trigger,
-        "max_concurrent":  max_c,
-        "reserve_n_evals": reserve,
-        "stagger_days":    stagger,
-        "p_goal":          float((cash >= GOAL).mean()),
-        "median_cash":     float(np.median(cash)),
-        "mean_cash":       float(np.mean(cash)),
-        "p_double":        float((cash >= BUDGET * 2).mean()),
-    })
-    if (i + 1) % 50 == 0:
-        elapsed = time.time() - t0
-        rate    = (i + 1) / elapsed
-        eta     = (total - i - 1) / rate
-        print(f"  {i+1}/{total}  ETA {eta:.0f}s")
+    return dict(
+        slot_template=tmpl_name,
+        trigger=trigger,
+        max_concurrent=max_c,
+        reserve_n_evals=reserve,
+        stagger_days=stagger,
+        p_zero=float((cash <= 0).mean()),
+        p_goal=float((cash >= GOAL).mean()),
+        p_profit=float((cash > BUDGET).mean()),
+        median_cash=float(np.median(cash)),
+        mean_cash=float(cash.mean()),
+    )
 
-df = pd.DataFrame(rows).sort_values("p_goal", ascending=False)
-print(f"\n-- Top 20 by P(${GOAL:,.0f}) --")
-print(df.head(20).to_string(index=False))
+
+rows = []
+t0   = time.time()
+done = 0
+
+with ThreadPoolExecutor(max_workers=N_WORKERS) as ex:
+    futs = {
+        ex.submit(_run_one, (*combo, SEED + i)): combo
+        for i, combo in enumerate(combos)
+    }
+    for fut in as_completed(futs):
+        done += 1
+        rows.append(fut.result())
+        if done % 200 == 0 or done == total:
+            el   = time.time() - t0
+            rate = done / el
+            eta  = (total - done) / rate if rate > 0 else 0
+            print(f"  {done}/{total}  elapsed={el:.0f}s  ETA={eta:.0f}s", flush=True)
+
+df = (pd.DataFrame(rows)
+        .sort_values("p_zero")
+        .reset_index(drop=True))
+
+print(f"\n-- Top 30 by min P($0) --")
+print(df.head(30).to_string(index=False))
+
 df.to_csv("account_mgmt_results.csv", index=False)
 print(f"\nSaved to account_mgmt_results.csv  ({total} rows)")
