@@ -16,7 +16,10 @@ from __future__ import annotations
 import warnings
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from backtest.ml.model import EnsembleMLModel
 
 import numpy as np
 import pandas as pd

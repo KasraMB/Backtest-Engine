@@ -15,11 +15,9 @@ from datetime import time as dtime
 from backtest.data.loader import DataLoader
 from backtest.runner.runner import run_backtest
 from backtest.runner.config import RunConfig
-from backtest.performance.engine import PerformanceEngine
 from backtest.propfirm.lucidflex import (
     LUCIDFLEX_ACCOUNTS,
     run_propfirm_grid,
-    extract_normalised_trades,
     EVAL_RISK_PCT_OF_MLL,
     FUNDED_RISK_PCT_OF_MLL,
     RISK_GEOMETRIES,
@@ -269,8 +267,8 @@ def main():
 
     print(f"\n{'=' * 90}")
     print(f"3x3 NEIGHBORHOOD (account={best_acc}, scheme={best_scheme})")
-    print(f"  Rows = eval_risk, Cols = funded_risk")
-    print(f"  Values: ev_per_day (pass_rate)")
+    print("  Rows = eval_risk, Cols = funded_risk")
+    print("  Values: ev_per_day (pass_rate)")
     print("=" * 90)
 
     grid_data = all_results[best_acc][best_scheme]

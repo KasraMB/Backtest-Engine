@@ -151,7 +151,6 @@ def extract_normalised_trades(
 
     Returns (pnl_pts, sl_dists).
     """
-    from backtest.strategy.enums import ExitReason
     pnl_list, sl_list = [], []
     for t in trades:
         pnl = (t.exit_price - t.entry_price) * t.direction

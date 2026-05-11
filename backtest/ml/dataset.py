@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from backtest.ml.features import ALL_FEATURE_NAMES, SIGNAL_FEATURE_NAMES, CONTEXT_FEATURE_NAMES
+from backtest.ml.features import ALL_FEATURE_NAMES
 
 if TYPE_CHECKING:
     from backtest.data.market_data import MarketData

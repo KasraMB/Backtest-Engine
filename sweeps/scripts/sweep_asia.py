@@ -14,7 +14,7 @@ IS: 2019-2022  OOS: 2023-2024
 Sorts by IS avgR, validates top 25 on OOS, reports propfirm math.
 Max 2 workers.
 """
-import os, sys, time, itertools
+import sys, time, itertools
 import numpy as np
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed

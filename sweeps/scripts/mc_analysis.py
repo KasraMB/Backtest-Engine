@@ -339,7 +339,7 @@ for r in all_results_sorted:
               f"{r['n_trades']:6} {r['tpd']:6.3f} {r['wr']:7.1%} {r['avgR']:7.4f} ${r['ev_per_day']:7.2f}")
 
 top3 = unique_sorted[:3]
-print(f"\nTop 3 for reinvestment MC:")
+print("\nTop 3 for reinvestment MC:")
 for r in top3:
     print(f"  {r['strategy']} rr={r.get('rr')} atr_m={r.get('atr_m')} ev/day=${r['ev_per_day']:.2f}")
 

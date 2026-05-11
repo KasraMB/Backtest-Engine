@@ -72,7 +72,7 @@ for cfg_info in configs_to_test:
         n_t = len(trades)
         print(f"\n{label}: {n_t} trades")
         if n_t == 0:
-            print(f"  0 trades, skip")
+            print("  0 trades, skip")
             continue
         tpd = n_t / n_days
         wins = sum(1 for t in trades if t.net_pnl_dollars > 0)

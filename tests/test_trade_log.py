@@ -20,7 +20,7 @@ import pytest
 from backtest.performance.trade_log import save_trade_log
 from backtest.runner.config import RunConfig
 from backtest.strategy.enums import ExitReason
-from backtest.strategy.update import Trade, POINT_VALUE
+from backtest.strategy.update import Trade
 from backtest.data.market_data import MarketData
 
 

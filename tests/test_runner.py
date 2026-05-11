@@ -12,8 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 import numpy as np
 import pandas as pd
-from datetime import date, time
-from typing import Optional
+from datetime import time
 
 from backtest.data.market_data import MarketData
 from backtest.runner.config import RunConfig
@@ -23,7 +22,7 @@ from backtest.runner.runner import (
 from backtest.strategy.base import BaseStrategy
 from backtest.strategy.enums import ExitReason, OrderType, SizeType
 from backtest.strategy.order import Order
-from backtest.strategy.update import OpenPosition, PositionUpdate, Trade
+from backtest.strategy.update import PositionUpdate, Trade
 
 
 # ---------------------------------------------------------------------------

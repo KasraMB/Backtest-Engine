@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from backtest.performance.results import (
     Results, DrawdownStats, MonteCarloResults, ConfidenceIntervals,
-    ExitBreakdown, HourlyBreakdown, BenchmarkResult, TradeRow,
+    ExitBreakdown, HourlyBreakdown,
 )
 
 if TYPE_CHECKING:

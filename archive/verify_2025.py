@@ -15,9 +15,6 @@ if hasattr(sys.stdout, 'reconfigure'):
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-import csv
-import os
-import pickle
 import time
 from datetime import time as dtime
 
@@ -99,7 +96,7 @@ def _load_data() -> MarketData:
     df_1m_f, df_5m_f = df_1m[mask_1m], df_5m[mask_5m]
 
     if df_1m_f.empty:
-        raise ValueError(f"No 2025 data found in cache. Check data/NQ_1m.parquet coverage.")
+        raise ValueError("No 2025 data found in cache. Check data/NQ_1m.parquet coverage.")
 
     rth_f           = (df_1m_f.index.time >= dtime(9, 30)) & (df_1m_f.index.time <= dtime(16, 0))
     trading_dates_f = sorted(set(df_1m_f[rth_f].index.date))

@@ -12,7 +12,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-import csv, hashlib, itertools, json, os, pickle, time
+import csv, hashlib, itertools, json, os, time
 from datetime import time as dtime
 import numpy as np
 import pandas as pd

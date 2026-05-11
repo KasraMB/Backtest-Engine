@@ -15,7 +15,6 @@ Outputs:
   tearsheet_val.html           — validation period only (2023)
   tearsheet_train_val.html     — train + validation period (2019–2023)
 """
-import json
 import os
 import time
 from datetime import time as dtime

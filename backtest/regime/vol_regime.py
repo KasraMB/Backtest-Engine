@@ -17,7 +17,6 @@ States are sorted by mean log-range ascending:
 from __future__ import annotations
 
 from datetime import date, time
-from typing import Optional
 
 import numpy as np
 import pandas as pd

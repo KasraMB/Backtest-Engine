@@ -17,7 +17,6 @@ Default sessions: 9:30 AM ("930") and 2:00 PM ("1400") ET, 90-min window.
 """
 from __future__ import annotations
 
-from datetime import time as _time
 from typing import Optional
 
 import numpy as np

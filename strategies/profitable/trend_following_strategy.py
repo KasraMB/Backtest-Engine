@@ -29,7 +29,6 @@ Daily data: data/NQ_1day_full_data.parquet
 from __future__ import annotations
 
 import os
-from datetime import time as _time
 from typing import Optional
 
 import numpy as np

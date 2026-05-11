@@ -1,7 +1,6 @@
 import sys, time, traceback
 sys.path.insert(0, '.')
 import pandas as pd
-import numpy as np
 from datetime import time as dtime
 from backtest.data.loader import DataLoader
 from backtest.data.market_data import MarketData

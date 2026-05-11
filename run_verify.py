@@ -2,7 +2,6 @@
 Minimal run: backtest only, saves trade log, prints summary.
 Used to verify that optimisations produce identical trades.
 """
-import os
 import time
 import numpy as np
 import pandas as pd

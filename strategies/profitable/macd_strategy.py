@@ -40,7 +40,6 @@ def _build_resampled(data, bar_minutes: int):
     Returns (df_rs, signal_bar_map) where signal_bar_map is dict {1m_bar_idx: rs_bar_idx}.
     Signals only fire at the 1m bar corresponding to the CLOSE of each resampled bar.
     """
-    import numpy as np
     df = pd.DataFrame({
         'open':  data.open_1m,
         'high':  data.high_1m,

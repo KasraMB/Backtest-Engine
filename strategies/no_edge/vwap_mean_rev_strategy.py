@@ -26,7 +26,6 @@ from datetime import time as _time
 from typing import Optional
 
 import numpy as np
-import pandas as pd
 from scipy.signal import lfilter
 
 from backtest.data.market_data import MarketData

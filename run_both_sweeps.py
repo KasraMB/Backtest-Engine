@@ -54,7 +54,7 @@ def main():
     ckpt = os.path.join(WORK_DIR, "account_mgmt_checkpoint.pkl")
     if os.path.exists(ckpt):
         os.remove(ckpt)
-        print(f"Removed stale account_mgmt_checkpoint.pkl", flush=True)
+        print("Removed stale account_mgmt_checkpoint.pkl", flush=True)
 
     # Step 3: Account management sweep
     rc = _run("tmp_account_mgmt_sweep.py")

@@ -18,15 +18,14 @@ import pytest
 import numpy as np
 import pandas as pd
 from datetime import time
-from typing import Optional
 
 from backtest.data.market_data import MarketData
 from backtest.runner.config import RunConfig
-from backtest.runner.validator import Validator, ValidationReport, ValidationError, LookaheadError
+from backtest.runner.validator import Validator, ValidationReport
 from backtest.strategy.base import BaseStrategy
 from backtest.strategy.enums import OrderType, SizeType
 from backtest.strategy.order import Order
-from backtest.strategy.update import OpenPosition, PositionUpdate
+from backtest.strategy.update import PositionUpdate
 
 
 # ---------------------------------------------------------------------------

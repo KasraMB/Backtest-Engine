@@ -11,10 +11,10 @@ from datetime import time
 
 from backtest.strategy.enums import OrderType, SizeType, ExitReason
 from backtest.strategy.order import Order
-from backtest.strategy.update import OpenPosition, PositionUpdate, Trade, POINT_VALUE
+from backtest.strategy.update import OpenPosition, PositionUpdate, POINT_VALUE
 from backtest.engine.risk import RiskManager, Account
 from backtest.engine.trail import update_trail
-from backtest.engine.execution import ExecutionEngine, Bar, PendingOrder, FillResult, ExitResult
+from backtest.engine.execution import ExecutionEngine, Bar, PendingOrder
 
 
 # ---------------------------------------------------------------------------

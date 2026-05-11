@@ -15,17 +15,15 @@ Checks performed:
 """
 from __future__ import annotations
 
-import traceback
 from dataclasses import dataclass, field
-from datetime import date, time, datetime, timedelta
-from typing import Optional, Type
+from typing import Type
 
 import numpy as np
 import pandas as pd
 
 from backtest.data.market_data import MarketData
 from backtest.strategy.base import BaseStrategy
-from backtest.strategy.enums import OrderType, SizeType
+from backtest.strategy.enums import OrderType
 from backtest.strategy.order import Order
 from backtest.strategy.update import OpenPosition, PositionUpdate
 from backtest.runner.config import RunConfig

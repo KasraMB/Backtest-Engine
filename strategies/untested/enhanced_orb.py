@@ -33,7 +33,7 @@ import numpy as np
 
 from backtest.data.market_data import MarketData
 from backtest.strategy.base import BaseStrategy
-from backtest.strategy.enums import ExitReason, OrderType, SizeType
+from backtest.strategy.enums import OrderType, SizeType
 from backtest.strategy.order import Order
 from backtest.strategy.update import OpenPosition, PositionUpdate
 

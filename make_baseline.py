@@ -252,7 +252,7 @@ def check():
             print(f"  [OK] {len(records)} trades | hash {h[:16]}... | {elapsed:.1f}s")
         else:
             all_ok = False
-            print(f"  [FAIL] hash mismatch!")
+            print("  [FAIL] hash mismatch!")
             print(f"    baseline : {baseline['n_trades']} trades | {baseline['trade_hash'][:16]}...")
             print(f"    current  : {len(records)} trades | {h[:16]}...")
             # Show first differing trade

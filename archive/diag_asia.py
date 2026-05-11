@@ -11,9 +11,8 @@ if sys.platform == "win32":
 
 from backtest.data.loader import DataLoader
 from backtest.data.market_data import MarketData
-from backtest.runner.runner import build_active_bar_set, build_required_bar_set, build_eod_bar_set
-from backtest.runner.config import RunConfig
-from strategies.asia_breakout_strategy import AsiaBreakoutStrategy, _compute_asia_range, _atr_at
+from backtest.runner.runner import build_active_bar_set, build_required_bar_set
+from strategies.asia_breakout_strategy import AsiaBreakoutStrategy
 
 CACHE_1M = "data/NQ_1m.parquet"
 CACHE_5M = "data/NQ_5m.parquet"
@@ -102,7 +101,7 @@ def main():
                   f"expiry={order.expiry_bars}")
 
         # Now manually check next bars for fill
-        print(f"\n--- Checking next 5 bars for stop fill ---")
+        print("\n--- Checking next 5 bars for stop fill ---")
         sp = order.stop_price if order else None
         if sp is not None:
             for j in range(i0 + 1, min(i0 + 6, len(times_min))):

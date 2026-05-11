@@ -85,7 +85,6 @@ def filter_market_data(data, split: str, loader):
     -------
     MarketData
     """
-    import numpy as np
     from backtest.data.market_data import MarketData
 
     start_ts, end_ts = split_bounds(split)

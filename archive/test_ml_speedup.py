@@ -210,7 +210,7 @@ def main() -> None:
     wall = time.perf_counter() - t_total
 
     elapsed_vals = sorted(r["elapsed"] for r in results)
-    print(f"\n--- Summary ---")
+    print("\n--- Summary ---")
     print(f"Wall clock ({N_CONFIGS} configs, {N_WORKERS} workers): {wall:.1f}s")
     print(f"Per-config: min={elapsed_vals[0]:.1f}s  "
           f"median={elapsed_vals[len(elapsed_vals)//2]:.1f}s  "

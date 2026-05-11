@@ -5,7 +5,7 @@ Dataclass holding all computed performance metrics for a single backtest run.
 Produced by PerformanceEngine.compute(). Consumed by TearsheetRenderer.
 """
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import numpy as np
 
 

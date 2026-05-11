@@ -48,7 +48,6 @@ import pandas as pd
 
 from backtest.ml.configs import (
     sample_configs, normalize_config, ROUND_RANGES,
-    PHASE1_PARAMS, PHASE2_PARAMS, CONFIG_FEATURE_NAMES,
 )
 from backtest.ml.features import ALL_FEATURE_NAMES
 from backtest.regime.vol_regime import compute_vol_regime_map

@@ -15,7 +15,6 @@ Run: python sweep_propfirm.py
 from __future__ import annotations
 
 import sys
-import io
 # Force UTF-8 stdout/stderr on Windows to avoid UnicodeEncodeError
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')

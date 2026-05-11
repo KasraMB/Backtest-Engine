@@ -160,7 +160,7 @@ def run_and_analyze(label: str, params: dict):
     print(f"    net_ev=${best_cell.get('net_ev', 0):,.0f}, mean_withdrawal=${best_cell.get('mean_withdrawal', 0):,.0f}")
 
     # Standard config: fixed_dollar, erp=0.2, frp=0.4
-    print(f"\n  Standard config (fixed_dollar, erp=0.20, frp=0.40):")
+    print("\n  Standard config (fixed_dollar, erp=0.20, frp=0.40):")
     try:
         std_cell = grid['fixed_dollar'][0.20][0.40]
         if std_cell:

@@ -10,9 +10,7 @@ from __future__ import annotations
 
 import os
 import sys
-import pickle
-from datetime import date, time as dtime
-from pathlib import Path
+from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -603,7 +601,7 @@ class TestMLModel:
     def test_decide_injects_phase1_features(self):
         """Phase 1 features must appear in the row sent to the model, not be zero."""
         from backtest.ml.model import MLModel
-        import numpy as np, pandas as pd
+        import numpy as np
         from backtest.ml.features import ALL_FEATURE_NAMES
 
         captured_rows = []
@@ -628,7 +626,7 @@ class TestMLModel:
     def test_phase1_does_not_override_phase2_keys(self):
         """Phase 2 keys must not be overwritten by Phase 1 injection."""
         from backtest.ml.model import MLModel
-        import numpy as np, pandas as pd
+        import numpy as np
         from backtest.ml.features import ALL_FEATURE_NAMES
         from backtest.ml.configs import normalize_config
 

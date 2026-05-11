@@ -20,8 +20,7 @@ import pandas as pd
 from backtest.data.loader import DataLoader
 from backtest.data.market_data import MarketData
 from backtest.propfirm.lucidflex import (
-    LUCIDFLEX_ACCOUNTS, _estimate_trading_days,
-    extract_normalised_trades, run_propfirm_grid,
+    LUCIDFLEX_ACCOUNTS, extract_normalised_trades, run_propfirm_grid,
 )
 from backtest.runner.config import RunConfig
 from backtest.runner.runner import run_backtest

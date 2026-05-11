@@ -1,6 +1,5 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from datetime import time
 from typing import Optional
 
 from .enums import ExitReason
@@ -90,8 +89,8 @@ class OpenPosition:
 # ---------------------------------------------------------------------------
 # RunConfig — re-exported from runner.config (canonical definition lives there)
 # ---------------------------------------------------------------------------
+from backtest.runner.config import RunConfig  # noqa: F401
 
-from backtest.runner.config import RunConfig  # noqa: E402  (re-export for backwards compat)
 
 
 # ---------------------------------------------------------------------------

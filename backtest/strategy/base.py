@@ -1,7 +1,10 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from datetime import time
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    import numpy as np
 
 from backtest.data.market_data import MarketData
 from backtest.strategy.order import Order

@@ -31,23 +31,9 @@ from backtest.performance.tearsheet import TearsheetRenderer
 from backtest.regime.hmm      import fit_regimes
 from backtest.regime.analysis import run_regime_analysis
 from datetime import time as dtime
-from backtest.ml.model import MLModel
 
 # ── Strategies — import all, pick one below ────────────────────────────────
 from strategies.asia_breakout_strategy          import AsiaBreakoutStrategy
-from strategies.dummy                            import DummyLongStrategy
-from strategies.enhanced_orb                    import EnhancedORBStrategy
-from strategies.intraday_momentum_baltussen      import IntradayMomentumBaltussen
-from strategies.intraday_momentum_jin            import IntradayMomentumJin
-from strategies.overnight_momentum_rosa          import OvernightMomentumRosa
-from strategies.intraday_interval_momentum_huang import IntradayIntervalMomentumHuang
-from strategies.noise_boundary_momentum         import NoiseBoundaryMomentum
-from strategies.overnight_reversal_cooc         import OvernightReversalCOOC
-from strategies.vwap_band_reversion             import VWAPBandMeanReversion
-from strategies.double_session_sweep            import DoubleSessionSweep
-from strategies.ibs_mean_reversion              import IBSMeanReversion
-from strategies.ict_smc                         import ICTSMCStrategy
-from strategies.session_mean_rev                import SessionMeanRevStrategy
 
 # ── Active strategy ────────────────────────────────────────────────────────
 # Change this one line to switch strategies:

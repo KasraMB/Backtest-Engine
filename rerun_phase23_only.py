@@ -12,7 +12,6 @@ import os
 import pickle
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from itertools import product
 
 import numpy as np
 
@@ -43,7 +42,7 @@ print(f"Loaded {n_days} days of market data", flush=True)
 _bar_day_ord = np.array([d.toordinal() for d in md.df_1m.index.date], dtype=np.int32)
 
 from backtest.propfirm.lucidflex import (
-    LUCIDFLEX_ACCOUNTS, MICRO_COMM_RT, MINI_COMM_RT,
+    LUCIDFLEX_ACCOUNTS, MINI_COMM_RT,
     simulate_eval_batch, simulate_funded_batch,
 )
 from tmp_reinvest import simulate_lifecycles, reinvestment_mc
@@ -58,7 +57,7 @@ def _atomic_dump(path, obj):
         pickle.dump(obj, f)
         f.flush()
         try: os.fsync(f.fileno())
-        except: pass
+        except OSError: pass
     os.replace(tmp, path)
 
 
@@ -275,7 +274,7 @@ _atomic_dump(DST_PKL, p3_results)
 
 _buf = io.StringIO()
 _buf.write("ANCHORED MEAN REVERSION V2 SWEEP RESULTS (corrected MLL rules)\n")
-_buf.write(f"Phase 2/3 rerun on top 500 from pre-fix backup\n")
+_buf.write("Phase 2/3 rerun on top 500 from pre-fix backup\n")
 _buf.write(f"Budget=${BUDGET:.0f}  Horizon={HORIZON}d  Goal=${GOAL:.0f}\n\n")
 _buf.write(f"{'#':>3}  {'Config':<72}  {'Acct':>5}  {'N':>5}  {'tpd':>5}  {'WR':>6}  {'avgR':>7}  "
            f"{'Sortino':>8}  {'P($0)':>7}  {'P(>bgt)':>8}  {'P(goal)':>8}  "
@@ -291,7 +290,7 @@ for rank, r in enumerate(p3_results, 1):
 with open(DST_TXT, "w", encoding="utf-8") as f:
     f.write(_buf.getvalue())
 
-print(f"\nResults saved to:")
+print("\nResults saved to:")
 print(f"  {DST_PKL}")
 print(f"  {DST_TXT}")
 print("DONE")

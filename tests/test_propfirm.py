@@ -1,7 +1,6 @@
 """Tests for backtest/propfirm/lucidflex.py."""
 from __future__ import annotations
 import numpy as np
-import pytest
 from backtest.propfirm.lucidflex import LUCIDFLEX_ACCOUNTS, simulate_eval_batch, run_propfirm_grid
 
 RNG_SEED = 7

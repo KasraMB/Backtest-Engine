@@ -4,7 +4,6 @@ Gap Fill Sweep -- GapFillStrategy parameter sweep for NQ propfirm optimization.
 Sweeps combos on IS (2019-2022) then validates top configs on OOS (2023-2024).
 Sorts by avgR (mean R-multiple). Reports propfirm cycle math for best OOS config.
 """
-import os
 import sys
 import time
 import itertools
@@ -245,7 +244,7 @@ def main():
             ev_funded = ev_per_day * funded_days
             print(f"  Expected funded P&L:             ${ev_funded:,.0f}")
             # With 4 accounts running in parallel (each $70 eval fee = $280 total)
-            print(f"\n  With 4x 25K accounts ($280 total eval cost):")
+            print("\n  With 4x 25K accounts ($280 total eval cost):")
             print(f"  Days to all pass eval:           {days_to_pass:.0f}  (all start same day)")
             print(f"  Funded days remaining:           {funded_days:.0f}")
             print(f"  EV from funded phase (4x):       ${ev_funded*4:,.0f}")

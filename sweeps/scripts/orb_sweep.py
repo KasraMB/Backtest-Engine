@@ -2,9 +2,8 @@
 ORB parameter sweep + propfirm grid.
 Run from project root: python tmp_orb_sweep.py
 """
-import pickle, itertools, sys, traceback
+import pickle, itertools, traceback
 import numpy as np
-import pandas as pd
 
 # ── Load cached market data ───────────────────────────────────────────────────
 with open('md_cache.pkl', 'rb') as f:

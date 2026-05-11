@@ -21,7 +21,6 @@ import json
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-import numpy as np
 
 
 def _hash_params(params: dict) -> str:

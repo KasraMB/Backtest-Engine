@@ -11,7 +11,7 @@ from datetime import time
 
 from backtest.strategy.enums import OrderType, SizeType, ExitReason
 from backtest.strategy.order import Order
-from backtest.strategy.update import PositionUpdate, OpenPosition, RunConfig, Trade, POINT_VALUE
+from backtest.strategy.update import PositionUpdate, OpenPosition, RunConfig, Trade
 
 
 # ===========================================================================

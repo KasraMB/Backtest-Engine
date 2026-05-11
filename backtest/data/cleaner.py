@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 from dataclasses import dataclass, field
 
 
@@ -26,7 +25,7 @@ class CleaningReport:
                   f"session: {self.gaps_session}  "
                   f"large >6h: {self.gaps_large})")
         else:
-            print(f"  Gaps found          : 0")
+            print("  Gaps found          : 0")
         print(f"  Anomalous bars      : {self.anomalous_bars_flagged}")
         print(f"  Partial bars trimmed: {self.partial_bars_trimmed}")
         # Only print non-gap warnings (zero-range, extreme range, etc.)

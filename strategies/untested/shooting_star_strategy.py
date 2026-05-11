@@ -2,7 +2,6 @@ from __future__ import annotations
 from datetime import time as _time
 from typing import Optional
 import numpy as np
-import pandas as pd
 from backtest.data.market_data import MarketData
 from backtest.strategy.base import BaseStrategy
 from backtest.strategy.enums import OrderType, SizeType

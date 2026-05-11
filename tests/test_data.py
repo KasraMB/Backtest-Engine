@@ -9,7 +9,6 @@ Or run the manual verification script at the bottom directly:
     python tests/test_data.py
 """
 
-import pytest
 import pandas as pd
 import numpy as np
 from datetime import date

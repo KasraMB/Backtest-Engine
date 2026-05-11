@@ -1,0 +1,75 @@
+Loaded 1837 days of market data
+Imports done
+Warming up Numba...
+  Numba ready in 5.6s
+
+Sweep A configs: 8100
+  Resuming from checkpoint: 8100 done, 4951 valid
+
+-- SWEEP A: structural params (2 workers) --
+
+Sweep A done: 4951 valid in 0s
+Top 4951 from Sweep A (by Sortino) enter Sweep B
+
+Sweep B: 4951 base configs x 153 filter combos = 757503 scored (no new backtests)
+  Memory-capped heap: keeping best 10000 B results
+
+-- SWEEP B: fast filter post-processing --
+  [B] 50000/762454  heap=10000
+  [B] 100000/762454  heap=10000
+  [B] 150000/762454  heap=10000
+  [B] 200000/762454  heap=10000
+  [B] 250000/762454  heap=10000
+  [B] 300000/762454  heap=10000
+  [B] 350000/762454  heap=10000
+  [B] 400000/762454  heap=10000
+  [B] 450000/762454  heap=10000
+  [B] 500000/762454  heap=10000
+  [B] 550000/762454  heap=10000
+  [B] 600000/762454  heap=10000
+  [B] 650000/762454  heap=10000
+  [B] 700000/762454  heap=10000
+  [B] 750000/762454  heap=10000
+
+Sweep B done: 10000 in heap in 402.7s
+Combined 14951 valid -> top 500 enter Phase 2
+
+-- PHASE 2: ERP x FRP sweep for top 500 (2 workers) --
+  25/500  elapsed=60s
+  50/500  elapsed=124s
+  75/500  elapsed=194s
+  100/500  elapsed=254s
+  125/500  elapsed=332s
+  150/500  elapsed=400s
+  175/500  elapsed=470s
+  200/500  elapsed=539s
+  225/500  elapsed=610s
+  250/500  elapsed=673s
+  275/500  elapsed=741s
+  300/500  elapsed=807s
+  325/500  elapsed=880s
+  350/500  elapsed=953s
+  375/500  elapsed=1022s
+  400/500  elapsed=1092s
+  425/500  elapsed=1163s
+  450/500  elapsed=1227s
+  475/500  elapsed=1295s
+  500/500  elapsed=1364s
+
+Phase 2 done in 1364s
+Phase 2 interim results saved -> sweep_results_amr_v2\final_results.pkl
+
+-- PHASE 3: reinvestment MC (budget=$1000, horizon=84d) --
+  50/500  elapsed=22s
+  100/500  elapsed=40s
+  150/500  elapsed=59s
+  200/500  elapsed=78s
+  250/500  elapsed=98s
+  300/500  elapsed=117s
+  350/500  elapsed=137s
+  400/500  elapsed=155s
+  450/500  elapsed=174s
+  500/500  elapsed=191s
+
+Phase 3 done in 191s
+Results saved -> sweep_results_amr_v2\final_results.pkl

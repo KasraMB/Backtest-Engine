@@ -1,12 +1,12 @@
 from __future__ import annotations
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import time
 from typing import Optional
 
 from backtest.strategy.enums import ExitReason, OrderType
 from backtest.strategy.order import Order
-from backtest.strategy.update import OpenPosition, PositionUpdate, Trade, POINT_VALUE, round_to_tick
+from backtest.strategy.update import OpenPosition, PositionUpdate, Trade, round_to_tick
 from backtest.engine.trail import update_trail
 
 logger = logging.getLogger(__name__)

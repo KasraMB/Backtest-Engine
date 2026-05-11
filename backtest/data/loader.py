@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from datetime import date
 
 from backtest.data.market_data import MarketData
 from backtest.data.cleaner import DataCleaner

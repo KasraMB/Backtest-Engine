@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from backtest.ml.features import ALL_FEATURE_NAMES
-from backtest.ml.configs import normalize_config, CONFIG_FEATURE_NAMES
+from backtest.ml.configs import normalize_config
 
 # Phase 2 cfg_ keys — must NOT be overwritten by Phase 1 injection.
 _PHASE2_CFG_KEYS: frozenset[str] = frozenset({

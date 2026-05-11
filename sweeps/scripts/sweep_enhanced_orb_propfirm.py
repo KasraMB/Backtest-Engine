@@ -21,7 +21,6 @@ if hasattr(sys.stderr, 'reconfigure'):
 
 import csv, hashlib, itertools, json, os, time
 from datetime import time as dtime
-import numpy as np
 import pandas as pd
 
 from backtest.data.loader import DataLoader
@@ -229,7 +228,7 @@ def main():
                   f"eval_risk={screen['best']['eval_risk']} funded_risk={screen['best']['funded_risk']} "
                   f"Pass rate: {screen['best']['pass_rate_eval']*100:.0f}%")
         else:
-            print(f"  -> No positive EV found")
+            print("  -> No positive EV found")
 
     # Save CSV (append mode to preserve results if interrupted)
     existing_results = []
@@ -238,7 +237,7 @@ def main():
             with open(CSV_PATH, "r") as f:
                 reader = csv.DictReader(f)
                 existing_results = list(reader)
-        except:
+        except Exception:
             existing_results = []
 
     with open(CSV_PATH, "w", newline="") as f:
@@ -261,7 +260,7 @@ def main():
         print(df[["combo_id", "n_trades", "best_ev_per_day", "best_account", "best_pass_rate"]].head(5).to_string())
 
         best = df.iloc[0]
-        print(f"\n=== BEST CONFIG ===")
+        print("\n=== BEST CONFIG ===")
         print(f"EV/day: ${best['best_ev_per_day']:.2f}")
         print(f"EV/84d: ${best['best_ev_per_day']*84:.2f}")
         print(f"Account: {best['best_account']}")

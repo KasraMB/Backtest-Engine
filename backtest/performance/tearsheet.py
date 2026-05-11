@@ -1150,7 +1150,7 @@ function toggleReverse(rev) {
 
     def _section_prop_firm(self, prop_firm: dict, prop_firm_rev: dict = None) -> str:
         import json as _json
-        from backtest.propfirm.lucidflex import LUCIDFLEX_ACCOUNTS, RISK_PCT_OF_MLL
+        from backtest.propfirm.lucidflex import LUCIDFLEX_ACCOUNTS
 
         def _serialise(pf_data: dict) -> dict:
             """Serialise one prop firm result dict into JS-ready structure."""
@@ -2265,7 +2265,7 @@ function toggleReverse(rev) {
             return (f"<div class='metric-card'><div class='metric-label'>{label}</div>"
                     f"<div class='metric-value {cls}'>{value}</div>{sub_html}</div>")
 
-        stats = (f"<div class='metric-grid' style='margin-top:12px'>"
+        stats = ("<div class='metric-grid' style='margin-top:12px'>"
                  + dcard("Max DD $", _fmt_dollar(dd.max_dd_dollars))
                  + dcard("Max DD %", _fmt_pct(dd.max_dd_pct),
                          f"95% CI [{_fmt_pct(ci.max_dd_pct[0])}, {_fmt_pct(ci.max_dd_pct[1])}]")
@@ -2624,7 +2624,7 @@ function toggleReverse(rev) {
         a_cls  = "positive" if alpha_fixed > 0 else "negative"
         ac_cls = "positive" if alpha_comp  > 0 else "negative"
         cards = (
-            f"<div class='metric-grid' style='margin-bottom:16px'>"
+            "<div class='metric-grid' style='margin-bottom:16px'>"
             + bcard("B&H Fixed PnL",       _fmt_dollar(bm.total_pnl_dollars),
                     "positive" if bm.total_pnl_dollars > 0 else "negative")
             + bcard("B&H Fixed CAGR",      _fmt_pct(bm.cagr))
