@@ -39,7 +39,7 @@ N_WORKERS = 2
 TOP_N     = 100      # how many AnchoredMeanReversion configs to load
 
 CHECKPOINT_FILE = "account_mgmt_checkpoint.pkl"
-CHECKPOINT_EVERY = 10_000_000_000   # effectively disabled mid-run; final save only
+CHECKPOINT_EVERY = 5_000             # save every 5k combos
 PROGRESS_EVERY   = 1_000             # print progress every N combos
 
 # ── SESSION START TIMES (minutes from midnight) ───────────────────────────
@@ -215,7 +215,12 @@ last_ckpt = done
 with ThreadPoolExecutor(max_workers=N_WORKERS) as ex:
     futs = {ex.submit(_run_one, (*c, SEED + i)): c for i, c in remaining}
     for fut in as_completed(futs):
-        result = fut.result()
+        try:
+            result = fut.result()
+        except Exception as exc:
+            combo = futs[fut]
+            print(f"  ERROR on combo {combo}: {exc}", flush=True)
+            continue
         with lock:
             rows.append(result)
             done += 1
