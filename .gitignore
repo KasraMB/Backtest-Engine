@@ -21,3 +21,4 @@ sweeps/sweep_results*/
 
 # Trade logs
 trade_logs/*
+*.html
