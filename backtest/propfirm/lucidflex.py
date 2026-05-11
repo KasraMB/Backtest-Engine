@@ -58,6 +58,7 @@ class LucidFlexAccount:
     eval_fee: float
     reset_fee: float
     payout_cap: float            # max gross withdrawal per cycle
+    winning_day_min: float = 0.0 # Lucid: minimum daily profit ≥ this counts as winning day
     max_payouts: int = 6
     split: float = 0.90
 
@@ -67,25 +68,25 @@ LUCIDFLEX_ACCOUNTS: dict[str, LucidFlexAccount] = {
         name="25K", starting_balance=25_000,
         profit_target=1_250, mll_amount=1_000,
         max_micros=20, eval_fee=70, reset_fee=60,
-        payout_cap=1_500,
+        payout_cap=1_500, winning_day_min=100,
     ),
     "50K": LucidFlexAccount(
         name="50K", starting_balance=50_000,
         profit_target=3_000, mll_amount=2_000,
         max_micros=40, eval_fee=98, reset_fee=105,
-        payout_cap=2_000,
+        payout_cap=2_000, winning_day_min=150,
     ),
     "100K": LucidFlexAccount(
         name="100K", starting_balance=100_000,
         profit_target=6_000, mll_amount=3_000,
         max_micros=60, eval_fee=157.50, reset_fee=140,
-        payout_cap=2_500,
+        payout_cap=2_500, winning_day_min=200,
     ),
     "150K": LucidFlexAccount(
         name="150K", starting_balance=150_000,
         profit_target=9_000, mll_amount=4_500,
         max_micros=100, eval_fee=294, reset_fee=225,
-        payout_cap=3_000,
+        payout_cap=3_000, winning_day_min=250,
     ),
 }
 
@@ -164,6 +165,69 @@ def extract_normalised_trades(
         pnl_list.append(pnl)
         sl_list.append(max(0.25, sl_d))
     return np.array(pnl_list, dtype=np.float64), np.array(sl_list, dtype=np.float64)
+
+
+# ---------------------------------------------------------------------------
+# Phase-3 sizing: minimum contracts to clear winning-day threshold
+# ---------------------------------------------------------------------------
+
+def min_contracts_for_winning_day(
+    avg_win_pts:      float,
+    avg_sl_pts:       float,
+    account:          LucidFlexAccount,
+    n_trades_per_day: float = 1.0,
+) -> tuple[int, int, float]:
+    """
+    Compute the smallest contract count where the EXPECTED winning-day net PnL
+    (after commissions) clears `account.winning_day_min`.
+
+    Args:
+        avg_win_pts:      average gain in points on a winning trade
+        avg_sl_pts:       average stop-loss distance in points (used for risk calc)
+        account:          LucidFlex account (provides winning_day_min, contract caps)
+        n_trades_per_day: typical trades per day (for commission scaling)
+
+    Math (single instrument, single winning trade/day):
+        net_per_contract = avg_win_pts * point_value - n_trades * round_trip_commission
+        net_day          = n_contracts * net_per_contract
+        require:           net_day >= winning_day_min
+        actual_risk_$    = n_contracts * avg_sl_pts * point_value
+
+    Returns (n_minis, n_micros, actual_dollar_risk_per_trade). Either n_minis or
+    n_micros is zero — picks whichever single instrument achieves the threshold
+    with lowest actual $ risk per trade. If neither can clear within contract
+    caps, returns the highest-affordable count.
+    """
+    if avg_win_pts <= 0 or avg_sl_pts <= 0:
+        return (0, 0, 0.0)
+
+    gross_mini  = float(avg_win_pts * MINI_POINT_VALUE)
+    gross_micro = float(avg_win_pts * MICRO_POINT_VALUE)
+    net_mini    = gross_mini  - MINI_COMM_RT  * float(n_trades_per_day)
+    net_micro   = gross_micro - MICRO_COMM_RT * float(n_trades_per_day)
+    threshold   = float(account.winning_day_min)
+
+    max_minis_cap = account.max_micros // 10
+    if net_mini > 0:
+        n_minis_needed = int(np.ceil(threshold / net_mini))
+        n_minis_needed = min(max(n_minis_needed, 1), max_minis_cap)
+        risk_mini = n_minis_needed * avg_sl_pts * MINI_POINT_VALUE
+    else:
+        n_minis_needed = max_minis_cap
+        risk_mini = float('inf')
+
+    if net_micro > 0:
+        n_micros_needed = int(np.ceil(threshold / net_micro))
+        n_micros_needed = min(max(n_micros_needed, 1), account.max_micros)
+        risk_micro = n_micros_needed * avg_sl_pts * MICRO_POINT_VALUE
+    else:
+        n_micros_needed = account.max_micros
+        risk_micro = float('inf')
+
+    if risk_micro <= risk_mini:
+        return (0, n_micros_needed, risk_micro if np.isfinite(risk_micro) else 0.0)
+    else:
+        return (n_minis_needed, 0, risk_mini if np.isfinite(risk_mini) else 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -440,6 +504,7 @@ def _funded_loop_nb(
     comm_rt:          float,
     max_minis:        int,
     mini_comm_rt:     float,
+    winning_day_min:  float,
 ):
     n_sims   = all_counts.shape[0]
     MAX_DAYS = all_counts.shape[1]
@@ -450,6 +515,7 @@ def _funded_loop_nb(
     payout_days_out    = np.full((n_sims, max_pay), np.nan)
     payout_amounts_out = np.zeros((n_sims, max_pay), dtype=np.float64)
     funded_days_out    = np.zeros(n_sims, dtype=np.float64)
+    wd_min_f           = np.float32(winning_day_min)
 
     base      = np.float32(risk_pct * mll_amount)
     base_frac = np.float32(base / starting_balance)
@@ -545,7 +611,7 @@ def _funded_loop_nb(
                 alive = False
                 continue
 
-            if day_pnl > np.float32(0.0):
+            if day_pnl >= wd_min_f:
                 prof_days += 1
 
             if prof_days >= 5 and n_payouts < max_pay:
@@ -746,6 +812,7 @@ def _funded_loop_nb_multi(
     comm_rt:          float,
     max_minis:        int,
     mini_comm_rt:     float,
+    winning_day_min:  float,
 ):
     n_thr    = pnl_2d.shape[0]
     n_sims   = all_counts.shape[1]
@@ -757,6 +824,7 @@ def _funded_loop_nb_multi(
     payout_days_out    = np.full((n_thr, n_sims, max_pay), np.nan)
     payout_amounts_out = np.zeros((n_thr, n_sims, max_pay), dtype=np.float64)
     funded_days_out    = np.zeros((n_thr, n_sims), dtype=np.float64)
+    wd_min_f           = np.float32(winning_day_min)
 
     base      = np.float32(risk_pct * mll_amount)
     base_frac = np.float32(base / starting_balance)
@@ -851,7 +919,7 @@ def _funded_loop_nb_multi(
             if balance <= mll_level:
                 alive = False; continue
 
-            if day_pnl > np.float32(0.0):
+            if day_pnl >= wd_min_f:
                 prof_days += 1
 
             if prof_days >= 5 and n_payouts < max_pay:
@@ -1066,6 +1134,7 @@ def simulate_funded_batch(
             float(comm_rt),
             int(max_minis),
             float(mini_comm_rt),
+            float(account.winning_day_min),
         )
 
     # ── Fallback: pure NumPy path (Numba unavailable) ────────────────────────
@@ -1138,7 +1207,7 @@ def simulate_funded_batch(
         eod_breach = alive & (balance <= mll_level)
         alive      = alive & ~eod_breach
 
-        prof_days  = np.where(alive & (day_pnl > 0), prof_days + 1, prof_days)
+        prof_days  = np.where(alive & (day_pnl >= account.winning_day_min), prof_days + 1, prof_days)
         can_payout = alive & (prof_days >= 5)
         if can_payout.any():
             profits = np.maximum(0.0, balance - account.starting_balance)
@@ -1516,7 +1585,7 @@ def run_propfirm_grid(
             np.ones((2, 5), dtype=np.int16),
             np.zeros((2, 5, 3), dtype=np.int32),
             25000.0, 1000.0, 20, 0.20, 0, 2.0, 3, 6, 1500.0, 0.90,
-            MICRO_COMM_RT, 2, MINI_COMM_RT,
+            MICRO_COMM_RT, 2, MINI_COMM_RT, 100.0,
         )
 
     BS = 500
@@ -1700,6 +1769,7 @@ def simulate_funded_batch_multi(
         float(account.payout_cap), float(account.split),
         float(comm_rt),
         int(max_minis), float(mini_comm_rt),
+        float(account.winning_day_min),
     )
 
 
@@ -1767,7 +1837,7 @@ def run_propfirm_grid_threshold_sweep(
         _funded_loop_nb_multi(
             _d, _ds, _sz, _fac, _fai,
             25000.0, 1000.0, 20, 0.20, 0, 2.0, 3, 6, 1500.0, 0.90,
-            MICRO_COMM_RT, 2, MINI_COMM_RT,
+            MICRO_COMM_RT, 2, MINI_COMM_RT, 100.0,
         )
 
     # ── Regime transition matrix (shared across thresholds) ──────────────────
