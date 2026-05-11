@@ -44,8 +44,8 @@ def _run(script: str) -> int:
 
 
 def main():
-    # Step 1: AnchoredMeanReversion sweep (resumes from A checkpoint, reruns Phase 2+3)
-    rc = _run("tmp_amr_v2_sweep.py")
+    # Step 1: Phase 2+3 rerun only (Sweep A doesn't depend on MLL)
+    rc = _run("rerun_phase23_only.py")
     if rc != 0:
         print(f"AnchoredMeanReversion sweep failed with exit {rc}, aborting.", flush=True)
         sys.exit(rc)
