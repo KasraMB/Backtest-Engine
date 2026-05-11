@@ -12,6 +12,7 @@ data/*
 verification_output.txt
 tmp*
 venv*/
+docs/superpowers/
 
 # Sweep result directories (keep active amr_v2)
 sweep_results_*/
