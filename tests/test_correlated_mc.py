@@ -294,16 +294,21 @@ class TestFundedStep:
         assert event == "blown"
         assert payout == 0.0
 
-    def test_mll_locks_when_balance_reaches_start(self):
+    def test_mll_locks_when_peak_reaches_initial_trail(self):
+        """LucidFlex rule: MLL locks at starting + $100 once peak reaches
+        Initial Trail Balance (= starting + mll_amount + $100)."""
+        # 25K: Initial Trail = 25000 + 1000 + 100 = 26100
+        # Start near the lock point with peak just below it
         state = _FundedState(
-            balance=ACC.starting_balance - 50,
-            mll=ACC.starting_balance - ACC.mll_amount,
-            peak_eod=ACC.starting_balance,
+            balance=ACC.starting_balance + 1000,
+            mll=ACC.starting_balance + 1000 - ACC.mll_amount,  # = 25000 (trailing)
+            peak_eod=ACC.starting_balance + 1000,              # = 26000 (just below trail)
             mll_locked=False,
         )
-        new_state, _, _ = _funded_step(state, 20.0, 4.0, 400.0, ACC)
+        # A win pushing balance to ≥ 26100 should trigger the lock
+        new_state, _, _ = _funded_step(state, 60.0, 4.0, 400.0, ACC)
         assert new_state.mll_locked
-        assert new_state.mll == pytest.approx(ACC.starting_balance - 100.0)
+        assert new_state.mll == pytest.approx(ACC.starting_balance + 100.0)
 
     def test_payout_after_five_prof_days(self):
         state = _FundedState(

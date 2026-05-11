@@ -215,12 +215,16 @@ class _FundedState:
 
 
 def _eval_step(state, pnl_pts, sl_dist, risk_dollars, account):
+    """LucidFlex EOD trailing MLL: caps at starting_balance + $100 once peak
+    crosses Initial Trail Balance (= starting + mll_amount + $100)."""
     dollar      = _size_and_pnl(pnl_pts, sl_dist, risk_dollars, account)
     new_balance = state.balance + dollar
     if new_balance <= state.mll:
         return state, "failed"
-    new_peak = max(state.peak_eod, new_balance)
-    new_mll  = max(state.mll, new_peak - account.mll_amount)
+    new_peak    = max(state.peak_eod, new_balance)
+    locked_mll  = account.starting_balance + 100.0
+    trailing    = new_peak - account.mll_amount
+    new_mll     = max(state.mll, min(trailing, locked_mll))
     total_profit   = new_balance - account.starting_balance
     n_prof_days    = state.n_prof_days
     max_day_profit = state.max_day_profit
@@ -238,19 +242,24 @@ def _eval_step(state, pnl_pts, sl_dist, risk_dollars, account):
 
 
 def _funded_step(state, pnl_pts, sl_dist, risk_dollars, account):
-    dollar      = _size_and_pnl(pnl_pts, sl_dist, risk_dollars, account)
-    new_balance = state.balance + dollar
-    mll_locked  = state.mll_locked
-    if not mll_locked and new_balance >= account.starting_balance:
-        mll_locked = True
+    """LucidFlex funded MLL: same trailing as eval, capped at starting + $100.
+    Lock fires when peak ≥ Initial Trail (starting + mll_amount + 100) OR after payout.
+    Once locked, MLL is fixed at starting + $100 forever."""
+    dollar       = _size_and_pnl(pnl_pts, sl_dist, risk_dollars, account)
+    new_balance  = state.balance + dollar
+    new_peak     = max(state.peak_eod, new_balance)
+    locked_value = account.starting_balance + 100.0
+    initial_trail = account.starting_balance + account.mll_amount + 100.0
+
+    mll_locked = state.mll_locked or new_peak >= initial_trail
     if mll_locked:
-        new_mll = account.starting_balance - 100.0
+        new_mll = locked_value
     else:
-        new_peak_pre = max(state.peak_eod, new_balance)
-        new_mll      = max(state.mll, new_peak_pre - account.mll_amount)
+        new_mll = max(state.mll, new_peak - account.mll_amount)
+
     if new_balance <= new_mll:
         return state, "blown", 0.0
-    new_peak        = new_peak_pre if not mll_locked else max(state.peak_eod, new_balance)
+
     cycle_prof_days = state.cycle_prof_days
     if dollar > 0.0:
         cycle_prof_days += 1
@@ -265,6 +274,8 @@ def _funded_step(state, pnl_pts, sl_dist, risk_dollars, account):
             new_balance    -= gross
             payout_count   += 1
             cycle_prof_days = 0
+            mll_locked      = True            # payout forces MLL lock
+            new_mll         = locked_value
             event = "closed" if payout_count >= account.max_payouts else "payout"
     new_state = _FundedState(balance=new_balance, mll=new_mll, peak_eod=new_peak,
                              mll_locked=mll_locked, cycle_prof_days=cycle_prof_days,
@@ -634,8 +645,10 @@ def _run_batch(
                 failed = act_eval & (new_b <= ev_mll[:, a])
                 ok     = is_eval & ~failed
 
+                LOCKED_MLL_V = SB + 100.0
                 new_peak = np.where(ok, np.maximum(ev_peak[:, a], new_b), ev_peak[:, a])
-                new_mll  = np.where(ok, np.maximum(ev_mll[:, a], new_peak - MLL_AMT), ev_mll[:, a])
+                trailing_mll = np.minimum(new_peak - MLL_AMT, LOCKED_MLL_V)
+                new_mll  = np.where(ok, np.maximum(ev_mll[:, a], trailing_mll), ev_mll[:, a])
                 new_tot  = np.where(ok, new_b - SB, ev_tot[:, a])
                 won      = act_eval & (d > 0) & ~failed
                 new_max  = np.where(won, np.maximum(ev_max[:, a], d), ev_max[:, a])
@@ -676,11 +689,14 @@ def _run_batch(
                 d      = np.where(act_fund, dollar, 0.0)
                 new_b  = fu_bal[:, a] + d
 
-                new_locked = fu_locked[:, a] | (act_fund & (new_b >= SB))
+                LOCKED_MLL_V  = SB + 100.0
+                INITIAL_TRAIL = SB + MLL_AMT + 100.0
+
                 new_peak_pre = np.maximum(fu_peak[:, a], new_b)
+                new_locked = fu_locked[:, a] | (act_fund & (new_peak_pre >= INITIAL_TRAIL))
                 new_mll = np.where(
                     new_locked,
-                    SB - 100.0,
+                    LOCKED_MLL_V,
                     np.maximum(fu_mll[:, a], new_peak_pre - MLL_AMT),
                 )
                 blown  = act_fund & (new_b <= new_mll)
@@ -697,6 +713,9 @@ def _run_batch(
                 new_b    = np.where(can_pay, new_b - gross, new_b)
                 new_cnt  = fu_cnt[:, a] + np.where(can_pay, 1, 0)
                 new_cyc  = np.where(can_pay, 0, new_cyc)
+                # Payout forces lock at LOCKED_MLL_V
+                new_locked = new_locked | can_pay
+                new_mll    = np.where(can_pay, LOCKED_MLL_V, new_mll)
                 f_closed = can_pay & (new_cnt >= MAX_PAY)
 
                 payout_amt += np.where(ok, net_pay, 0.0)
@@ -869,6 +888,10 @@ def _run_batch_jit(
                     if n_c > MAX_MICROS: n_c = MAX_MICROS
                     dollar = pnl * n_c * 2.0 - 1.0 * n_c
 
+                # LucidFlex MLL constants
+                LOCKED_MLL    = SB + 100.0
+                INITIAL_TRAIL = SB + MLL_AMT + 100.0
+
                 if phase[a] == 1:
                     # ── EVAL step ──
                     new_b = ev_bal[a] + dollar
@@ -881,7 +904,10 @@ def _run_batch_jit(
                         ev_bal[a] = new_b
                         if new_b > ev_peak[a]:
                             ev_peak[a] = new_b
+                        # Trailing MLL capped at LOCKED_MLL (= SB + 100)
                         cand = ev_peak[a] - MLL_AMT
+                        if cand > LOCKED_MLL:
+                            cand = LOCKED_MLL
                         if cand > ev_mll[a]:
                             ev_mll[a] = cand
                         ev_tot[a] = new_b - SB
@@ -903,12 +929,13 @@ def _run_batch_jit(
                 else:
                     # ── FUNDED step ──
                     new_b = fu_bal[a] + dollar
-                    if (not fu_locked[a]) and new_b >= SB:
+                    new_peak_pre = fu_peak[a] if fu_peak[a] > new_b else new_b
+                    # Lock when peak reaches Initial Trail balance
+                    if (not fu_locked[a]) and new_peak_pre >= INITIAL_TRAIL:
                         fu_locked[a] = True
                     if fu_locked[a]:
-                        new_mll = SB - 100.0
+                        new_mll = LOCKED_MLL
                     else:
-                        new_peak_pre = fu_peak[a] if fu_peak[a] > new_b else new_b
                         cand = new_peak_pre - MLL_AMT
                         new_mll = fu_mll[a] if fu_mll[a] > cand else cand
                     if new_b <= new_mll:
@@ -918,8 +945,7 @@ def _run_batch_jit(
                     else:
                         fu_bal[a]  = new_b
                         fu_mll[a]  = new_mll
-                        if new_b > fu_peak[a]:
-                            fu_peak[a] = new_b
+                        fu_peak[a] = new_peak_pre
                         if dollar > 0.0:
                             fu_cyc[a] += 1
                         if fu_cyc[a] >= 5 and fu_cnt[a] < MAX_PAY:
@@ -929,11 +955,13 @@ def _run_batch_jit(
                             half = profits * 0.5
                             gross = half if half < PAY_CAP else PAY_CAP
                             if gross >= 500.0:
-                                cash      += gross * SPLIT
-                                fu_bal[a]  = new_b - gross
-                                fu_cnt[a] += 1
-                                fu_cyc[a]  = 0
-                                any_payout = True
+                                cash         += gross * SPLIT
+                                fu_bal[a]     = new_b - gross
+                                fu_cnt[a]    += 1
+                                fu_cyc[a]     = 0
+                                fu_locked[a]  = True       # payout forces lock
+                                fu_mll[a]     = LOCKED_MLL
+                                any_payout    = True
                                 if fu_cnt[a] >= MAX_PAY:
                                     phase[a]  = 0
                                     any_close = True

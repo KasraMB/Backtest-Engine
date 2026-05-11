@@ -15,8 +15,10 @@ Rules implemented (confirmed):
 
   FUNDED
   ──────
-  • Same EOD trailing MLL. Locks permanently at (starting_balance - $100)
-    once EOD balance ≥ starting_balance for the first time.
+  • Same EOD trailing MLL, capped at starting_balance + $100. Locks
+    permanently at starting_balance + $100 once peak EOD balance ≥
+    Initial Trail Balance (= starting_balance + mll_amount + $100), or
+    immediately when a payout is requested.
   • No consistency rule.
   • Payout: 5 profitable trading days per cycle (non-consecutive ok).
   • Min payout $500. Max payout = min(50% of profits above starting, cap).
@@ -378,9 +380,13 @@ def _eval_loop_nb(
 
             new_peak = max(peak_eod, balance)
             peak_eod = new_peak
-            new_mll  = peak_eod - np.float32(mll_amount)
-            if new_mll > mll_level:
-                mll_level = new_mll
+            # LucidFlex: trailing MLL caps at starting_balance + $100
+            cand = peak_eod - np.float32(mll_amount)
+            locked_mll = np.float32(starting_balance + 100.0)
+            if cand > locked_mll:
+                cand = locked_mll
+            if cand > mll_level:
+                mll_level = cand
 
             if balance <= mll_level:
                 alive = False
@@ -524,10 +530,13 @@ def _funded_loop_nb(
             new_peak = max(peak_eod, balance)
             peak_eod = new_peak
 
-            if not mll_locked and balance >= np.float32(starting_balance):
+            # LucidFlex: lock when peak ≥ Initial Trail (= starting + mll_amount + 100)
+            locked_mll    = np.float32(starting_balance + 100.0)
+            initial_trail = np.float32(starting_balance + mll_amount + 100.0)
+            if not mll_locked and peak_eod >= initial_trail:
                 mll_locked = True
             if mll_locked:
-                mll_level = np.float32(starting_balance - 100.0)
+                mll_level = locked_mll
             else:
                 new_mll = peak_eod - np.float32(mll_amount)
                 if new_mll > mll_level:
@@ -553,6 +562,9 @@ def _funded_loop_nb(
                     total_w   += net
                     n_payouts  = n_payouts + 1
                     prof_days  = 0
+                    # Payout forces MLL lock
+                    mll_locked = True
+                    mll_level  = locked_mll
                     if n_payouts >= max_pay:
                         alive = False
 
@@ -683,9 +695,13 @@ def _eval_loop_nb_multi(
 
             balance += day_pnl
             new_peak = max(peak_eod, balance); peak_eod = new_peak
-            new_mll  = peak_eod - np.float32(mll_amount)
-            if new_mll > mll_level:
-                mll_level = new_mll
+            # LucidFlex: trailing MLL caps at starting + $100
+            cand = peak_eod - np.float32(mll_amount)
+            locked_mll = np.float32(starting_balance + 100.0)
+            if cand > locked_mll:
+                cand = locked_mll
+            if cand > mll_level:
+                mll_level = cand
             if balance <= mll_level:
                 alive = False; continue
 
@@ -821,10 +837,13 @@ def _funded_loop_nb_multi(
             balance += day_pnl
             new_peak = max(peak_eod, balance); peak_eod = new_peak
 
-            if not mll_locked and balance >= np.float32(starting_balance):
+            # LucidFlex: lock when peak ≥ Initial Trail (= starting + mll_amount + 100)
+            locked_mll    = np.float32(starting_balance + 100.0)
+            initial_trail = np.float32(starting_balance + mll_amount + 100.0)
+            if not mll_locked and peak_eod >= initial_trail:
                 mll_locked = True
             if mll_locked:
-                mll_level = np.float32(starting_balance - 100.0)
+                mll_level = locked_mll
             else:
                 new_mll = peak_eod - np.float32(mll_amount)
                 if new_mll > mll_level:
@@ -849,6 +868,9 @@ def _funded_loop_nb_multi(
                     total_w   += net
                     n_payouts  = n_payouts + 1
                     prof_days  = 0
+                    # Payout forces MLL lock
+                    mll_locked = True
+                    mll_level  = locked_mll
                     if n_payouts >= max_pay:
                         alive = False
 
@@ -1102,11 +1124,14 @@ def simulate_funded_batch(
         new_peak = np.maximum(peak_eod, balance)
         peak_eod = np.where(alive, new_peak, peak_eod)
 
-        just_locked = alive & ~mll_locked & (balance >= account.starting_balance)
+        # LucidFlex: lock when peak ≥ Initial Trail (= starting + mll_amount + 100)
+        locked_mll_v  = account.starting_balance + 100.0
+        initial_trail = account.starting_balance + account.mll_amount + 100.0
+        just_locked = alive & ~mll_locked & (peak_eod >= initial_trail)
         mll_locked  = mll_locked | just_locked
         new_mll     = np.where(
             mll_locked,
-            account.starting_balance - 100,
+            locked_mll_v,
             np.maximum(mll_level, peak_eod - account.mll_amount),
         )
         mll_level = np.where(alive, new_mll, mll_level)
@@ -1137,6 +1162,9 @@ def simulate_funded_batch(
             total_w   = np.where(do_pay, total_w + gross * account.split, total_w)
             n_payouts = np.where(do_pay, n_payouts + 1, n_payouts)
             prof_days = np.where(do_pay, 0, prof_days)
+            # Payout forces MLL lock at locked_mll_v
+            mll_locked = mll_locked | do_pay
+            mll_level  = np.where(do_pay, locked_mll_v, mll_level)
             alive     = alive & (n_payouts < max_pay)
 
     return total_w, days_to_w, n_payouts, payout_days, payout_amounts, funded_days_elapsed
