@@ -28,6 +28,20 @@ Metric: Sortino (A/B ranking) -> P($0) asc / P(>$10K) desc (Phase 2 final).
 Checkpoints every 100 configs.
 """
 import os, pickle
+
+
+def _atomic_dump(path, obj):
+    """Write pickle to tmp + atomically rename. Survives interrupted writes."""
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        pickle.dump(obj, f)
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except Exception:
+            pass
+    os.replace(tmp, path)
+
 import time as _time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import product
@@ -404,8 +418,7 @@ def _run_parallel(configs, label, n_workers, ckpt_path=None, resume_done=None,
                 print(f"  [{label}] {done}/{total}  valid={len(extra)+len(results)}"
                       f"  elapsed={el:.0f}s  est_remaining={rem:.0f}s", flush=True)
             if ckpt_path and done % 100 == 0:
-                with open(ckpt_path, "wb") as f:
-                    pickle.dump({"done": done, "results": extra + results}, f)
+                _atomic_dump(ckpt_path, {"done": done, "results": extra + results})
     return results
 
 
@@ -436,13 +449,17 @@ print(f"\nSweep A configs: {len(sweep_a_configs)}", flush=True)
 
 a_results_extra, a_resume = [], None
 if os.path.exists(CKPT_A):
-    with open(CKPT_A, "rb") as f:
-        ck = pickle.load(f)
-    a_results_extra = ck.get("results", [])
-    a_done_prev     = ck.get("done", 0)
-    a_resume        = list(range(a_done_prev))
-    print(f"  Resuming from checkpoint: {a_done_prev} done, "
-          f"{len(a_results_extra)} valid", flush=True)
+    try:
+        with open(CKPT_A, "rb") as f:
+            ck = pickle.load(f)
+        a_results_extra = ck.get("results", [])
+        a_done_prev     = ck.get("done", 0)
+        a_resume        = list(range(a_done_prev))
+        print(f"  Resuming from checkpoint: {a_done_prev} done, "
+              f"{len(a_results_extra)} valid", flush=True)
+    except (EOFError, pickle.UnpicklingError) as e:
+        print(f"  Checkpoint corrupted ({e}), starting fresh", flush=True)
+        a_results_extra, a_resume = [], None
 
 print(f"\n-- SWEEP A: structural params ({N_WORKERS} workers) --", flush=True)
 t_a = _time.perf_counter()
@@ -453,8 +470,7 @@ a_results = a_results_extra + a_results_new
 print(f"\nSweep A done: {len(a_results)} valid in {_time.perf_counter()-t_a:.0f}s",
       flush=True)
 
-with open(CKPT_A, "wb") as f:
-    pickle.dump({"done": len(sweep_a_configs), "results": a_results}, f)
+_atomic_dump(CKPT_A, {"done": len(sweep_a_configs), "results": a_results})
 
 a_results.sort(key=lambda r: -r["sortino"])
 top_a = a_results[:TOP_A]
@@ -564,8 +580,7 @@ with ThreadPoolExecutor(max_workers=N_WORKERS) as ex:
 
 print(f"\nPhase 2 done in {_time.perf_counter()-t_p2:.0f}s", flush=True)
 p2_results.sort(key=lambda r: -r["best_ev"])   # interim sort for checkpoint
-with open(RESULTS_FILE, "wb") as f:
-    pickle.dump(p2_results, f)
+_atomic_dump(RESULTS_FILE, p2_results)
 print(f"Phase 2 interim results saved -> {RESULTS_FILE}", flush=True)
 
 
@@ -613,8 +628,7 @@ with ThreadPoolExecutor(max_workers=N_WORKERS) as ex:
 p3_results.sort(key=lambda r: r["p_zero"])   # final rank: min P($0) first
 print(f"\nPhase 3 done in {_time.perf_counter()-t_p3:.0f}s", flush=True)
 
-with open(RESULTS_FILE, "wb") as f:
-    pickle.dump(p3_results, f)
+_atomic_dump(RESULTS_FILE, p3_results)
 print(f"Results saved -> {RESULTS_FILE}", flush=True)
 
 
@@ -680,8 +694,7 @@ os.makedirs(_LOG_DIR, exist_ok=True)
 
 # pkl — full results for programmatic reload
 _pkl_dst = os.path.join(_LOG_DIR, "amr_v2_results.pkl")
-with open(_pkl_dst, "wb") as _f:
-    pickle.dump(p3_results, _f)
+_atomic_dump(_pkl_dst, p3_results)
 
 # txt — human-readable table (same as stdout above)
 _txt_dst = os.path.join(_LOG_DIR, "amr_v2_results.txt")

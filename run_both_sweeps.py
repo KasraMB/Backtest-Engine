@@ -1,6 +1,9 @@
 """
 Run AnchoredMeanReversion sweep (Phase 2 + 3) → then Account mgmt sweep.
 Designed to be launched detached via pythonw.
+
+Subprocess output is forwarded line-by-line to the parent's stdout (which
+itself is captured to a file by Start-Process -RedirectStandardOutput).
 """
 from __future__ import annotations
 
@@ -19,12 +22,25 @@ def _run(script: str) -> int:
     print(f"== STARTING: {script}", flush=True)
     print(f"== {time.strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
     print(f"{'='*60}\n", flush=True)
-    r = subprocess.run([PY, script], cwd=WORK_DIR)
+    # Use Popen with PIPE so we can forward output explicitly (pythonw can't inherit consoles)
+    proc = subprocess.Popen(
+        [PY, "-u", script],          # -u: unbuffered output
+        cwd=WORK_DIR,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+    proc.wait()
     dur = time.time() - t0
     print(f"\n{'='*60}", flush=True)
-    print(f"== FINISHED: {script}  exit={r.returncode}  duration={dur:.0f}s", flush=True)
+    print(f"== FINISHED: {script}  exit={proc.returncode}  duration={dur:.0f}s", flush=True)
     print(f"{'='*60}\n", flush=True)
-    return r.returncode
+    return proc.returncode
 
 
 def main():
