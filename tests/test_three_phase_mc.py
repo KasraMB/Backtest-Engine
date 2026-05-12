@@ -134,3 +134,67 @@ class TestSizing:
         )
         # eg_risk should be ~ 0.30 × 2000 = $600
         assert abs(out['_eg_risk'] - 600.0) < 1e-6
+
+
+class TestMultiConfig:
+    """Multi-session combos: list of configs for P12 and/or P3."""
+
+    def test_list_input_accepted(self):
+        cfg_a = _strong_config(name='a', seed=0)
+        cfg_b = _strong_config(name='b', seed=1)
+        out = three_phase_reinvestment_mc(
+            eval_grind_config=[cfg_a, cfg_b], eval_grind_risk=0.30,
+            payout_config=[cfg_a, cfg_b],
+            account=LUCIDFLEX_ACCOUNTS['50K'],
+            budget=3_000, horizon=20, max_concurrent=5, n_sims=100, seed=7,
+        )
+        assert 'cash' in out
+        assert len(out['cash']) == 100
+
+    def test_deterministic_multi_config(self):
+        cfg_a = _strong_config(name='a', seed=0)
+        cfg_b = _high_wr_config(name='b', seed=1)
+        kwargs = dict(
+            eval_grind_config=[cfg_a, cfg_b], eval_grind_risk=0.30,
+            payout_config=cfg_b, account=LUCIDFLEX_ACCOUNTS['50K'],
+            budget=3_000, horizon=20, max_concurrent=5, n_sims=100, seed=42,
+        )
+        r1 = three_phase_reinvestment_mc(**kwargs)
+        r2 = three_phase_reinvestment_mc(**kwargs)
+        np.testing.assert_array_equal(r1['cash'], r2['cash'])
+
+    def test_risk_scaling_on_vs_off_changes_results(self):
+        """With scale_risk_by_n=True, each session risks 1/N of total.
+        With False, each session risks the full amount → much higher daily risk."""
+        cfg_a = _strong_config(name='a', seed=0)
+        cfg_b = _strong_config(name='b', seed=1)
+        kwargs = dict(
+            eval_grind_config=[cfg_a, cfg_b], eval_grind_risk=0.30,
+            payout_config=cfg_a, account=LUCIDFLEX_ACCOUNTS['50K'],
+            budget=3_000, horizon=20, max_concurrent=5, n_sims=200, seed=42,
+        )
+        r_scaled = three_phase_reinvestment_mc(**kwargs, scale_risk_by_n=True)
+        r_full   = three_phase_reinvestment_mc(**kwargs, scale_risk_by_n=False)
+        # With full risk per session, each trade is bigger → results differ
+        assert not np.allclose(r_scaled['cash'], r_full['cash'])
+        # The per-config sizing should be larger when not scaled
+        # (eg_risk reflects total daily risk capacity)
+        assert r_full['_eg_risk'] > r_scaled['_eg_risk']
+
+    def test_single_config_unchanged_by_refactor(self):
+        """Passing a single config (not list) should give same result as before."""
+        cfg = _strong_config(seed=0)
+        # This was working in pre-refactor tests; ensure still works
+        out = three_phase_reinvestment_mc(
+            eval_grind_config=cfg, eval_grind_risk=0.30,
+            payout_config=cfg, account=LUCIDFLEX_ACCOUNTS['50K'],
+            budget=3_000, horizon=20, max_concurrent=5, n_sims=100, seed=7,
+        )
+        # Should also accept list-of-1 with same result
+        out_list = three_phase_reinvestment_mc(
+            eval_grind_config=[cfg], eval_grind_risk=0.30,
+            payout_config=[cfg], account=LUCIDFLEX_ACCOUNTS['50K'],
+            budget=3_000, horizon=20, max_concurrent=5, n_sims=100, seed=7,
+        )
+        # Same single underlying config + same seed → same output
+        np.testing.assert_array_equal(out['cash'], out_list['cash'])

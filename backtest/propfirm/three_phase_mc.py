@@ -17,7 +17,7 @@ No JIT — used for a focused 50-combo sweep where ~1s per combo is fine.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -29,6 +29,11 @@ from backtest.propfirm.lucidflex import (
     MINI_POINT_VALUE,
     min_contracts_for_winning_day,
 )
+
+# A "config input" can be either a single ThreePhaseConfig or a list of them
+# (e.g. multi-session combos). When a list, each session generates trades
+# independently and daily PnL is summed.
+ConfigInput = Union['ThreePhaseConfig', List['ThreePhaseConfig']]
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +80,37 @@ def _generate_day_pnl(
     return np.where(fired, net, 0.0).astype(np.float64)
 
 
+def _as_list(x: ConfigInput) -> List[ThreePhaseConfig]:
+    """Normalise input to a list of configs."""
+    if isinstance(x, list):
+        return x
+    return [x]
+
+
+def _generate_combined_day_pnl(
+    configs: List[ThreePhaseConfig],
+    risk_dollars_per_cfg: float,
+    account: LucidFlexAccount,
+    n_sims: int,
+    horizon: int,
+    rng: np.random.Generator,
+) -> Tuple[np.ndarray, List[Tuple[int, int]], float]:
+    """Sum daily $ PnL across N configs (each fires independently per day).
+    Each config sized to risk_dollars_per_cfg.
+    Returns (combined_pnl, [(n_minis, n_micros) per cfg], total_actual_risk_per_day_max)."""
+    combined = np.zeros((n_sims, horizon), dtype=np.float64)
+    sizings: List[Tuple[int, int]] = []
+    total_max_risk = 0.0
+    for cfg in configs:
+        n_minis, n_micros = _size_for_risk(cfg, risk_dollars_per_cfg, account)
+        cfg_pnl = _generate_day_pnl(cfg, n_minis, n_micros, n_sims, horizon, rng)
+        combined += cfg_pnl
+        sizings.append((n_minis, n_micros))
+        # Per-config worst-case risk (1 contract × max sl × pv)
+        total_max_risk += risk_dollars_per_cfg
+    return combined, sizings, total_max_risk
+
+
 def _size_for_risk(
     cfg:         ThreePhaseConfig,
     risk_dollars: float,
@@ -106,15 +142,16 @@ def _size_for_risk(
 # ---------------------------------------------------------------------------
 
 def three_phase_reinvestment_mc(
-    eval_grind_config: ThreePhaseConfig,
+    eval_grind_config: ConfigInput,
     eval_grind_risk:   float,                  # ERP/FRP as fraction of MLL
-    payout_config:     ThreePhaseConfig,
+    payout_config:     ConfigInput,
     account:           LucidFlexAccount,
     budget:            float,
     horizon:           int,
     max_concurrent:    int,
-    n_sims:            int = 5_000,
-    seed:              int = 42,
+    n_sims:            int  = 5_000,
+    seed:              int  = 42,
+    scale_risk_by_n:   bool = True,            # 1/N risk scaling for multi-config
 ) -> dict:
     """
     Simulate AnchoredMeanReversion's 3-phase method: buy 10 evals upfront (or up to budget),
@@ -141,30 +178,56 @@ def three_phase_reinvestment_mc(
     LOCKED_MLL = SB + 100.0
     INITIAL_TRAIL = SB + MLL_AMT + 100.0
 
-    # ── Sizing decisions (config-level, fixed for the run) ─────────────────
-    # Phase 1+2: use risk_pct × MLL as $ risk
-    eg_risk_dollars = eval_grind_risk * MLL_AMT
-    eg_n_minis, eg_n_micros = _size_for_risk(
-        eval_grind_config, eg_risk_dollars, account,
+    # ── Normalise to lists (multi-config support) ──────────────────────────
+    eg_list = _as_list(eval_grind_config)
+    p3_list = _as_list(payout_config)
+    n_eg    = len(eg_list)
+    n_p3    = len(p3_list)
+
+    # ── Phase 1+2 sizing: total risk = eval_grind_risk × MLL ───────────────
+    # If multi-config and scale_risk_by_n=True: divide risk across configs so
+    # the SUM of per-session risk stays at total_risk. If False: each session
+    # uses the full risk (total daily risk could be N × total).
+    eg_total_risk = eval_grind_risk * MLL_AMT
+    eg_risk_per   = eg_total_risk / n_eg if scale_risk_by_n else eg_total_risk
+
+    # ── Pre-generate phase 1+2 daily PnL ──────────────────────────────────
+    pnl_eg, eg_sizings, eg_actual_risk = _generate_combined_day_pnl(
+        eg_list, eg_risk_per, account, n_sims, horizon, rng,
     )
 
-    # Phase 3: min contracts to clear winning_day_min net
-    avg_win_pts = float(payout_config.pnl_pts[payout_config.pnl_pts > 0].mean())
-    avg_sl_pts  = float(np.median(payout_config.sl_dists))
-    p3_n_minis, p3_n_micros, p3_actual_risk = min_contracts_for_winning_day(
-        avg_win_pts=avg_win_pts,
-        avg_sl_pts=avg_sl_pts,
-        account=account,
-        n_trades_per_day=payout_config.tpd,
-    )
-
-    # ── Pre-generate daily PnL arrays ──────────────────────────────────────
-    pnl_eg = _generate_day_pnl(
-        eval_grind_config, eg_n_minis, eg_n_micros, n_sims, horizon, rng,
-    )
-    pnl_p3 = _generate_day_pnl(
-        payout_config, p3_n_minis, p3_n_micros, n_sims, horizon, rng,
-    )
+    # ── Phase 3 sizing: min winning-day for each config, summed ───────────
+    # When multi-config, the combined winning-day threshold is account.winning_day_min
+    # (still one threshold). We divide it across configs proportionally to their tpd
+    # (or evenly if no tpd weight) so each session contributes its share.
+    # Simpler: each session sized to clear winning_day_min / N independently.
+    # Net effect: combined daily PnL clears winning_day_min on most days.
+    p3_threshold_per = WD_MIN / n_p3 if scale_risk_by_n else WD_MIN
+    p3_sizings: List[Tuple[int, int]] = []
+    pnl_p3 = np.zeros((n_sims, horizon), dtype=np.float64)
+    p3_total_risk = 0.0
+    # Make a temporary account with adjusted winning_day_min for sizing per session
+    from dataclasses import replace
+    acct_per_session = replace(account, winning_day_min=p3_threshold_per)
+    for cfg in p3_list:
+        win_mask = cfg.pnl_pts > 0
+        avg_win_pts = float(cfg.pnl_pts[win_mask].mean()) if win_mask.any() else 0.0
+        avg_sl_pts  = float(np.median(cfg.sl_dists)) if len(cfg.sl_dists) > 0 else 0.0
+        n_min, n_mic, risk = min_contracts_for_winning_day(
+            avg_win_pts=avg_win_pts, avg_sl_pts=avg_sl_pts,
+            account=acct_per_session, n_trades_per_day=cfg.tpd,
+        )
+        cfg_pnl = _generate_day_pnl(cfg, n_min, n_mic, n_sims, horizon, rng)
+        pnl_p3 += cfg_pnl
+        p3_sizings.append((n_min, n_mic))
+        p3_total_risk += risk
+    # Back-compat single-value diagnostics
+    p3_n_minis  = p3_sizings[0][0] if n_p3 == 1 else sum(s[0] for s in p3_sizings)
+    p3_n_micros = p3_sizings[0][1] if n_p3 == 1 else sum(s[1] for s in p3_sizings)
+    p3_actual_risk = p3_total_risk
+    eg_n_minis  = eg_sizings[0][0] if n_eg == 1 else sum(s[0] for s in eg_sizings)
+    eg_n_micros = eg_sizings[0][1] if n_eg == 1 else sum(s[1] for s in eg_sizings)
+    eg_risk_dollars = eg_actual_risk
 
     # ── State arrays (n_sims, max_c) ───────────────────────────────────────
     max_c = max_concurrent
