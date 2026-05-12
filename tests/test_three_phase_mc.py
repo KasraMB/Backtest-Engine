@@ -1,5 +1,7 @@
 """Tests for backtest/propfirm/three_phase_mc.py — AnchoredMeanReversion 3-phase simulator."""
 from __future__ import annotations
+from datetime import date, timedelta
+
 import numpy as np
 import pytest
 
@@ -8,6 +10,7 @@ from backtest.propfirm.three_phase_mc import (
     ThreePhaseConfig,
     three_phase_reinvestment_mc,
 )
+from backtest.regime.hmm import RegimeResult
 
 
 def _strong_config(name='strong', n=200, seed=0):
@@ -198,3 +201,139 @@ class TestMultiConfig:
         )
         # Same single underlying config + same seed → same output
         np.testing.assert_array_equal(out['cash'], out_list['cash'])
+
+
+# ── Helpers for regime-aware tests ────────────────────────────────────────
+
+def _make_regime_result(n_days=200, n_states=3, transition=None):
+    """Build a minimal RegimeResult with explicit transition matrix."""
+    if transition is None:
+        transition = np.array([
+            [0.7, 0.2, 0.1],
+            [0.2, 0.6, 0.2],
+            [0.1, 0.2, 0.7],
+        ])
+    labels = {
+        date(2020, 1, 1) + timedelta(days=i): i % n_states
+        for i in range(n_days)
+    }
+    return RegimeResult(
+        labels=labels, label_names={0: 'bear', 1: 'neutral', 2: 'bull'},
+        train_end_date=None, in_sample_dates=[], out_of_sample_dates=[],
+        transition_matrix=transition,
+        state_means=np.array([-0.01, 0.0, 0.01]),
+        state_stds=np.array([0.02, 0.01, 0.015]),
+        avg_duration_days={'bear': 3.3, 'neutral': 2.5, 'bull': 3.3},
+        n_states=n_states,
+    )
+
+
+def _regime_config(name='regime_cfg', seed=0):
+    """Config with distinct per-regime pools — bull regime wins, bear loses."""
+    rng = np.random.default_rng(seed)
+    return ThreePhaseConfig(
+        name=name,
+        # flat fallback (used when regime_result is None)
+        pnl_pts=rng.normal(0.5, 5.0, 100).astype(np.float32),
+        sl_dists=np.full(100, 5.0, dtype=np.float32),
+        tpd=1.0,
+        # Distinct regime pools:
+        pnl_pts_by_regime={
+            0: np.full(50, -5.0, dtype=np.float32),   # bear: lose 5 pts always
+            1: np.full(50,  0.0, dtype=np.float32),   # neutral: zero
+            2: np.full(50, +5.0, dtype=np.float32),   # bull: win 5 pts always
+        },
+        sl_dists_by_regime={
+            0: np.full(50, 5.0, dtype=np.float32),
+            1: np.full(50, 5.0, dtype=np.float32),
+            2: np.full(50, 5.0, dtype=np.float32),
+        },
+    )
+
+
+class TestRegimeAware:
+    """Regime-aware draws via the transition matrix."""
+
+    def test_regime_result_changes_results(self):
+        """Passing regime_result should change outputs vs no regime."""
+        cfg = _regime_config(seed=0)
+        rr  = _make_regime_result()
+        kwargs = dict(
+            eval_grind_config=cfg, eval_grind_risk=0.30,
+            payout_config=cfg, account=LUCIDFLEX_ACCOUNTS['50K'],
+            budget=3_000, horizon=30, max_concurrent=5, n_sims=200, seed=11,
+        )
+        r_no_regime  = three_phase_reinvestment_mc(**kwargs)
+        r_w_regime   = three_phase_reinvestment_mc(**kwargs, regime_result=rr)
+        assert not np.allclose(r_no_regime['cash'], r_w_regime['cash']), \
+            "Regime-aware draws should change outputs vs flat draws"
+
+    def test_regime_aware_deterministic(self):
+        """Same seed + same regime_result → same outputs."""
+        cfg = _regime_config(seed=0)
+        rr  = _make_regime_result()
+        kwargs = dict(
+            eval_grind_config=cfg, eval_grind_risk=0.30,
+            payout_config=cfg, account=LUCIDFLEX_ACCOUNTS['50K'],
+            budget=3_000, horizon=30, max_concurrent=5, n_sims=100, seed=42,
+            regime_result=rr,
+        )
+        r1 = three_phase_reinvestment_mc(**kwargs)
+        r2 = three_phase_reinvestment_mc(**kwargs)
+        np.testing.assert_array_equal(r1['cash'], r2['cash'])
+
+    def test_bear_only_regime_loses(self):
+        """If transition_matrix forces bear forever, account loses (since cfg
+        has bear=-5 pool). Tests that regime sequence actually influences draws."""
+        bear_only = np.eye(3)  # absorbing — start state stays forever
+        bear_only[0, 0] = 1.0  # bear → bear
+        bear_only[1, 1] = 1.0
+        bear_only[2, 2] = 1.0
+        rr = _make_regime_result(transition=bear_only)
+        # Force initial distribution to be all-bear:
+        rr.labels = {d: 0 for d in rr.labels}   # historical labels all bear
+        cfg = _regime_config(seed=0)
+        out = three_phase_reinvestment_mc(
+            eval_grind_config=cfg, eval_grind_risk=0.30,
+            payout_config=cfg, account=LUCIDFLEX_ACCOUNTS['50K'],
+            budget=3_000, horizon=30, max_concurrent=5, n_sims=200, seed=11,
+            regime_result=rr,
+        )
+        # All trades come from bear pool (-5 pts each) → never pass eval
+        assert out['n_passed_eval'].sum() == 0, \
+            f"Bear-only regime should fail all evals, got {out['n_passed_eval'].sum()} passes"
+        assert out['n_payouts'].sum() == 0
+
+    def test_bull_only_regime_thrives(self):
+        """All-bull regime → cfg's bull pool is +5 → evals pass easily."""
+        bull_only = np.eye(3)
+        rr = _make_regime_result(transition=bull_only)
+        rr.labels = {d: 2 for d in rr.labels}   # historical labels all bull
+        cfg = _regime_config(seed=0)
+        out = three_phase_reinvestment_mc(
+            eval_grind_config=cfg, eval_grind_risk=0.30,
+            payout_config=cfg, account=LUCIDFLEX_ACCOUNTS['50K'],
+            budget=3_000, horizon=30, max_concurrent=5, n_sims=200, seed=11,
+            regime_result=rr,
+        )
+        # Bull pool = +5 pts/trade → should pass evals quickly
+        assert out['n_passed_eval'].sum() > 0, "Bull-only regime should pass some evals"
+
+    def test_fallback_when_config_lacks_regime_pools(self):
+        """Config without per-regime pools + regime_result should fall back
+        to flat-pool draws and produce some output (no crash)."""
+        from backtest.propfirm.three_phase_mc import ThreePhaseConfig
+        cfg = ThreePhaseConfig(
+            name='flat', pnl_pts=np.array([1.0, -1.0, 2.0, -0.5] * 10, dtype=np.float32),
+            sl_dists=np.full(40, 5.0, dtype=np.float32), tpd=1.0,
+            # No regime pools
+        )
+        rr = _make_regime_result()
+        out = three_phase_reinvestment_mc(
+            eval_grind_config=cfg, eval_grind_risk=0.30,
+            payout_config=cfg, account=LUCIDFLEX_ACCOUNTS['50K'],
+            budget=3_000, horizon=30, max_concurrent=5, n_sims=50, seed=7,
+            regime_result=rr,
+        )
+        assert 'cash' in out
+        assert len(out['cash']) == 50

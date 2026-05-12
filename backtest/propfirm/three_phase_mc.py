@@ -16,8 +16,8 @@ No JIT — used for a focused 50-combo sweep where ~1s per combo is fine.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -29,6 +29,7 @@ from backtest.propfirm.lucidflex import (
     MINI_POINT_VALUE,
     min_contracts_for_winning_day,
 )
+from backtest.regime.hmm import RegimeResult
 
 # A "config input" can be either a single ThreePhaseConfig or a list of them
 # (e.g. multi-session combos). When a list, each session generates trades
@@ -42,11 +43,22 @@ ConfigInput = Union['ThreePhaseConfig', List['ThreePhaseConfig']]
 
 @dataclass
 class ThreePhaseConfig:
-    """One side of a AnchoredMeanReversion 3-phase test (a single config + risk setting)."""
+    """One side of a AnchoredMeanReversion 3-phase test (a single config + risk setting).
+
+    pnl_pts / sl_dists hold the flat (regime-blind) trade pool — used when no
+    regime sequence is supplied. When regime-aware MC is enabled, the per-day
+    draw uses pnl_pts_by_regime[r] and sl_dists_by_regime[r] for that day's
+    regime r.
+    """
     name:          str
-    pnl_pts:       np.ndarray   # (n_trades,) float — historical pnl distribution
+    pnl_pts:       np.ndarray   # (n_trades,) float — flat pool fallback
     sl_dists:      np.ndarray   # (n_trades,) float — corresponding SL distances
     tpd:           float        # trades per day (Poisson rate)
+    # Optional regime-conditional pools.
+    # When supplied AND a regime_result is passed to the simulator, daily PnL
+    # is drawn from pnl_pts_by_regime[r] where r = regime on that day.
+    pnl_pts_by_regime:  Optional[Dict[int, np.ndarray]] = None
+    sl_dists_by_regime: Optional[Dict[int, np.ndarray]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -87,26 +99,122 @@ def _as_list(x: ConfigInput) -> List[ThreePhaseConfig]:
     return [x]
 
 
+def _regime_initial_dist(regime_result: RegimeResult) -> np.ndarray:
+    """Empirical regime distribution from historical labels (used as
+    initial-day distribution when sampling regime sequences)."""
+    counts = np.zeros(regime_result.n_states, dtype=np.float64)
+    for r in regime_result.labels.values():
+        counts[r] += 1
+    total = counts.sum()
+    if total == 0:
+        return np.full(regime_result.n_states, 1.0 / regime_result.n_states)
+    return counts / total
+
+
+def _sample_regime_sequences(
+    regime_result: RegimeResult,
+    n_sims:        int,
+    horizon:       int,
+    rng:           np.random.Generator,
+) -> np.ndarray:
+    """Pre-generate (n_sims, horizon) int8 regime sequences via Markov chain.
+
+    Day 0 sampled from empirical initial distribution. Subsequent days sampled
+    via regime_result.transition_matrix. This mirrors correlated_mc.py's logic
+    and is what makes cross-day, cross-session correlation natural — every
+    session in a sim shares the SAME regime sequence."""
+    n_states = regime_result.n_states
+    if n_states == 1:
+        return np.zeros((n_sims, horizon), dtype=np.int8)
+
+    trans   = regime_result.transition_matrix
+    initial = _regime_initial_dist(regime_result)
+    seqs    = np.empty((n_sims, horizon), dtype=np.int8)
+    seqs[:, 0] = rng.choice(n_states, size=n_sims, p=initial)
+
+    # Vectorised Markov stepping via cumulative-probability lookup
+    cum_trans = np.cumsum(trans, axis=1)            # (n_states, n_states)
+    for d in range(1, horizon):
+        u          = rng.random(n_sims)             # (n_sims,) uniform
+        thresholds = cum_trans[seqs[:, d - 1].astype(np.int32)]  # (n_sims, n_states)
+        seqs[:, d] = np.argmax(thresholds > u[:, None], axis=1).astype(np.int8)
+
+    return seqs
+
+
+def _generate_day_pnl_regime_aware(
+    cfg:        ThreePhaseConfig,
+    n_minis:    int,
+    n_micros:   int,
+    n_sims:     int,
+    horizon:    int,
+    regime_seqs: np.ndarray,    # (n_sims, horizon) int8
+    rng:        np.random.Generator,
+) -> np.ndarray:
+    """Generate (n_sims, horizon) daily dollar PnL using regime-conditional
+    pools. If cfg has no regime pools, falls back to the flat pool."""
+    fired = rng.poisson(cfg.tpd, size=(n_sims, horizon)) > 0
+
+    if cfg.pnl_pts_by_regime is None or cfg.sl_dists_by_regime is None:
+        # Fallback: flat-pool draws, regime is ignored
+        pool_n = len(cfg.pnl_pts)
+        idx    = rng.integers(0, max(pool_n, 1), size=(n_sims, horizon),
+                              dtype=np.int32)
+        pnl_pts = cfg.pnl_pts[idx]
+    else:
+        # Regime-aware: per-cell, pick pool[regime] then sample
+        # Build pnl_pts cell-by-cell via masked sampling
+        pnl_pts = np.zeros((n_sims, horizon), dtype=np.float64)
+        for r, pool_pnl in cfg.pnl_pts_by_regime.items():
+            mask = regime_seqs == r
+            if not mask.any() or len(pool_pnl) == 0:
+                continue
+            n_cells = int(mask.sum())
+            idx_r   = rng.integers(0, len(pool_pnl), size=n_cells, dtype=np.int32)
+            pnl_pts[mask] = pool_pnl[idx_r]
+
+    if n_minis > 0:
+        gross = pnl_pts * MINI_POINT_VALUE * n_minis
+        comm  = MINI_COMM_RT * n_minis
+    else:
+        gross = pnl_pts * MICRO_POINT_VALUE * n_micros
+        comm  = MICRO_COMM_RT * n_micros
+
+    net = gross - comm
+    return np.where(fired, net, 0.0).astype(np.float64)
+
+
 def _generate_combined_day_pnl(
-    configs: List[ThreePhaseConfig],
+    configs:              List[ThreePhaseConfig],
     risk_dollars_per_cfg: float,
-    account: LucidFlexAccount,
-    n_sims: int,
-    horizon: int,
-    rng: np.random.Generator,
+    account:              LucidFlexAccount,
+    n_sims:               int,
+    horizon:              int,
+    rng:                  np.random.Generator,
+    regime_seqs:          Optional[np.ndarray] = None,   # (n_sims, horizon)
 ) -> Tuple[np.ndarray, List[Tuple[int, int]], float]:
-    """Sum daily $ PnL across N configs (each fires independently per day).
+    """Sum daily $ PnL across N configs.
+
+    When `regime_seqs` is provided AND each config carries regime-conditional
+    pools, the daily draw uses pool[regime] for each (sim, day) — so sessions
+    in the same sim share the same regime sequence (cross-session correlation
+    via shared regime state).
+
     Each config sized to risk_dollars_per_cfg.
-    Returns (combined_pnl, [(n_minis, n_micros) per cfg], total_actual_risk_per_day_max)."""
+    Returns (combined_pnl, [(n_minis, n_micros) per cfg], total_max_risk_per_day)."""
     combined = np.zeros((n_sims, horizon), dtype=np.float64)
     sizings: List[Tuple[int, int]] = []
     total_max_risk = 0.0
     for cfg in configs:
         n_minis, n_micros = _size_for_risk(cfg, risk_dollars_per_cfg, account)
-        cfg_pnl = _generate_day_pnl(cfg, n_minis, n_micros, n_sims, horizon, rng)
+        if regime_seqs is not None:
+            cfg_pnl = _generate_day_pnl_regime_aware(
+                cfg, n_minis, n_micros, n_sims, horizon, regime_seqs, rng,
+            )
+        else:
+            cfg_pnl = _generate_day_pnl(cfg, n_minis, n_micros, n_sims, horizon, rng)
         combined += cfg_pnl
         sizings.append((n_minis, n_micros))
-        # Per-config worst-case risk (1 contract × max sl × pv)
         total_max_risk += risk_dollars_per_cfg
     return combined, sizings, total_max_risk
 
@@ -152,6 +260,7 @@ def three_phase_reinvestment_mc(
     n_sims:            int  = 5_000,
     seed:              int  = 42,
     scale_risk_by_n:   bool = True,            # 1/N risk scaling for multi-config
+    regime_result:     Optional[RegimeResult] = None,  # enables regime-aware draws
 ) -> dict:
     """
     Simulate AnchoredMeanReversion's 3-phase method: buy 10 evals upfront (or up to budget),
@@ -184,6 +293,14 @@ def three_phase_reinvestment_mc(
     n_eg    = len(eg_list)
     n_p3    = len(p3_list)
 
+    # ── Pre-generate shared regime sequence (used by all configs in this sim)
+    # — Markov-chain sampled via regime_result.transition_matrix.  Cross-
+    # session correlation comes from EVERY session in a sim drawing from its
+    # own pool indexed by the SAME regime[sim, day]. ─────────────────────────
+    regime_seqs: Optional[np.ndarray] = None
+    if regime_result is not None:
+        regime_seqs = _sample_regime_sequences(regime_result, n_sims, horizon, rng)
+
     # ── Phase 1+2 sizing: total risk = eval_grind_risk × MLL ───────────────
     # If multi-config and scale_risk_by_n=True: divide risk across configs so
     # the SUM of per-session risk stays at total_risk. If False: each session
@@ -193,7 +310,7 @@ def three_phase_reinvestment_mc(
 
     # ── Pre-generate phase 1+2 daily PnL ──────────────────────────────────
     pnl_eg, eg_sizings, eg_actual_risk = _generate_combined_day_pnl(
-        eg_list, eg_risk_per, account, n_sims, horizon, rng,
+        eg_list, eg_risk_per, account, n_sims, horizon, rng, regime_seqs,
     )
 
     # ── Phase 3 sizing: min winning-day for each config, summed ───────────
@@ -217,7 +334,12 @@ def three_phase_reinvestment_mc(
             avg_win_pts=avg_win_pts, avg_sl_pts=avg_sl_pts,
             account=acct_per_session, n_trades_per_day=cfg.tpd,
         )
-        cfg_pnl = _generate_day_pnl(cfg, n_min, n_mic, n_sims, horizon, rng)
+        if regime_seqs is not None:
+            cfg_pnl = _generate_day_pnl_regime_aware(
+                cfg, n_min, n_mic, n_sims, horizon, regime_seqs, rng,
+            )
+        else:
+            cfg_pnl = _generate_day_pnl(cfg, n_min, n_mic, n_sims, horizon, rng)
         pnl_p3 += cfg_pnl
         p3_sizings.append((n_min, n_mic))
         p3_total_risk += risk
