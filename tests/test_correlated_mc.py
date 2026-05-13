@@ -325,14 +325,15 @@ class TestFundedStep:
         assert new_state.cycle_prof_days == 0
         assert new_state.payout_count == 1
 
-    def test_sixth_payout_closes_account(self):
+    def test_fifth_payout_closes_account(self):
+        """Lucid: max 5 payouts per account before being moved live."""
         state = _FundedState(
             balance=ACC.starting_balance + 5000,
             mll=ACC.starting_balance - 100,
             peak_eod=ACC.starting_balance + 5000,
             mll_locked=True,
             cycle_prof_days=4,
-            payout_count=5,  # one more → closes
+            payout_count=4,  # one more (5th) → closes
         )
         _, event, payout = _funded_step(state, 10.0, 4.0, 400.0, ACC)
         assert event == "closed"

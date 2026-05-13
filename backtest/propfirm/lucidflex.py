@@ -59,7 +59,7 @@ class LucidFlexAccount:
     reset_fee: float
     payout_cap: float            # max gross withdrawal per cycle
     winning_day_min: float = 0.0 # Lucid: minimum daily profit ≥ this counts as winning day
-    max_payouts: int = 6
+    max_payouts: int = 5         # Lucid: max 5 payouts per account before live
     split: float = 0.90
 
 
@@ -68,7 +68,7 @@ LUCIDFLEX_ACCOUNTS: dict[str, LucidFlexAccount] = {
         name="25K", starting_balance=25_000,
         profit_target=1_250, mll_amount=1_000,
         max_micros=20, eval_fee=70, reset_fee=60,
-        payout_cap=1_500, winning_day_min=100,
+        payout_cap=1_000, winning_day_min=100,   # cap fixed: was $1,500, actual is $1,000
     ),
     "50K": LucidFlexAccount(
         name="50K", starting_balance=50_000,
