@@ -319,6 +319,15 @@ class TestRegimeAware:
         # Bull pool = +5 pts/trade → should pass evals quickly
         assert out['n_passed_eval'].sum() > 0, "Bull-only regime should pass some evals"
 
+    def _regime_config_b(self, name='cfg_b'):
+        """Second config so two-slot tests have a distinct second session."""
+        return ThreePhaseConfig(
+            name=name,
+            pnl_pts=np.array([2.0, -2.0, 3.0, -1.0] * 25, dtype=np.float32),
+            sl_dists=np.full(100, 3.0, dtype=np.float32),
+            tpd=1.0,
+        )
+
     def test_fallback_when_config_lacks_regime_pools(self):
         """Config without per-regime pools + regime_result should fall back
         to flat-pool draws and produce some output (no crash)."""
@@ -337,3 +346,126 @@ class TestRegimeAware:
         )
         assert 'cash' in out
         assert len(out['cash']) == 50
+
+
+class TestPerSlotConfigs:
+    """Per-slot mode: each account slot has its own dedicated (P12, P3) configs."""
+
+    def _strong_p12(self):
+        rng = np.random.default_rng(0)
+        return ThreePhaseConfig(
+            name='strong', pnl_pts=rng.normal(4.0, 8.0, 200).astype(np.float32),
+            sl_dists=np.abs(rng.normal(5.0, 1.0, 200)).clip(2.0).astype(np.float32),
+            tpd=1.0,
+        )
+
+    def _strong_p3(self):
+        rng = np.random.default_rng(1)
+        return ThreePhaseConfig(
+            name='strong_p3', pnl_pts=rng.normal(3.0, 5.0, 200).astype(np.float32),
+            sl_dists=np.full(200, 3.0, dtype=np.float32), tpd=1.0,
+        )
+
+    def test_per_slot_accepted_and_runs(self):
+        p12 = self._strong_p12()
+        p3  = self._strong_p3()
+        slots = [(p12, p3)] * 5   # max_c = 5 slots, all same
+        out = three_phase_reinvestment_mc(
+            slot_assignments=slots,
+            account=LUCIDFLEX_ACCOUNTS['50K'],
+            budget=3_000, horizon=20, max_concurrent=5,
+            n_sims=100, seed=7, eval_grind_risk=0.30,
+        )
+        assert 'cash' in out
+        assert len(out['cash']) == 100
+
+    def test_per_slot_deterministic(self):
+        p12 = self._strong_p12()
+        p3  = self._strong_p3()
+        slots = [(p12, p3)] * 5
+        kwargs = dict(
+            slot_assignments=slots, account=LUCIDFLEX_ACCOUNTS['50K'],
+            budget=3_000, horizon=20, max_concurrent=5,
+            n_sims=100, seed=42, eval_grind_risk=0.30,
+        )
+        r1 = three_phase_reinvestment_mc(**kwargs)
+        r2 = three_phase_reinvestment_mc(**kwargs)
+        np.testing.assert_array_equal(r1['cash'], r2['cash'])
+
+    def test_per_slot_length_mismatch_raises(self):
+        p12 = self._strong_p12()
+        p3  = self._strong_p3()
+        slots = [(p12, p3)] * 3   # only 3 slots
+        with pytest.raises(ValueError, match="slot_assignments length"):
+            three_phase_reinvestment_mc(
+                slot_assignments=slots, account=LUCIDFLEX_ACCOUNTS['50K'],
+                budget=3_000, horizon=20, max_concurrent=5,   # max_c=5
+                n_sims=50, seed=7, eval_grind_risk=0.30,
+            )
+
+    def test_per_slot_missing_inputs_raises(self):
+        """No slot_assignments AND no legacy configs → error."""
+        with pytest.raises(ValueError, match="slot_assignments OR"):
+            three_phase_reinvestment_mc(
+                account=LUCIDFLEX_ACCOUNTS['50K'],
+                budget=3_000, horizon=20, max_concurrent=5,
+                n_sims=50, seed=7, eval_grind_risk=0.30,
+            )
+
+    def test_per_slot_diverges_from_uniform(self):
+        """Heterogeneous slots (mix of strong + weak configs) should give a
+        different result than all-strong slots."""
+        rng = np.random.default_rng(2)
+        weak = ThreePhaseConfig(
+            name='weak', pnl_pts=rng.normal(-2.0, 5.0, 200).astype(np.float32),
+            sl_dists=np.full(200, 5.0, dtype=np.float32), tpd=1.0,
+        )
+        strong = self._strong_p12()
+        p3 = self._strong_p3()
+
+        slots_uniform = [(strong, p3)] * 5
+        slots_mixed   = [(strong, p3), (strong, p3), (weak, p3), (weak, p3), (weak, p3)]
+
+        out_u = three_phase_reinvestment_mc(
+            slot_assignments=slots_uniform, account=LUCIDFLEX_ACCOUNTS['50K'],
+            budget=3_000, horizon=30, max_concurrent=5,
+            n_sims=200, seed=11, eval_grind_risk=0.30,
+        )
+        out_m = three_phase_reinvestment_mc(
+            slot_assignments=slots_mixed, account=LUCIDFLEX_ACCOUNTS['50K'],
+            budget=3_000, horizon=30, max_concurrent=5,
+            n_sims=200, seed=11, eval_grind_risk=0.30,
+        )
+        assert out_u['cash'].mean() > out_m['cash'].mean(), \
+            "Uniform-strong should outperform mixed-with-weak"
+
+    def test_per_slot_refund_preserves_session(self):
+        """When an account closes and gets refunded into the same slot,
+        the new account uses the SAME (P12, P3) configs.  We test this
+        indirectly: blow up accounts repeatedly with a guaranteed-bad config
+        and verify that the slot's config never 'morphs' — refund just keeps
+        eating fees."""
+        # Guaranteed-loser config
+        bad = ThreePhaseConfig(
+            name='bad', pnl_pts=np.full(100, -10.0, dtype=np.float32),
+            sl_dists=np.full(100, 1.0, dtype=np.float32), tpd=1.0,
+        )
+        good = self._strong_p12()
+        p3   = self._strong_p3()
+        # Slot 0 has the bad config; others have good ones
+        slots = [(bad, p3)] + [(good, p3)] * 4
+
+        out = three_phase_reinvestment_mc(
+            slot_assignments=slots, account=LUCIDFLEX_ACCOUNTS['50K'],
+            budget=3_000, horizon=20, max_concurrent=5,
+            n_sims=200, seed=7, eval_grind_risk=0.50,
+        )
+        # The simulator should run to completion; slot 0 keeps blowing up so
+        # avg passed eval should be lower than if all slots were 'good'
+        out_good = three_phase_reinvestment_mc(
+            slot_assignments=[(good, p3)] * 5, account=LUCIDFLEX_ACCOUNTS['50K'],
+            budget=3_000, horizon=20, max_concurrent=5,
+            n_sims=200, seed=7, eval_grind_risk=0.50,
+        )
+        # With 1 bad slot, fewer passes overall
+        assert out['n_passed_eval'].mean() < out_good['n_passed_eval'].mean()
