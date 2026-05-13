@@ -104,6 +104,75 @@ def _as_list(x: ConfigInput) -> List[ThreePhaseConfig]:
     return [x]
 
 
+def build_regime_switched_config(
+    name:                  str,
+    sources_by_regime:     Dict[int, ThreePhaseConfig],
+    regime_freq:           Optional[Dict[int, float]] = None,
+) -> ThreePhaseConfig:
+    """Construct a synthetic ThreePhaseConfig that uses a different source
+    config per regime. Each regime's `pnl_pts_by_regime[r]` and
+    `sl_dists_by_regime[r]` are taken from `sources_by_regime[r]`.
+
+    Args:
+        name: human-readable identifier for the synthesised config.
+        sources_by_regime: {regime_int: source_ThreePhaseConfig}. Every regime
+            present in the values' pnl_pts_by_regime is taken from the
+            corresponding source. Missing regimes fall back to the first source.
+        regime_freq: optional {regime: frequency} for tpd weighting. If None,
+            tpd is the simple mean of source tpds.
+
+    Returns the synthesised ThreePhaseConfig — usable directly in any
+    regime-aware run (slot_assignments, payout_config, etc.)."""
+    if not sources_by_regime:
+        raise ValueError("sources_by_regime must contain at least one entry")
+
+    # All regimes — union across sources
+    all_regimes = set()
+    for cfg in sources_by_regime.values():
+        if cfg.pnl_pts_by_regime is not None:
+            all_regimes.update(cfg.pnl_pts_by_regime.keys())
+    all_regimes = sorted(all_regimes)
+    if not all_regimes:
+        raise ValueError("Source configs must have pnl_pts_by_regime populated")
+
+    pnl_by_regime: Dict[int, np.ndarray] = {}
+    sl_by_regime:  Dict[int, np.ndarray] = {}
+    fallback = next(iter(sources_by_regime.values()))
+    for r in all_regimes:
+        src = sources_by_regime.get(r, fallback)
+        if src.pnl_pts_by_regime is None or r not in src.pnl_pts_by_regime:
+            # Use src's flat pool for this regime as fallback
+            pnl_by_regime[r] = src.pnl_pts
+            sl_by_regime[r]  = src.sl_dists
+        else:
+            pnl_by_regime[r] = src.pnl_pts_by_regime[r]
+            sl_by_regime[r]  = src.sl_dists_by_regime[r]
+
+    # tpd: weighted by regime_freq, else simple mean
+    if regime_freq is not None:
+        total_w = sum(regime_freq.get(r, 0.0) for r in sources_by_regime)
+        if total_w > 0:
+            tpd = sum(sources_by_regime[r].tpd * regime_freq.get(r, 0.0)
+                      for r in sources_by_regime) / total_w
+        else:
+            tpd = np.mean([c.tpd for c in sources_by_regime.values()])
+    else:
+        tpd = float(np.mean([c.tpd for c in sources_by_regime.values()]))
+
+    # Flat pool fallback = concat of all regime pools
+    all_pnl = np.concatenate([pnl_by_regime[r] for r in all_regimes])
+    all_sl  = np.concatenate([sl_by_regime[r]  for r in all_regimes])
+
+    return ThreePhaseConfig(
+        name=name,
+        pnl_pts=all_pnl.astype(np.float32),
+        sl_dists=all_sl.astype(np.float32),
+        tpd=float(tpd),
+        pnl_pts_by_regime=pnl_by_regime,
+        sl_dists_by_regime=sl_by_regime,
+    )
+
+
 def _regime_initial_dist(regime_result: RegimeResult) -> np.ndarray:
     """Empirical regime distribution from historical labels (used as
     initial-day distribution when sampling regime sequences)."""

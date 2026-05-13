@@ -8,6 +8,7 @@ import pytest
 from backtest.propfirm.lucidflex import LUCIDFLEX_ACCOUNTS
 from backtest.propfirm.three_phase_mc import (
     ThreePhaseConfig,
+    build_regime_switched_config,
     three_phase_reinvestment_mc,
 )
 from backtest.regime.hmm import RegimeResult
@@ -469,3 +470,64 @@ class TestPerSlotConfigs:
         )
         # With 1 bad slot, fewer passes overall
         assert out['n_passed_eval'].mean() < out_good['n_passed_eval'].mean()
+
+
+class TestBuildRegimeSwitched:
+    """build_regime_switched_config: synthesise a config that uses different
+    source pools per regime."""
+
+    def test_uses_correct_pool_per_regime(self):
+        """Bear source has -5 pool in bear, bull source has +5 pool in bull —
+        synthesised config should inherit those exact pools per regime."""
+        bear_source = ThreePhaseConfig(
+            name='bear_src',
+            pnl_pts=np.full(30, 0.0, dtype=np.float32),
+            sl_dists=np.full(30, 5.0, dtype=np.float32), tpd=1.0,
+            pnl_pts_by_regime={
+                0: np.full(10, -5.0, dtype=np.float32),
+                1: np.full(10,  0.0, dtype=np.float32),
+                2: np.full(10,  0.0, dtype=np.float32),
+            },
+            sl_dists_by_regime={r: np.full(10, 5.0, dtype=np.float32) for r in range(3)},
+        )
+        bull_source = ThreePhaseConfig(
+            name='bull_src',
+            pnl_pts=np.full(30, 0.0, dtype=np.float32),
+            sl_dists=np.full(30, 5.0, dtype=np.float32), tpd=1.0,
+            pnl_pts_by_regime={
+                0: np.full(10,  0.0, dtype=np.float32),
+                1: np.full(10,  0.0, dtype=np.float32),
+                2: np.full(10, +5.0, dtype=np.float32),
+            },
+            sl_dists_by_regime={r: np.full(10, 5.0, dtype=np.float32) for r in range(3)},
+        )
+        out = build_regime_switched_config(
+            name='switched',
+            sources_by_regime={0: bear_source, 1: bear_source, 2: bull_source},
+        )
+        # Bear pool should match bear_source's bear pool (all -5)
+        assert np.all(out.pnl_pts_by_regime[0] == -5.0)
+        # Bull pool should match bull_source's bull pool (all +5)
+        assert np.all(out.pnl_pts_by_regime[2] == +5.0)
+        # Neutral pool from bear_source's neutral (all 0)
+        assert np.all(out.pnl_pts_by_regime[1] == 0.0)
+
+    def test_tpd_is_mean_when_unweighted(self):
+        a = ThreePhaseConfig(
+            name='a', pnl_pts=np.array([1.0]*5, dtype=np.float32),
+            sl_dists=np.full(5, 1.0, dtype=np.float32), tpd=0.6,
+            pnl_pts_by_regime={0: np.array([1.0]*5, dtype=np.float32)},
+            sl_dists_by_regime={0: np.full(5, 1.0, dtype=np.float32)},
+        )
+        b = ThreePhaseConfig(
+            name='b', pnl_pts=np.array([1.0]*5, dtype=np.float32),
+            sl_dists=np.full(5, 1.0, dtype=np.float32), tpd=1.0,
+            pnl_pts_by_regime={1: np.array([1.0]*5, dtype=np.float32)},
+            sl_dists_by_regime={1: np.full(5, 1.0, dtype=np.float32)},
+        )
+        out = build_regime_switched_config('mixed', {0: a, 1: b})
+        assert abs(out.tpd - 0.8) < 1e-6   # mean of 0.6 and 1.0
+
+    def test_empty_raises(self):
+        with pytest.raises(ValueError, match="sources_by_regime"):
+            build_regime_switched_config('x', {})
