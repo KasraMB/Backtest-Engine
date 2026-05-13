@@ -357,21 +357,36 @@ def _build_per_slot_phase3_pnl(
     horizon:          int,
     rng:              np.random.Generator,
     regime_seqs:      Optional[np.ndarray],
+    p3_risk_dollars:  Optional[float] = None,    # if set, fixed $ risk overrides min-winning-day
 ) -> Tuple[np.ndarray, List[Tuple[int, int, float]]]:
     """Pre-generate (max_c, n_sims, horizon) daily PnL for phase 3 per slot.
-    Each slot uses min_contracts_for_winning_day sizing on its own P3 config —
-    single-session, so the full winning_day_min threshold applies."""
+
+    Default sizing: min_contracts_for_winning_day (smallest that clears the
+    winning_day_min threshold net of commission).
+
+    Override: if p3_risk_dollars is provided, use _size_for_risk with that
+    fixed target — letting callers sweep optimal Phase 3 risk levels."""
     max_c     = len(slot_assignments)
     out       = np.zeros((max_c, n_sims, horizon), dtype=np.float64)
     sizings:  List[Tuple[int, int, float]] = []
     for a, (_p12_cfg, p3_cfg) in enumerate(slot_assignments):
-        win_mask = p3_cfg.pnl_pts > 0
-        avg_win_pts = float(p3_cfg.pnl_pts[win_mask].mean()) if win_mask.any() else 0.0
-        avg_sl_pts  = float(np.median(p3_cfg.sl_dists)) if len(p3_cfg.sl_dists) > 0 else 0.0
-        n_min, n_mic, risk = min_contracts_for_winning_day(
-            avg_win_pts=avg_win_pts, avg_sl_pts=avg_sl_pts,
-            account=account, n_trades_per_day=p3_cfg.tpd,
-        )
+        if p3_risk_dollars is not None:
+            # Fixed-risk sizing — use the same _size_for_risk as phase 1+2
+            n_min, n_mic = _size_for_risk(p3_cfg, p3_risk_dollars, account)
+            # Estimated actual risk: contracts × median SL × point_value
+            sl_pts = float(np.median(p3_cfg.sl_dists)) if len(p3_cfg.sl_dists) > 0 else 0.0
+            if n_min > 0:
+                risk = n_min * sl_pts * MINI_POINT_VALUE
+            else:
+                risk = n_mic * sl_pts * MICRO_POINT_VALUE
+        else:
+            win_mask = p3_cfg.pnl_pts > 0
+            avg_win_pts = float(p3_cfg.pnl_pts[win_mask].mean()) if win_mask.any() else 0.0
+            avg_sl_pts  = float(np.median(p3_cfg.sl_dists)) if len(p3_cfg.sl_dists) > 0 else 0.0
+            n_min, n_mic, risk = min_contracts_for_winning_day(
+                avg_win_pts=avg_win_pts, avg_sl_pts=avg_sl_pts,
+                account=account, n_trades_per_day=p3_cfg.tpd,
+            )
         if regime_seqs is not None:
             cfg_pnl = _generate_day_pnl_regime_aware(
                 p3_cfg, n_min, n_mic, n_sims, horizon, regime_seqs, rng,
@@ -396,6 +411,7 @@ def three_phase_reinvestment_mc(
     scale_risk_by_n:   bool  = True,           # 1/N risk scaling for multi-config
     regime_result:     Optional[RegimeResult] = None,  # enables regime-aware draws
     slot_assignments:  Optional[List[SlotAssignment]] = None,  # per-slot (P12, P3) configs
+    p3_risk_pct:       Optional[float] = None, # if set, fixed risk pct for phase 3 (overrides min-winning-day)
 ) -> dict:
     """
     Simulate AnchoredMeanReversion's 3-phase method: buy 10 evals upfront (or up to budget),
@@ -463,8 +479,10 @@ def three_phase_reinvestment_mc(
         pnl_eg_per_slot, eg_sizings = _build_per_slot_phase12_pnl(
             slot_assignments, eg_total_risk, account, n_sims, horizon, rng, regime_seqs,
         )
+        p3_risk_dollars = p3_risk_pct * MLL_AMT if p3_risk_pct is not None else None
         pnl_p3_per_slot, p3_sizings_full = _build_per_slot_phase3_pnl(
             slot_assignments, account, n_sims, horizon, rng, regime_seqs,
+            p3_risk_dollars=p3_risk_dollars,
         )
         # Diagnostics: aggregate across slots for summary
         eg_n_minis = sum(s[0] for s in eg_sizings)
@@ -570,117 +588,105 @@ def three_phase_reinvestment_mc(
     # ── Day-0: open as many as budget allows (greedy buy-in) ───────────────
     _open_accounts(np.ones(n_sims, dtype=bool))
 
-    # ── Main day loop ──────────────────────────────────────────────────────
+    # ── Main day loop — fully vectorised across (n_sims, max_c) ───────────
     for day in range(horizon):
-        for a in range(max_c):
-            is_eval  = phase[:, a] == 1
-            is_grind = phase[:, a] == 2
-            is_pay   = phase[:, a] == 3
-            active   = is_eval | is_grind | is_pay
-            if not active.any():
-                continue
+        # ── Initial phase masks (snapshot BEFORE state updates this day) ──
+        is_eval_i  = phase == 1      # (n_sims, max_c)
+        is_grind_i = phase == 2
+        is_pay_i   = phase == 3
+        active_i   = phase > 0
 
-            # Pick PnL: eval+grind use eval_grind config; payout uses payout config.
-            # In per-slot mode each slot has its OWN dedicated PnL stream
-            # (single-session-per-account); otherwise all slots share the same stream.
-            if per_slot_mode:
-                pnl_eg_day = pnl_eg_per_slot[a, :, day]
-                pnl_p3_day = pnl_p3_per_slot[a, :, day]
-            else:
-                pnl_eg_day = pnl_eg[:, day]
-                pnl_p3_day = pnl_p3[:, day]
-            d_pnl = np.where(is_pay, pnl_p3_day, pnl_eg_day)
-            d_pnl = np.where(active, d_pnl, 0.0)
+        # ── Pick today's PnL per (sim, slot) ──────────────────────────────
+        # Per-slot mode: each slot has its own (max_c, n_sims, horizon) stream
+        # Legacy mode: shared (n_sims, horizon) stream broadcast across slots
+        if per_slot_mode:
+            pnl_eg_today = pnl_eg_per_slot[:, :, day].T   # (n_sims, max_c)
+            pnl_p3_today = pnl_p3_per_slot[:, :, day].T
+        else:
+            pnl_eg_today = np.broadcast_to(pnl_eg[:, day:day+1], (n_sims, max_c))
+            pnl_p3_today = np.broadcast_to(pnl_p3[:, day:day+1], (n_sims, max_c))
 
-            # Apply PnL
-            new_bal = bal[:, a] + d_pnl
+        d_pnl = np.where(is_pay_i, pnl_p3_today, pnl_eg_today)
+        d_pnl = np.where(active_i, d_pnl, 0.0)
 
-            # MLL breach (account dies)
-            blown = active & (new_bal <= mll_level[:, a])
+        # ── Apply PnL, detect blown, update bal/peak ──────────────────────
+        new_bal = bal + d_pnl
+        blown   = active_i & (new_bal <= mll_level)
+        survives = active_i & ~blown
+        bal  = np.where(survives, new_bal, bal)
+        peak = np.where(survives, np.maximum(peak, new_bal), peak)
 
-            # Update balance / peak for survivors
-            survives = active & ~blown
-            bal[:, a]  = np.where(survives, new_bal, bal[:, a])
-            peak[:, a] = np.where(survives, np.maximum(peak[:, a], new_bal), peak[:, a])
+        # ── MLL tracking (eval vs funded) ─────────────────────────────────
+        on_funded = survives & (is_grind_i | is_pay_i)
+        on_eval   = survives & is_eval_i
 
-            # MLL tracking
-            # — In eval phase: trailing MLL = peak − mll_amount, capped at LOCKED_MLL
-            # — In funded: if peak >= INITIAL_TRAIL and not locked → lock at LOCKED_MLL
-            on_funded = survives & (is_grind | is_pay)
-            on_eval   = survives & is_eval
+        # Funded: detect lock event, then update level
+        just_lock = on_funded & ~mll_locked & (peak >= INITIAL_TRAIL)
+        mll_locked = mll_locked | just_lock
+        new_mll_funded = np.where(
+            mll_locked,
+            LOCKED_MLL,
+            np.maximum(mll_level, peak - MLL_AMT),
+        )
+        mll_level = np.where(on_funded, new_mll_funded, mll_level)
 
-            # Funded: detect lock event
-            just_lock = on_funded & ~mll_locked[:, a] & (peak[:, a] >= INITIAL_TRAIL)
-            mll_locked[:, a] = mll_locked[:, a] | just_lock
-            new_mll_funded = np.where(
-                mll_locked[:, a],
-                LOCKED_MLL,
-                np.maximum(mll_level[:, a], peak[:, a] - MLL_AMT),
-            )
-            mll_level[:, a] = np.where(on_funded, new_mll_funded, mll_level[:, a])
+        # Eval: trailing MLL, capped at LOCKED_MLL
+        new_mll_eval = np.minimum(peak - MLL_AMT, LOCKED_MLL)
+        new_mll_eval = np.maximum(mll_level, new_mll_eval)
+        mll_level = np.where(on_eval, new_mll_eval, mll_level)
 
-            # Eval: trailing MLL, capped at LOCKED_MLL (per Lucid rules)
-            new_mll_eval = np.minimum(peak[:, a] - MLL_AMT, LOCKED_MLL)
-            new_mll_eval = np.maximum(mll_level[:, a], new_mll_eval)
-            mll_level[:, a] = np.where(on_eval, new_mll_eval, mll_level[:, a])
+        # ── Eval pass → grind transition (resets balance to SB) ───────────
+        ev_passed = on_eval & (bal >= SB + PT)
+        if ev_passed.any():
+            phase = np.where(ev_passed, np.int8(2), phase)
+            bal        = np.where(ev_passed, SB, bal)
+            mll_level  = np.where(ev_passed, SB - MLL_AMT, mll_level)
+            peak       = np.where(ev_passed, SB, peak)
+            mll_locked = np.where(ev_passed, False, mll_locked)
+            fu_total_profit = np.where(ev_passed, 0.0, fu_total_profit)
+            n_passed_eval += ev_passed.sum(axis=1).astype(np.int32)
 
-            # ── Phase transitions ─────────────────────────────────────────
-            # Eval pass → funded grind (eval profit target reached)
-            ev_passed = on_eval & (bal[:, a] >= SB + PT)
-            if ev_passed.any():
-                phase[ev_passed, a] = 2
-                # Reset for funded: balance starts back at SB (eval profit becomes the "buffer")
-                # In Lucid Flex, funded account starts at SB regardless of eval profit
-                bal[ev_passed, a]        = SB
-                mll_level[ev_passed, a]  = SB - MLL_AMT
-                peak[ev_passed, a]       = SB
-                mll_locked[ev_passed, a] = False
-                fu_total_profit[ev_passed, a] = 0.0
-                n_passed_eval[ev_passed] += 1
+        # ── Accumulate funded profit (only for accounts ALREADY in grind/pay before this day) ──
+        fu_gain_today = np.where(
+            survives & (is_grind_i | is_pay_i),  # exclude just-transitioned eval-passers
+            d_pnl, 0.0,
+        )
+        fu_total_profit = fu_total_profit + fu_gain_today
 
-            # Track funded profit for grind→payout transition
-            # Note: must come AFTER MLL update but reflect the bal change THIS day
-            fu_gain_today = np.where(survives & (is_grind | is_pay), d_pnl, 0.0)
-            fu_total_profit[:, a] += fu_gain_today
+        # ── Grind → payout transition ─────────────────────────────────────
+        hit_target = survives & is_grind_i & (fu_total_profit >= PT)
+        if hit_target.any():
+            phase = np.where(hit_target, np.int8(3), phase)
+            fu_win_days = np.where(hit_target, np.int32(0), fu_win_days)
+            n_hit_target += hit_target.sum(axis=1).astype(np.int32)
 
-            # Grind → payout transition (hit +$3K funded profit)
-            hit_target = survives & is_grind & (fu_total_profit[:, a] >= PT)
-            if hit_target.any():
-                phase[hit_target, a] = 3
-                # Reset winning-day counter (start fresh in payout phase)
-                fu_win_days[hit_target, a] = 0
-                n_hit_target[hit_target] += 1
+        # ── Winning-day count (phase 3 only, after both transitions) ──────
+        is_pay_after = phase == 3
+        won_today    = survives & is_pay_after & (d_pnl >= WD_MIN)
+        fu_win_days  = np.where(won_today, fu_win_days + 1, fu_win_days)
 
-            # ── Winning-day count & payouts (phase 3 only) ────────────────
-            is_pay_now = phase[:, a] == 3
-            won_today  = is_pay_now & (d_pnl >= WD_MIN) & survives
-            fu_win_days[:, a] = np.where(won_today, fu_win_days[:, a] + 1, fu_win_days[:, a])
+        # ── Payouts ───────────────────────────────────────────────────────
+        can_payout = is_pay_after & survives & (fu_win_days >= 5) & (fu_n_pay < MAX_PAY)
+        if can_payout.any():
+            profits = np.maximum(0.0, bal - SB)
+            gross   = np.minimum(profits * 0.5, PAY_CAP)
+            do_pay  = can_payout & (gross >= 500.0)
+            net     = gross * SPLIT
+            # Withdraw: per-slot bal adjustment, per-sim cash sum across slots
+            bal             = np.where(do_pay, bal - gross, bal)
+            cash           += (net * do_pay).sum(axis=1)
+            total_withdrawn += (net * do_pay).sum(axis=1)
+            total_payouts   += do_pay.sum(axis=1).astype(np.int32)
+            fu_n_pay        = np.where(do_pay, fu_n_pay + 1, fu_n_pay)
+            fu_win_days     = np.where(do_pay, np.int32(0), fu_win_days)
+            mll_locked      = mll_locked | do_pay
+            mll_level       = np.where(do_pay, LOCKED_MLL, mll_level)
 
-            can_payout = is_pay_now & (fu_win_days[:, a] >= 5) & (fu_n_pay[:, a] < MAX_PAY) & survives
-            if can_payout.any():
-                profits = np.maximum(0.0, bal[:, a] - SB)
-                gross   = np.minimum(profits * 0.5, PAY_CAP)
-                do_pay  = can_payout & (gross >= 500.0)
-
-                net = gross * SPLIT
-                # Withdraw
-                bal[do_pay, a]            -= gross[do_pay]
-                cash[do_pay]              += net[do_pay]
-                total_withdrawn[do_pay]   += net[do_pay]
-                total_payouts[do_pay]     += 1
-                fu_n_pay[do_pay, a]       += 1
-                fu_win_days[do_pay, a]    = 0
-                # Payout forces MLL lock
-                mll_locked[do_pay, a]     = True
-                mll_level[do_pay, a]      = LOCKED_MLL
-
-            # ── Close accounts ────────────────────────────────────────────
-            phase[blown, a] = 0
-
-            # Max payouts reached → close
-            max_reached = is_pay_now & (fu_n_pay[:, a] >= MAX_PAY) & survives
-            if max_reached.any():
-                phase[max_reached, a] = 0
+        # ── Close accounts (blown or max payouts reached) ─────────────────
+        phase = np.where(blown, np.int8(0), phase)
+        max_reached = is_pay_after & survives & (fu_n_pay >= MAX_PAY)
+        if max_reached.any():
+            phase = np.where(max_reached, np.int8(0), phase)
 
         # ── Greedy reinvestment: open new accounts if cash allows ─────────
         _open_accounts(np.ones(n_sims, dtype=bool))
