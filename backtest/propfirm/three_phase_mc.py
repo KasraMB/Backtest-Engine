@@ -350,6 +350,102 @@ def _build_per_slot_phase12_pnl(
     return out, sizings
 
 
+# ---------------------------------------------------------------------------
+# Block bootstrap (OOS evaluation) — assumption-light alternative to regime MC
+# ---------------------------------------------------------------------------
+
+def _sample_stationary_bootstrap_indices(
+    n_oos_days:      int,
+    n_sims:          int,
+    horizon:         int,
+    mean_block_len:  float,
+    rng:             np.random.Generator,
+) -> np.ndarray:
+    """Politis-Romano stationary bootstrap. Returns (n_sims, horizon) int32
+    indices into [0, n_oos_days). Block lengths are geometrically distributed
+    with mean `mean_block_len`, blocks wrap circularly."""
+    if n_oos_days <= 0:
+        raise ValueError("n_oos_days must be positive")
+    p = 1.0 / max(mean_block_len, 1.0)        # geometric prob of block break
+    breaks = rng.random((n_sims, horizon)) < p
+    breaks[:, 0] = True                        # always start a new block at day 0
+    n_breaks = breaks.sum()
+    starts = rng.integers(0, n_oos_days, size=int(n_breaks), dtype=np.int32)
+    idx = np.empty((n_sims, horizon), dtype=np.int32)
+    # Fill blocks: at break, take a new random start; otherwise increment (mod n)
+    idx_flat = idx.reshape(-1)
+    breaks_flat = breaks.reshape(-1)
+    cur = -1
+    bptr = 0
+    n_total = n_sims * horizon
+    for i in range(n_total):
+        if breaks_flat[i]:
+            cur = starts[bptr]
+            bptr += 1
+        else:
+            cur = (cur + 1) % n_oos_days
+        idx_flat[i] = cur
+    return idx
+
+
+def _build_per_slot_bootstrap_pnl(
+    R_per_slot:        np.ndarray,    # (max_c, n_oos_days) float32 — sum_R per day
+    sl_dists_per_slot: np.ndarray,    # (max_c, n_oos_days) float32 — mean SL per day (for sizing decision)
+    fired_per_slot:    np.ndarray,    # (max_c, n_oos_days) bool
+    n_trades_per_slot: np.ndarray,    # (max_c, n_oos_days) int — trade count per day (for commissions)
+    day_indices:       np.ndarray,    # (n_sims, horizon) int32 — SHARED across slots
+    risk_dollars:      float,
+    account:           LucidFlexAccount,
+) -> Tuple[np.ndarray, List[Tuple[int, int, float]]]:
+    """For each slot, look up its per-day SUM_R (= Σ pnl_pts_i / sl_dist_i across trades)
+    at the bootstrapped day indices. Same indices for all slots → preserves cross-session
+    correlation. $PnL per day = R × risk_dollars − n_trades × commission_per_RT.
+    This formulation is exact across multi-trade days (no leverage bias).
+
+    sl_dists_per_slot is consulted only to pick mini vs micro (commission rate).
+    Returns (max_c, n_sims, horizon) net $ PnL + diagnostics."""
+    max_c, _n_oos_days = R_per_slot.shape
+    n_sims, horizon = day_indices.shape
+    out = np.zeros((max_c, n_sims, horizon), dtype=np.float64)
+    sizings: List[Tuple[int, int, float]] = []
+
+    for a in range(max_c):
+        fired_a = fired_per_slot[a]
+        if fired_a.sum() == 0:
+            sizings.append((0, 0, 0.0))
+            continue
+
+        # Mini vs micro decision based on median SL among fired days
+        sl_pts = float(np.median(sl_dists_per_slot[a][fired_a]))
+        if sl_pts <= 0:
+            sl_pts = 1.0
+        mini_risk_1c = sl_pts * MINI_POINT_VALUE
+        max_minis = account.max_micros // 10
+        use_mini = mini_risk_1c <= risk_dollars and max_minis > 0
+        comm_per_trade = MINI_COMM_RT if use_mini else MICRO_COMM_RT
+        # Diagnostic-only contract counts (the R-formulation absorbs exact sizing)
+        if use_mini:
+            n_minis  = int(min(max(np.floor(risk_dollars / mini_risk_1c), 1), max_minis))
+            n_micros = 0
+        else:
+            micro_risk_1c = sl_pts * MICRO_POINT_VALUE
+            n_minis  = 0
+            n_micros = int(min(max(np.floor(risk_dollars / micro_risk_1c), 1), account.max_micros))
+        sizings.append((n_minis, n_micros, float(risk_dollars)))
+
+        # Bootstrap-sampled per-day arrays
+        R_today        = R_per_slot[a][day_indices]            # (n_sims, horizon)
+        n_trades_today = n_trades_per_slot[a][day_indices]
+        fired_today    = fired_per_slot[a][day_indices]
+
+        gross = R_today * risk_dollars
+        comm  = n_trades_today * comm_per_trade
+        net   = gross - comm
+        out[a] = np.where(fired_today, net, 0.0).astype(np.float64)
+
+    return out, sizings
+
+
 def _build_per_slot_phase3_pnl(
     slot_assignments: List[SlotAssignment],
     account:          LucidFlexAccount,
@@ -412,6 +508,16 @@ def three_phase_reinvestment_mc(
     regime_result:     Optional[RegimeResult] = None,  # enables regime-aware draws
     slot_assignments:  Optional[List[SlotAssignment]] = None,  # per-slot (P12, P3) configs
     p3_risk_pct:       Optional[float] = None, # if set, fixed risk pct for phase 3 (overrides min-winning-day)
+    # ── Bootstrap mode (OOS evaluation) ──
+    # When all four arrays are supplied, the simulator skips regime/poisson sampling
+    # and instead samples (n_sims, horizon) day-indices via stationary block bootstrap
+    # over the precomputed per-slot OOS day arrays. Cross-slot correlation is preserved
+    # because the SAME day indices are used for all slots in a sim.
+    bootstrap_block_len:              Optional[float] = None,
+    bootstrap_oos_R_per_slot:         Optional[np.ndarray] = None,    # (max_c, n_oos_days) float — sum_R per day
+    bootstrap_oos_sl_dists_per_slot:  Optional[np.ndarray] = None,    # (max_c, n_oos_days) float — mean SL (for mini/micro decision)
+    bootstrap_oos_fired_per_slot:     Optional[np.ndarray] = None,    # (max_c, n_oos_days) bool
+    bootstrap_oos_n_trades_per_slot:  Optional[np.ndarray] = None,    # (max_c, n_oos_days) int — for commissions
 ) -> dict:
     """
     Simulate AnchoredMeanReversion's 3-phase method: buy 10 evals upfront (or up to budget),
@@ -438,10 +544,28 @@ def three_phase_reinvestment_mc(
     LOCKED_MLL = SB + 100.0
     INITIAL_TRAIL = SB + MLL_AMT + 100.0
 
+    # Bootstrap mode flag — overrides regime/per-slot/legacy modes
+    bootstrap_mode = (
+        bootstrap_block_len is not None
+        and bootstrap_oos_R_per_slot is not None
+        and bootstrap_oos_sl_dists_per_slot is not None
+        and bootstrap_oos_fired_per_slot is not None
+        and bootstrap_oos_n_trades_per_slot is not None
+    )
+
     # Per-slot mode flag — when set, each account slot has its own dedicated
     # (P12, P3) configs and PnL streams (single-session-per-account).
-    per_slot_mode = slot_assignments is not None
-    if per_slot_mode:
+    per_slot_mode = slot_assignments is not None or bootstrap_mode
+    if bootstrap_mode:
+        if bootstrap_oos_R_per_slot.shape[0] != max_concurrent:
+            raise ValueError(
+                f"bootstrap_oos_R_per_slot first dim "
+                f"{bootstrap_oos_R_per_slot.shape[0]} must equal "
+                f"max_concurrent {max_concurrent}"
+            )
+        eg_list, p3_list = [], []
+        n_eg, n_p3 = 0, 0
+    elif per_slot_mode:
         if len(slot_assignments) != max_concurrent:
             raise ValueError(
                 f"slot_assignments length {len(slot_assignments)} must equal "
@@ -467,13 +591,44 @@ def three_phase_reinvestment_mc(
     # session correlation comes from EVERY session in a sim drawing from its
     # own pool indexed by the SAME regime[sim, day]. ─────────────────────────
     regime_seqs: Optional[np.ndarray] = None
-    if regime_result is not None:
+    if regime_result is not None and not bootstrap_mode:
         regime_seqs = _sample_regime_sequences(regime_result, n_sims, horizon, rng)
 
     # ── Phase 1+2 sizing: total risk = eval_grind_risk × MLL ───────────────
     eg_total_risk = eval_grind_risk * MLL_AMT
 
-    if per_slot_mode:
+    if bootstrap_mode:
+        # Stationary block bootstrap path: shared (n_sims, horizon) day indices,
+        # per-slot $ PnL via R_total × risk_dollars formulation.
+        n_oos_days = bootstrap_oos_R_per_slot.shape[1]
+        day_indices = _sample_stationary_bootstrap_indices(
+            n_oos_days, n_sims, horizon, float(bootstrap_block_len), rng,
+        )
+        pnl_eg_per_slot, eg_sizings = _build_per_slot_bootstrap_pnl(
+            bootstrap_oos_R_per_slot,
+            bootstrap_oos_sl_dists_per_slot,
+            bootstrap_oos_fired_per_slot,
+            bootstrap_oos_n_trades_per_slot,
+            day_indices, eg_total_risk, account,
+        )
+        # Phase 3 uses p3_risk_pct override (or falls back to ERP if unspecified)
+        p3_risk_dollars = (p3_risk_pct if p3_risk_pct is not None else eval_grind_risk) * MLL_AMT
+        pnl_p3_per_slot, p3_sizings_full = _build_per_slot_bootstrap_pnl(
+            bootstrap_oos_R_per_slot,
+            bootstrap_oos_sl_dists_per_slot,
+            bootstrap_oos_fired_per_slot,
+            bootstrap_oos_n_trades_per_slot,
+            day_indices, p3_risk_dollars, account,
+        )
+        eg_n_minis  = sum(s[0] for s in eg_sizings)
+        eg_n_micros = sum(s[1] for s in eg_sizings)
+        eg_risk_dollars = sum(s[2] for s in eg_sizings)
+        p3_n_minis  = sum(s[0] for s in p3_sizings_full)
+        p3_n_micros = sum(s[1] for s in p3_sizings_full)
+        p3_actual_risk = sum(s[2] for s in p3_sizings_full)
+        pnl_eg = None
+        pnl_p3 = None
+    elif per_slot_mode:
         # Per-slot mode: each slot gets its own (max_c, n_sims, horizon) PnL.
         # No multi-config-per-slot — single full-risk per slot.
         pnl_eg_per_slot, eg_sizings = _build_per_slot_phase12_pnl(
