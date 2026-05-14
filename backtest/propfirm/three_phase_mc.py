@@ -717,6 +717,8 @@ def three_phase_reinvestment_mc(
     total_payouts   = np.zeros(n_sims, dtype=np.int32)
     n_passed_eval   = np.zeros(n_sims, dtype=np.int32)
     n_hit_target    = np.zeros(n_sims, dtype=np.int32)
+    cash_trajectory = np.empty((n_sims, horizon + 1), dtype=np.float64)
+    cash_trajectory[:, 0] = cash
 
     ac_range = np.arange(max_c)
 
@@ -853,8 +855,12 @@ def three_phase_reinvestment_mc(
         # ── Greedy reinvestment: open new accounts if cash allows ─────────
         _open_accounts(np.ones(n_sims, dtype=bool))
 
+        # Record EOD cash for this day (after payouts and reinvestment)
+        cash_trajectory[:, day + 1] = cash
+
     return {
         'cash':           cash,
+        'cash_trajectory': cash_trajectory,
         'n_payouts':      total_payouts,
         'n_passed_eval':  n_passed_eval,
         'n_hit_target':   n_hit_target,
