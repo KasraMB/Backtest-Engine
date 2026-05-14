@@ -26,6 +26,7 @@ import argparse
 import json
 import pickle
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import numpy as np
@@ -75,12 +76,20 @@ def compute_regime(parquet_path: Path) -> tuple[dict, object]:
     latest_label = result.labels[latest_date]
     latest_close = float(close.iloc[-1])
 
+    # Parquet uses session-START date convention (Sierra Chart). Tradovate
+    # (and most retail chart platforms) label the same bar with the session-END
+    # date, i.e. parquet_date + 1 calendar day. Surface both so the bot/user
+    # can cross-reference whichever they're looking at.
+    tradovate_date = latest_date + timedelta(days=1)
+
     payload = {
-        'date':         str(latest_date),
-        'regime':       result.label_names[latest_label],
-        'label_id':     int(latest_label),
-        'latest_close': latest_close,
-        'state_means':  [float(x) for x in result.state_means],
+        'parquet_date':  str(latest_date),       # session-start (Sierra Chart) date
+        'tradovate_date': str(tradovate_date),   # session-end date (what Tradovate shows)
+        'date':          str(latest_date),        # legacy alias = parquet_date
+        'regime':        result.label_names[latest_label],
+        'label_id':      int(latest_label),
+        'latest_close':  latest_close,
+        'state_means':   [float(x) for x in result.state_means],
         'transition_matrix': result.transition_matrix.tolist(),
         'n_labelled_days':   len(result.labels),
     }
@@ -103,11 +112,13 @@ def main():
     print(f"Loading {parquet_path}...", flush=True)
     payload, result = compute_regime(parquet_path)
 
-    print(f"\n=== Regime update — {payload['date']} ===")
-    print(f"  Regime:       {payload['regime']} (label_id={payload['label_id']})")
-    print(f"  Latest close: {payload['latest_close']:.2f}")
-    print(f"  Total days:   {payload['n_labelled_days']}")
-    print(f"  State means:  {payload['state_means']}")
+    print(f"\n=== Regime update ===")
+    print(f"  Parquet date (Sierra/session-start):  {payload['parquet_date']}")
+    print(f"  Tradovate date (session-end):         {payload['tradovate_date']}")
+    print(f"  Regime:                               {payload['regime']} (label_id={payload['label_id']})")
+    print(f"  Latest close:                         {payload['latest_close']:.2f}")
+    print(f"  Total days:                           {payload['n_labelled_days']}")
+    print(f"  State means:                          {payload['state_means']}")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, 'w') as f:
