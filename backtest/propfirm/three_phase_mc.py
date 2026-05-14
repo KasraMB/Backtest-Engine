@@ -363,29 +363,29 @@ def _sample_stationary_bootstrap_indices(
 ) -> np.ndarray:
     """Politis-Romano stationary bootstrap. Returns (n_sims, horizon) int32
     indices into [0, n_oos_days). Block lengths are geometrically distributed
-    with mean `mean_block_len`, blocks wrap circularly."""
+    with mean `mean_block_len`, blocks wrap circularly.
+
+    Fully vectorised. Matches the original RNG sequence: same n_sims*horizon
+    uniforms for break decisions and same n_breaks integers for starts."""
     if n_oos_days <= 0:
         raise ValueError("n_oos_days must be positive")
-    p = 1.0 / max(mean_block_len, 1.0)        # geometric prob of block break
+    p = 1.0 / max(mean_block_len, 1.0)
     breaks = rng.random((n_sims, horizon)) < p
-    breaks[:, 0] = True                        # always start a new block at day 0
-    n_breaks = breaks.sum()
-    starts = rng.integers(0, n_oos_days, size=int(n_breaks), dtype=np.int32)
-    idx = np.empty((n_sims, horizon), dtype=np.int32)
-    # Fill blocks: at break, take a new random start; otherwise increment (mod n)
-    idx_flat = idx.reshape(-1)
+    breaks[:, 0] = True
     breaks_flat = breaks.reshape(-1)
-    cur = -1
-    bptr = 0
+    n_breaks = int(breaks_flat.sum())
+    starts = rng.integers(0, n_oos_days, size=n_breaks, dtype=np.int32)
+
     n_total = n_sims * horizon
-    for i in range(n_total):
-        if breaks_flat[i]:
-            cur = starts[bptr]
-            bptr += 1
-        else:
-            cur = (cur + 1) % n_oos_days
-        idx_flat[i] = cur
-    return idx
+    arange = np.arange(n_total, dtype=np.int64)
+    # block_id[i] = which block does cell i belong to (0-indexed)
+    block_id = (np.cumsum(breaks_flat) - 1).astype(np.int64)
+    # block_start_pos[i] = global position of the first cell in i's block
+    block_start_pos = np.where(breaks_flat, arange, 0)
+    np.maximum.accumulate(block_start_pos, out=block_start_pos)
+    offset = arange - block_start_pos
+    idx_flat = ((starts[block_id].astype(np.int64) + offset) % n_oos_days).astype(np.int32)
+    return idx_flat.reshape(n_sims, horizon)
 
 
 def _build_per_slot_bootstrap_pnl(
@@ -407,24 +407,24 @@ def _build_per_slot_bootstrap_pnl(
     Returns (max_c, n_sims, horizon) net $ PnL + diagnostics."""
     max_c, _n_oos_days = R_per_slot.shape
     n_sims, horizon = day_indices.shape
-    out = np.zeros((max_c, n_sims, horizon), dtype=np.float64)
     sizings: List[Tuple[int, int, float]] = []
+    comm_per_slot = np.zeros(max_c, dtype=np.float64)
+    active_slot   = np.ones(max_c, dtype=bool)   # False if slot has no fired days
 
+    # Per-slot sizing decision (small loop over max_c, ≤5)
     for a in range(max_c):
         fired_a = fired_per_slot[a]
-        if fired_a.sum() == 0:
+        if not fired_a.any():
             sizings.append((0, 0, 0.0))
+            active_slot[a] = False
             continue
-
-        # Mini vs micro decision based on median SL among fired days
         sl_pts = float(np.median(sl_dists_per_slot[a][fired_a]))
         if sl_pts <= 0:
             sl_pts = 1.0
         mini_risk_1c = sl_pts * MINI_POINT_VALUE
         max_minis = account.max_micros // 10
         use_mini = mini_risk_1c <= risk_dollars and max_minis > 0
-        comm_per_trade = MINI_COMM_RT if use_mini else MICRO_COMM_RT
-        # Diagnostic-only contract counts (the R-formulation absorbs exact sizing)
+        comm_per_slot[a] = MINI_COMM_RT if use_mini else MICRO_COMM_RT
         if use_mini:
             n_minis  = int(min(max(np.floor(risk_dollars / mini_risk_1c), 1), max_minis))
             n_micros = 0
@@ -434,19 +434,23 @@ def _build_per_slot_bootstrap_pnl(
             n_micros = int(min(max(np.floor(risk_dollars / micro_risk_1c), 1), account.max_micros))
         sizings.append((n_minis, n_micros, float(risk_dollars)))
 
-        # Bootstrap-sampled per-day arrays
-        R_today        = R_per_slot[a][day_indices]            # (n_sims, horizon)
-        n_trades_today = n_trades_per_slot[a][day_indices]
-        fired_today    = fired_per_slot[a][day_indices]
+    # Vectorised PnL across all slots: fancy-index once into (max_c, n_sims, horizon)
+    R_today        = R_per_slot[:, day_indices].astype(np.float64)        # promote once
+    n_trades_today = n_trades_per_slot[:, day_indices]
+    fired_today    = fired_per_slot[:, day_indices]
 
-        if cap_daily_risk:
-            safe_n = np.maximum(n_trades_today, 1)
-            gross = (R_today / safe_n) * risk_dollars
-        else:
-            gross = R_today * risk_dollars
-        comm  = n_trades_today * comm_per_trade
-        net   = gross - comm
-        out[a] = np.where(fired_today, net, 0.0).astype(np.float64)
+    if cap_daily_risk:
+        safe_n = np.maximum(n_trades_today, 1)
+        gross = (R_today / safe_n) * risk_dollars
+    else:
+        gross = R_today * risk_dollars
+    # comm_per_slot broadcasts (max_c,) → (max_c, n_sims, horizon) via [:, None, None]
+    comm = n_trades_today * comm_per_slot[:, None, None]
+    net  = gross - comm
+    out  = np.where(fired_today, net, 0.0)
+    # Zero out inactive slots (no fired days at all)
+    if not active_slot.all():
+        out[~active_slot] = 0.0
 
     return out, sizings
 
