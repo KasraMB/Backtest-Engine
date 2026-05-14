@@ -22,3 +22,7 @@ sweeps/sweep_results*/
 # Trade logs
 trade_logs/*
 *.html
+
+# Propfirm regime daemon runtime artifacts
+regime_today.json
+scripts/propfirm/regime_update.log
