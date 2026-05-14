@@ -524,6 +524,12 @@ def three_phase_reinvestment_mc(
     bootstrap_oos_fired_per_slot:     Optional[np.ndarray] = None,    # (max_c, n_oos_days) bool
     bootstrap_oos_n_trades_per_slot:  Optional[np.ndarray] = None,    # (max_c, n_oos_days) int — for commissions
     bootstrap_cap_daily_risk:         bool = False,                    # if True, per-trade risk = risk_dollars/n_trades_today
+    # ── Adaptive max-concurrent: cap starts at max_concurrent_initial and grows
+    # by max_concurrent_grow_per_payout for each payout collected, never exceeding
+    # max_concurrent. Set initial == max_concurrent and grow == 0 (defaults) for
+    # legacy fixed-cap behaviour.
+    max_concurrent_initial:           Optional[int] = None,             # if None, use max_concurrent (legacy)
+    max_concurrent_grow_per_payout:   int = 0,                          # +N per payout (per-sim)
 ) -> dict:
     """
     Simulate AnchoredMeanReversion's 3-phase method: buy 10 evals upfront (or up to budget),
@@ -720,16 +726,24 @@ def three_phase_reinvestment_mc(
     cash_trajectory = np.empty((n_sims, horizon + 1), dtype=np.float64)
     cash_trajectory[:, 0] = cash
 
+    # Per-sim active concurrency cap (adaptive scaling). Initialised to
+    # max_concurrent_initial (or max_concurrent if not set), grows by
+    # max_concurrent_grow_per_payout per payout up to max_concurrent.
+    init_cap = int(max_concurrent_initial if max_concurrent_initial is not None
+                   else max_concurrent)
+    init_cap = min(init_cap, max_concurrent)
+    current_max_c = np.full(n_sims, init_cap, dtype=np.int32)
+
     ac_range = np.arange(max_c)
 
     # ── Account opener ─────────────────────────────────────────────────────
     def _open_accounts(should_open: np.ndarray) -> None:
         """Open accounts in inactive slots for sims where should_open is True
-        and cash >= eval_fee. Loops up to max_c times (each loop fills 1 slot per sim)."""
+        and cash >= eval_fee. Per-sim concurrency cap = current_max_c[sim]."""
         nonlocal cash, total_eval_fees
         for _ in range(max_c):
             n_act = (phase > 0).sum(axis=1)
-            can   = should_open & (n_act < max_c) & (cash >= EVAL_FEE)
+            can   = should_open & (n_act < current_max_c) & (cash >= EVAL_FEE)
             if not can.any():
                 break
             free       = phase == 0
@@ -845,6 +859,13 @@ def three_phase_reinvestment_mc(
             fu_win_days     = np.where(do_pay, np.int32(0), fu_win_days)
             mll_locked      = mll_locked | do_pay
             mll_level       = np.where(do_pay, LOCKED_MLL, mll_level)
+            # Adaptive scaling: each payout unlocks more concurrent slots
+            if max_concurrent_grow_per_payout > 0:
+                payouts_today = do_pay.sum(axis=1).astype(np.int32)
+                current_max_c = np.minimum(
+                    current_max_c + payouts_today * max_concurrent_grow_per_payout,
+                    max_c,
+                )
 
         # ── Close accounts (blown or max payouts reached) ─────────────────
         phase = np.where(blown, np.int8(0), phase)
