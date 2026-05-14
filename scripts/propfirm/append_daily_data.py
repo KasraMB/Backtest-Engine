@@ -158,6 +158,9 @@ def main():
                     help='Validate overlap only, do not append even if PASS')
     ap.add_argument('--force', action='store_true',
                     help='Append even on WARN (do NOT use unless you understand the diff)')
+    ap.add_argument('--date-shift', type=int, default=0,
+                    help='Calendar-day offset applied to source dates BEFORE comparison. '
+                         'Use -1 for Tradovate (session-end-date) -> Sierra Chart (session-start-date).')
     args = ap.parse_args()
 
     if args.source == 'csv' and not args.csv_path:
@@ -180,6 +183,14 @@ def main():
         new_src = _fetch_yahoo(overlap_start.date(), today.date())
     else:
         new_src = _fetch_csv(Path(args.csv_path))
+
+    # Apply date shift (e.g. -1 to translate Tradovate session-end dates
+    # to Sierra Chart's session-start convention)
+    if args.date_shift != 0:
+        new_src = new_src.copy()
+        new_src['Date'] = new_src['Date'] + pd.Timedelta(days=args.date_shift)
+        print(f"Applied --date-shift {args.date_shift:+d} days to source dates.")
+
     print(f"New source: {len(new_src)} rows, {new_src['Date'].min().date()} to {new_src['Date'].max().date()}")
 
     verdict, _ = _compare_overlap(existing, new_src, overlap_start)
