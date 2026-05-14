@@ -43,7 +43,9 @@ def main():
     ap.add_argument('--host', default='127.0.0.1')
     ap.add_argument('--port', type=int, default=7497, help='7497=TWS paper, 7496=TWS live, 4002=GW paper, 4001=GW live')
     ap.add_argument('--client-id', type=int, default=42)
-    ap.add_argument('--days', type=str, default='30 D', help='Lookback window passed to reqHistoricalData')
+    ap.add_argument('--days', type=str, default='120 D',
+                    help='Lookback window passed to reqHistoricalData. '
+                         'Must be long enough to reach the parquet\'s last date for overlap.')
     args = ap.parse_args()
 
     try:
