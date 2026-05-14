@@ -161,6 +161,9 @@ def main():
     ap.add_argument('--date-shift', type=int, default=0,
                     help='Calendar-day offset applied to source dates BEFORE comparison. '
                          'Use -1 for Tradovate (session-end-date) -> Sierra Chart (session-start-date).')
+    ap.add_argument('--no-validate', action='store_true',
+                    help='Skip the overlap validation step. Use only for trusted manual entry '
+                         'after you have already verified the source matches.')
     args = ap.parse_args()
 
     if args.source == 'csv' and not args.csv_path:
@@ -193,7 +196,11 @@ def main():
 
     print(f"New source: {len(new_src)} rows, {new_src['Date'].min().date()} to {new_src['Date'].max().date()}")
 
-    verdict, _ = _compare_overlap(existing, new_src, overlap_start)
+    if args.no_validate:
+        print("\n--no-validate: skipping overlap comparison.")
+        verdict = 'PASS'
+    else:
+        verdict, _ = _compare_overlap(existing, new_src, overlap_start)
     if verdict == 'FAIL':
         print("\nRefusing to append — data sources disagree by >0.5%.", file=sys.stderr)
         print("Use your original data source (Sierra Chart, IB, etc.) to fill the gap.",
