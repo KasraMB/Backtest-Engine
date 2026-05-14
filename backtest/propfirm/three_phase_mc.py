@@ -455,6 +455,41 @@ def _build_per_slot_bootstrap_pnl(
     return out, sizings
 
 
+def _compute_per_slot_commission(
+    sl_dists_per_slot: np.ndarray,    # (max_c, n_oos_days)
+    fired_per_slot:    np.ndarray,    # (max_c, n_oos_days) bool
+    target_risk:       float,
+    account:           LucidFlexAccount,
+) -> Tuple[np.ndarray, List[Tuple[int, int, float]]]:
+    """Per-slot mini-vs-micro decision + commission rate, given a target $ risk.
+    Returns (comm_per_slot, sizings) where comm_per_slot is (max_c,) and sizings is
+    a list of (n_minis, n_micros, target_risk_for_diagnostics) per slot."""
+    max_c = sl_dists_per_slot.shape[0]
+    comm = np.zeros(max_c, dtype=np.float64)
+    sizings: List[Tuple[int, int, float]] = []
+    for a in range(max_c):
+        fired_a = fired_per_slot[a]
+        if not fired_a.any():
+            sizings.append((0, 0, 0.0))
+            continue
+        sl_pts = float(np.median(sl_dists_per_slot[a][fired_a]))
+        if sl_pts <= 0:
+            sl_pts = 1.0
+        mini_risk_1c = sl_pts * MINI_POINT_VALUE
+        max_minis = account.max_micros // 10
+        use_mini = mini_risk_1c <= target_risk and max_minis > 0
+        comm[a] = MINI_COMM_RT if use_mini else MICRO_COMM_RT
+        if use_mini:
+            n_min = int(min(max(np.floor(target_risk / mini_risk_1c), 1), max_minis))
+            n_mic = 0
+        else:
+            micro_risk_1c = sl_pts * MICRO_POINT_VALUE
+            n_min = 0
+            n_mic = int(min(max(np.floor(target_risk / micro_risk_1c), 1), account.max_micros))
+        sizings.append((n_min, n_mic, float(target_risk)))
+    return comm, sizings
+
+
 def _build_per_slot_phase3_pnl(
     slot_assignments: List[SlotAssignment],
     account:          LucidFlexAccount,
@@ -528,6 +563,8 @@ def three_phase_reinvestment_mc(
     bootstrap_oos_fired_per_slot:     Optional[np.ndarray] = None,    # (max_c, n_oos_days) bool
     bootstrap_oos_n_trades_per_slot:  Optional[np.ndarray] = None,    # (max_c, n_oos_days) int — for commissions
     bootstrap_cap_daily_risk:         bool = False,                    # if True, per-trade risk = risk_dollars/n_trades_today
+    bootstrap_buffer_safety:          Optional[float] = None,           # if set (e.g. 0.9), per-trade risk = min(target_risk, buffer × safety)
+    bootstrap_min_effective_risk:     Optional[float] = None,           # if set (e.g. 500.0), abandon accounts whose next-trade effective_risk would be below this — frees the slot for reinvestment, models a real trader giving up on a thin-buffer account
     # ── Adaptive max-concurrent: cap starts at max_concurrent_initial and grows
     # by max_concurrent_grow_per_payout for each payout collected, never exceeding
     # max_concurrent. Set initial == max_concurrent and grow == 0 (defaults) for
@@ -620,23 +657,40 @@ def three_phase_reinvestment_mc(
         day_indices = _sample_stationary_bootstrap_indices(
             n_oos_days, n_sims, horizon, float(bootstrap_block_len), rng,
         )
-        pnl_eg_per_slot, eg_sizings = _build_per_slot_bootstrap_pnl(
-            bootstrap_oos_R_per_slot,
-            bootstrap_oos_sl_dists_per_slot,
-            bootstrap_oos_fired_per_slot,
-            bootstrap_oos_n_trades_per_slot,
-            day_indices, eg_total_risk, account,
-            cap_daily_risk=bootstrap_cap_daily_risk,
-        )
         # Phase 3 uses p3_risk_pct override (or falls back to ERP if unspecified)
         p3_risk_dollars = (p3_risk_pct if p3_risk_pct is not None else eval_grind_risk) * MLL_AMT
-        pnl_p3_per_slot, p3_sizings_full = _build_per_slot_bootstrap_pnl(
-            bootstrap_oos_R_per_slot,
-            bootstrap_oos_sl_dists_per_slot,
-            bootstrap_oos_fired_per_slot,
-            bootstrap_oos_n_trades_per_slot,
-            day_indices, p3_risk_dollars, account,
-        )
+
+        if bootstrap_buffer_safety is not None:
+            # Buffer-aware: per-day PnL computed dynamically in the day loop
+            # using current per-sim balance vs MLL. Precompute only commission rates.
+            eg_comm_per_slot, eg_sizings = _compute_per_slot_commission(
+                bootstrap_oos_sl_dists_per_slot, bootstrap_oos_fired_per_slot,
+                eg_total_risk, account,
+            )
+            p3_comm_per_slot, p3_sizings_full = _compute_per_slot_commission(
+                bootstrap_oos_sl_dists_per_slot, bootstrap_oos_fired_per_slot,
+                p3_risk_dollars, account,
+            )
+            pnl_eg_per_slot = None
+            pnl_p3_per_slot = None
+        else:
+            eg_comm_per_slot = None
+            p3_comm_per_slot = None
+            pnl_eg_per_slot, eg_sizings = _build_per_slot_bootstrap_pnl(
+                bootstrap_oos_R_per_slot,
+                bootstrap_oos_sl_dists_per_slot,
+                bootstrap_oos_fired_per_slot,
+                bootstrap_oos_n_trades_per_slot,
+                day_indices, eg_total_risk, account,
+                cap_daily_risk=bootstrap_cap_daily_risk,
+            )
+            pnl_p3_per_slot, p3_sizings_full = _build_per_slot_bootstrap_pnl(
+                bootstrap_oos_R_per_slot,
+                bootstrap_oos_sl_dists_per_slot,
+                bootstrap_oos_fired_per_slot,
+                bootstrap_oos_n_trades_per_slot,
+                day_indices, p3_risk_dollars, account,
+            )
         eg_n_minis  = sum(s[0] for s in eg_sizings)
         eg_n_micros = sum(s[1] for s in eg_sizings)
         eg_risk_dollars = sum(s[2] for s in eg_sizings)
@@ -779,9 +833,35 @@ def three_phase_reinvestment_mc(
         active_i   = phase > 0
 
         # ── Pick today's PnL per (sim, slot) ──────────────────────────────
-        # Per-slot mode: each slot has its own (max_c, n_sims, horizon) stream
-        # Legacy mode: shared (n_sims, horizon) stream broadcast across slots
-        if per_slot_mode:
+        if bootstrap_mode and bootstrap_buffer_safety is not None:
+            # Buffer-aware: compute today's PnL dynamically. Per-trade risk is
+            # capped at current_buffer × safety so intraday adverse can't touch MLL.
+            di = day_indices[:, day]                                          # (n_sims,)
+            R_today_per_slot = bootstrap_oos_R_per_slot[:, di].astype(np.float64)  # (max_c, n_sims)
+            n_today_per_slot = bootstrap_oos_n_trades_per_slot[:, di]
+            fired_today_per_slot = bootstrap_oos_fired_per_slot[:, di]
+            R_today_t     = R_today_per_slot.T                                # (n_sims, max_c)
+            n_today_t     = n_today_per_slot.T.astype(np.float64)
+            fired_today_t = fired_today_per_slot.T
+
+            safe_buffer = np.maximum(bal - mll_level, 0.0)                    # (n_sims, max_c)
+            eg_eff_risk = np.minimum(eg_total_risk,   safe_buffer * bootstrap_buffer_safety)
+            p3_eff_risk = np.minimum(p3_risk_dollars, safe_buffer * bootstrap_buffer_safety)
+
+            if bootstrap_cap_daily_risk:
+                safe_n = np.maximum(n_today_t, 1.0)
+                gross_eg = (R_today_t / safe_n) * eg_eff_risk
+                gross_p3 = (R_today_t / safe_n) * p3_eff_risk
+            else:
+                gross_eg = R_today_t * eg_eff_risk
+                gross_p3 = R_today_t * p3_eff_risk
+
+            comm_eg_today = n_today_t * eg_comm_per_slot[None, :]
+            comm_p3_today = n_today_t * p3_comm_per_slot[None, :]
+
+            pnl_eg_today = np.where(fired_today_t, gross_eg - comm_eg_today, 0.0)
+            pnl_p3_today = np.where(fired_today_t, gross_p3 - comm_p3_today, 0.0)
+        elif per_slot_mode:
             pnl_eg_today = pnl_eg_per_slot[:, :, day].T   # (n_sims, max_c)
             pnl_p3_today = pnl_p3_per_slot[:, :, day].T
         else:
@@ -794,6 +874,16 @@ def three_phase_reinvestment_mc(
         # ── Apply PnL, detect blown, update bal/peak ──────────────────────
         new_bal = bal + d_pnl
         blown   = active_i & (new_bal <= mll_level)
+        # Voluntary abandon: if next trade's effective_risk would be too small
+        # to be useful, treat as blown so the slot can be reopened. Models a
+        # real trader giving up on a thin-buffer account rather than grinding
+        # at vanishingly small position size.
+        if (bootstrap_buffer_safety is not None
+            and bootstrap_min_effective_risk is not None):
+            next_buffer  = np.maximum(new_bal - mll_level, 0.0)
+            next_eff_risk = next_buffer * bootstrap_buffer_safety
+            abandon = active_i & (next_eff_risk < bootstrap_min_effective_risk) & ~blown
+            blown   = blown | abandon
         survives = active_i & ~blown
         bal  = np.where(survives, new_bal, bal)
         peak = np.where(survives, np.maximum(peak, new_bal), peak)
