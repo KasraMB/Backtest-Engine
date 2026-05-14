@@ -396,6 +396,7 @@ def _build_per_slot_bootstrap_pnl(
     day_indices:       np.ndarray,    # (n_sims, horizon) int32 — SHARED across slots
     risk_dollars:      float,
     account:           LucidFlexAccount,
+    cap_daily_risk:    bool = False,  # if True, per-trade risk = risk_dollars / n_trades_today
 ) -> Tuple[np.ndarray, List[Tuple[int, int, float]]]:
     """For each slot, look up its per-day SUM_R (= Σ pnl_pts_i / sl_dist_i across trades)
     at the bootstrapped day indices. Same indices for all slots → preserves cross-session
@@ -438,7 +439,11 @@ def _build_per_slot_bootstrap_pnl(
         n_trades_today = n_trades_per_slot[a][day_indices]
         fired_today    = fired_per_slot[a][day_indices]
 
-        gross = R_today * risk_dollars
+        if cap_daily_risk:
+            safe_n = np.maximum(n_trades_today, 1)
+            gross = (R_today / safe_n) * risk_dollars
+        else:
+            gross = R_today * risk_dollars
         comm  = n_trades_today * comm_per_trade
         net   = gross - comm
         out[a] = np.where(fired_today, net, 0.0).astype(np.float64)
@@ -518,6 +523,7 @@ def three_phase_reinvestment_mc(
     bootstrap_oos_sl_dists_per_slot:  Optional[np.ndarray] = None,    # (max_c, n_oos_days) float — mean SL (for mini/micro decision)
     bootstrap_oos_fired_per_slot:     Optional[np.ndarray] = None,    # (max_c, n_oos_days) bool
     bootstrap_oos_n_trades_per_slot:  Optional[np.ndarray] = None,    # (max_c, n_oos_days) int — for commissions
+    bootstrap_cap_daily_risk:         bool = False,                    # if True, per-trade risk = risk_dollars/n_trades_today
 ) -> dict:
     """
     Simulate AnchoredMeanReversion's 3-phase method: buy 10 evals upfront (or up to budget),
@@ -610,6 +616,7 @@ def three_phase_reinvestment_mc(
             bootstrap_oos_fired_per_slot,
             bootstrap_oos_n_trades_per_slot,
             day_indices, eg_total_risk, account,
+            cap_daily_risk=bootstrap_cap_daily_risk,
         )
         # Phase 3 uses p3_risk_pct override (or falls back to ERP if unspecified)
         p3_risk_dollars = (p3_risk_pct if p3_risk_pct is not None else eval_grind_risk) * MLL_AMT
