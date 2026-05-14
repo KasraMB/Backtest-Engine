@@ -565,6 +565,7 @@ def three_phase_reinvestment_mc(
     bootstrap_cap_daily_risk:         bool = False,                    # if True, per-trade risk = risk_dollars/n_trades_today
     bootstrap_buffer_safety:          Optional[float] = None,           # if set (e.g. 0.9), per-trade risk = min(target_risk, buffer × safety)
     bootstrap_min_effective_risk:     Optional[float] = None,           # if set (e.g. 500.0), abandon accounts whose next-trade effective_risk would be below this — frees the slot for reinvestment, models a real trader giving up on a thin-buffer account
+    bootstrap_intraday_blow_check:    bool  = False,                    # if True, check intraday MLL touches: losing days where (bal - risk_dollars) < mll_level get blown (models stops that don't fill exactly at SL)
     # ── Adaptive max-concurrent: cap starts at max_concurrent_initial and grows
     # by max_concurrent_grow_per_payout for each payout collected, never exceeding
     # max_concurrent. Set initial == max_concurrent and grow == 0 (defaults) for
@@ -884,6 +885,17 @@ def three_phase_reinvestment_mc(
             next_eff_risk = next_buffer * bootstrap_buffer_safety
             abandon = active_i & (next_eff_risk < bootstrap_min_effective_risk) & ~blown
             blown   = blown | abandon
+        # Intraday-blow check: on a losing day, intraday adverse went at least
+        # to the day's net loss; if buffer was thinner than the per-trade risk
+        # at trade time, the position likely touched MLL intraday before the
+        # EOD close. Conservatively assume losing days with thin buffer always
+        # touch MLL → blown. (Phase-aware: uses EG risk for phase 1+2, P3 risk
+        # for phase 3.)
+        if bootstrap_intraday_blow_check and bootstrap_mode:
+            phase_risk = np.where(is_pay_i, p3_risk_dollars, eg_total_risk)
+            losing_day = d_pnl < 0
+            intraday_blow = active_i & losing_day & ((bal - phase_risk) < mll_level) & ~blown
+            blown = blown | intraday_blow
         survives = active_i & ~blown
         bal  = np.where(survives, new_bal, bal)
         peak = np.where(survives, np.maximum(peak, new_bal), peak)
