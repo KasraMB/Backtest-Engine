@@ -565,7 +565,18 @@ def three_phase_reinvestment_mc(
     bootstrap_cap_daily_risk:         bool = False,                    # if True, per-trade risk = risk_dollars/n_trades_today
     bootstrap_buffer_safety:          Optional[float] = None,           # if set (e.g. 0.9), per-trade risk = min(target_risk, buffer × safety)
     bootstrap_min_effective_risk:     Optional[float] = None,           # if set (e.g. 500.0), abandon accounts whose next-trade effective_risk would be below this — frees the slot for reinvestment, models a real trader giving up on a thin-buffer account
-    bootstrap_intraday_blow_check:    bool  = False,                    # if True, check intraday MLL touches: losing days where (bal - risk_dollars) < mll_level get blown (models stops that don't fill exactly at SL)
+    bootstrap_intraday_blow_check:    bool  = False,                    # if True, check intraday MLL touches on losing days (M3): losing days where (bal - risk_dollars) < mll_level get blown
+    bootstrap_intraday_strict:        bool  = False,                    # if True+intraday_blow_check, also flag WINNING days where intraday adverse could have touched MLL (M4): catches winning trades with deep adverse drawdown that recovered before close
+    # ── Real-MAE intraday-blow inputs (preferred over the proxy check above) ──
+    # When BOTH arrays are supplied AND bootstrap_intraday_blow_check=True,
+    # the simulator walks each fired day's trades sequentially:
+    #   floating_low_at_trade_k = bal + Σ(pnl_$_0..k-1) − $MAE_k
+    #   if floating_low ≤ mll_level → account blown at trade k (subsequent
+    #   trades that day don't fire; bal is forced to mll_level).
+    # max_trades_per_day is whatever third dim these arrays carry (typically 3-4).
+    bootstrap_oos_R_per_trade_per_slot:     Optional[np.ndarray] = None,   # (max_c, n_oos_days, max_trades) per-trade R, padded with 0 for non-existent trades
+    bootstrap_oos_MAE_R_per_trade_per_slot: Optional[np.ndarray] = None,   # (max_c, n_oos_days, max_trades) per-trade MAE_R = mae_pts / sl_dist, padded with 0
+    enforce_consistency_rule:         bool  = False,                    # if True, eval pass requires (largest_day_pnl <= total_profit * 0.5) AND (n_profitable_days >= 2). LucidFlex eval-only rule.
     # ── Adaptive max-concurrent: cap starts at max_concurrent_initial and grows
     # by max_concurrent_grow_per_payout for each payout collected, never exceeding
     # max_concurrent. Set initial == max_concurrent and grow == 0 (defaults) for
@@ -775,6 +786,10 @@ def three_phase_reinvestment_mc(
     fu_total_profit = np.zeros((n_sims, max_c))  # total funded profit (for grind→payout trigger)
     fu_win_days = np.zeros((n_sims, max_c), dtype=np.int32)
     fu_n_pay  = np.zeros((n_sims, max_c), dtype=np.int32)
+    # Eval-only consistency tracking (LucidFlex rule):
+    # max single-day profit and count of profitable days per eval account.
+    eval_max_day_pnl = np.zeros((n_sims, max_c), dtype=np.float64)
+    eval_n_prof_days = np.zeros((n_sims, max_c), dtype=np.int32)
 
     cash = np.full(n_sims, float(budget))
     total_withdrawn = np.zeros(n_sims)
@@ -817,6 +832,8 @@ def three_phase_reinvestment_mc(
             fu_total_profit[open_m] = 0.0
             fu_win_days[open_m] = 0
             fu_n_pay[open_m]    = 0
+            eval_max_day_pnl[open_m] = 0.0
+            eval_n_prof_days[open_m] = 0
 
             opened = can & open_m.any(axis=1)
             cash[opened]            -= EVAL_FEE
@@ -892,10 +909,61 @@ def three_phase_reinvestment_mc(
         # touch MLL → blown. (Phase-aware: uses EG risk for phase 1+2, P3 risk
         # for phase 3.)
         if bootstrap_intraday_blow_check and bootstrap_mode:
+            # Per-trade risk: with cap_daily_risk on, individual trade risk is
+            # phase_risk / n_trades_today. The intraday-blow test checks whether
+            # buffer was below this per-trade max-adverse — single-trade granularity.
             phase_risk = np.where(is_pay_i, p3_risk_dollars, eg_total_risk)
-            losing_day = d_pnl < 0
-            intraday_blow = active_i & losing_day & ((bal - phase_risk) < mll_level) & ~blown
+            n_today_for_risk = bootstrap_oos_n_trades_per_slot[:, day_indices[:, day]].T  # (n_sims, max_c)
+            if bootstrap_cap_daily_risk:
+                per_trade_risk = phase_risk / np.maximum(n_today_for_risk, 1)
+            else:
+                per_trade_risk = phase_risk   # full risk per trade with no cap
+            # M4 (strict): any day where a trade fired AND buffer < per-trade risk.
+            # M3 (default): only losing days.
+            if bootstrap_intraday_strict:
+                fired_proxy = (n_today_for_risk > 0)
+            else:
+                fired_proxy = (d_pnl < 0)
+            intraday_blow = active_i & fired_proxy & ((bal - per_trade_risk) < mll_level) & ~blown
             blown = blown | intraday_blow
+
+            # ── Real-MAE sequential walk (preferred over the proxy above) ──
+            # When per-trade R + MAE_R arrays are supplied, replace the proxy
+            # with an exact intraday walk: trade k's floating low equals
+            #   bal + Σ pnl_$_(0..k-1)  −  $MAE_k.
+            # If the floating low touches MLL at any trade, the account is
+            # blown at that trade and subsequent trades that day don't fire.
+            if (bootstrap_oos_R_per_trade_per_slot is not None
+                and bootstrap_oos_MAE_R_per_trade_per_slot is not None):
+                # Look up today's per-trade R and MAE_R for each (slot, sim).
+                # Source arrays shape: (max_c, n_oos_days, max_trades). We pull
+                # the (max_c, n_sims, max_trades) slice for `day`'s sampled
+                # day-indices (one per sim).
+                day_idx_today = day_indices[:, day]                              # (n_sims,)
+                R_today_3d   = bootstrap_oos_R_per_trade_per_slot[:, day_idx_today, :]      # (max_c, n_sims, max_trades)
+                MAE_today_3d = bootstrap_oos_MAE_R_per_trade_per_slot[:, day_idx_today, :]  # (max_c, n_sims, max_trades)
+                # per_trade_risk shape: scalar OR (n_sims, max_c). Cast to
+                # (max_c, n_sims, 1) for per-trade broadcasting.
+                if np.ndim(per_trade_risk) == 0:
+                    ptr_3d = np.full((R_today_3d.shape[0], R_today_3d.shape[1], 1),
+                                      float(per_trade_risk), dtype=np.float64)
+                else:
+                    ptr_3d = per_trade_risk.T[:, :, None].astype(np.float64)
+                pnl_per_trade = R_today_3d.astype(np.float64) * ptr_3d
+                mae_per_trade = MAE_today_3d.astype(np.float64) * ptr_3d
+                # Cumulative pnl BEFORE trade k (exclusive cumsum)
+                cumsum_before = np.cumsum(pnl_per_trade, axis=2) - pnl_per_trade
+                # bal broadcast to (max_c, n_sims, 1); mll_level same
+                bal_3d = bal.T[:, :, None]
+                mll_3d = mll_level.T[:, :, None]
+                floating_low = bal_3d + cumsum_before - mae_per_trade
+                # Mask: only consider real fired trades (idx < n_trades_today)
+                trade_idx = np.arange(R_today_3d.shape[2])[None, None, :]
+                valid_mask = trade_idx < n_today_for_risk.T[:, :, None]
+                blow_per_trade = valid_mask & (floating_low <= mll_3d)
+                # Account blown if any of its day's trades hit MLL intraday
+                intraday_blow_real = (active_i.T & blow_per_trade.any(axis=2)).T
+                blown = blown | intraday_blow_real
         survives = active_i & ~blown
         bal  = np.where(survives, new_bal, bal)
         peak = np.where(survives, np.maximum(peak, new_bal), peak)
@@ -919,8 +987,24 @@ def three_phase_reinvestment_mc(
         new_mll_eval = np.maximum(mll_level, new_mll_eval)
         mll_level = np.where(on_eval, new_mll_eval, mll_level)
 
+        # ── Update eval consistency tracking ───────────────────────────────
+        if enforce_consistency_rule:
+            on_eval_today = on_eval                 # accounts that survived & still in eval
+            profitable_today = on_eval_today & (d_pnl > 0)
+            eval_max_day_pnl = np.where(on_eval_today,
+                                         np.maximum(eval_max_day_pnl, d_pnl),
+                                         eval_max_day_pnl)
+            eval_n_prof_days = eval_n_prof_days + profitable_today.astype(np.int32)
+
         # ── Eval pass → grind transition (resets balance to SB) ───────────
         ev_passed = on_eval & (bal >= SB + PT)
+        if enforce_consistency_rule:
+            total_eval_profit = bal - SB
+            consistent = (
+                (eval_max_day_pnl <= total_eval_profit * 0.5)
+                & (eval_n_prof_days >= 2)
+            )
+            ev_passed = ev_passed & consistent
         if ev_passed.any():
             phase = np.where(ev_passed, np.int8(2), phase)
             bal        = np.where(ev_passed, SB, bal)
