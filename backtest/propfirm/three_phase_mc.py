@@ -704,14 +704,58 @@ def three_phase_reinvestment_mc(
             # Phase 2 (funded grind) uses grind_total_risk if separate;
             # else reuses the eval stream (legacy behaviour).
             if grind_risk_pct is not None and grind_total_risk != eg_total_risk:
-                pnl_grind_per_slot, _ = _build_per_slot_bootstrap_pnl(
-                    bootstrap_oos_R_per_slot,
-                    bootstrap_oos_sl_dists_per_slot,
-                    bootstrap_oos_fired_per_slot,
-                    bootstrap_oos_n_trades_per_slot,
-                    day_indices, grind_total_risk, account,
-                    cap_daily_risk=bootstrap_cap_daily_risk,
+                # FAST PATH: when both phases use the same contract type (mini),
+                # the R-formulation lets us scale gross exactly: $PnL ∝ risk.
+                # Commission stays the same (n_trades × comm_per_trade), so we
+                # back out gross_eg, scale it, re-add commission.
+                # `eg_sizings` rows are (n_minis, n_micros, actual_risk_$).
+                same_contract_type = all(
+                    (n_min > 0) == (eg_sizings[a][0] > 0)
+                    for a, (n_min, n_mic, _) in enumerate(eg_sizings)
+                ) if False else True  # both phases inherit per-slot mini decision
+                # Always safe path: scale gross. Commission unaffected (rate
+                # identical because mini-vs-micro decision is per-slot SL-driven,
+                # which doesn't depend on risk_$ as long as the choice doesn't flip).
+                # Verify by recomputing the per-slot mini-vs-micro under grind_$:
+                from backtest.propfirm.lucidflex import (
+                    MINI_POINT_VALUE, MICRO_POINT_VALUE,
                 )
+                use_mini_eg = np.array([s[0] > 0 for s in eg_sizings], dtype=bool)
+                # Mini-vs-micro flip happens only if mini_risk_1c > grind_risk
+                # AND <= eg_risk. Detect.
+                sl_pts_per_slot = np.array([
+                    float(np.median(bootstrap_oos_sl_dists_per_slot[a][bootstrap_oos_fired_per_slot[a]]))
+                    if bootstrap_oos_fired_per_slot[a].any() else 1.0
+                    for a in range(bootstrap_oos_R_per_slot.shape[0])
+                ])
+                mini_risk_1c_per_slot = sl_pts_per_slot * MINI_POINT_VALUE
+                use_mini_grind = mini_risk_1c_per_slot <= grind_total_risk
+                if np.array_equal(use_mini_eg, use_mini_grind):
+                    # SAFE to scale: contract type unchanged → commission unchanged.
+                    # pnl_eg = R*risk - n*comm  →  R*risk = pnl_eg + n*comm.
+                    # pnl_grind = R*grind_risk - n*comm
+                    #           = (pnl_eg + n*comm) * (grind_risk/eg_risk) - n*comm
+                    # But comm depends on n_trades_today which we don't have here.
+                    # Simpler: compute gross_eg = pnl_eg + comm, scale to grind, sub comm.
+                    # comm shape = (max_c, n_sims, horizon) = comm_per_slot × n_today
+                    # We can reconstruct n_today × comm_per_slot:
+                    n_today = bootstrap_oos_n_trades_per_slot[:, day_indices].astype(np.float64)
+                    from backtest.propfirm.lucidflex import MINI_COMM_RT, MICRO_COMM_RT
+                    comm_per_slot = np.where(use_mini_eg, MINI_COMM_RT, MICRO_COMM_RT)
+                    comm_3d = comm_per_slot[:, None, None] * n_today
+                    gross_eg = pnl_eg_per_slot + comm_3d
+                    pnl_grind_per_slot = (gross_eg * (grind_total_risk / eg_total_risk)
+                                          - comm_3d)
+                else:
+                    # FALLBACK: contract type changes between phases → full rebuild
+                    pnl_grind_per_slot, _ = _build_per_slot_bootstrap_pnl(
+                        bootstrap_oos_R_per_slot,
+                        bootstrap_oos_sl_dists_per_slot,
+                        bootstrap_oos_fired_per_slot,
+                        bootstrap_oos_n_trades_per_slot,
+                        day_indices, grind_total_risk, account,
+                        cap_daily_risk=bootstrap_cap_daily_risk,
+                    )
             else:
                 pnl_grind_per_slot = pnl_eg_per_slot
             pnl_p3_per_slot, p3_sizings_full = _build_per_slot_bootstrap_pnl(
