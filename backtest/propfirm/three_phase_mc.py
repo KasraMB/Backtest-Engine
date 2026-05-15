@@ -552,6 +552,7 @@ def three_phase_reinvestment_mc(
     regime_result:     Optional[RegimeResult] = None,  # enables regime-aware draws
     slot_assignments:  Optional[List[SlotAssignment]] = None,  # per-slot (P12, P3) configs
     p3_risk_pct:       Optional[float] = None, # if set, fixed risk pct for phase 3 (overrides min-winning-day)
+    grind_risk_pct:    Optional[float] = None, # if set, separate risk for phase 2 (funded grind). If None, uses eval_grind_risk for both eval+grind (legacy).
     # ── Bootstrap mode (OOS evaluation) ──
     # When all four arrays are supplied, the simulator skips regime/poisson sampling
     # and instead samples (n_sims, horizon) day-indices via stationary block bootstrap
@@ -661,6 +662,9 @@ def three_phase_reinvestment_mc(
 
     # ── Phase 1+2 sizing: total risk = eval_grind_risk × MLL ───────────────
     eg_total_risk = eval_grind_risk * MLL_AMT
+    # Optional separate phase-2 (funded grind) risk; defaults to eval_grind_risk
+    grind_total_risk = (grind_risk_pct * MLL_AMT
+                        if grind_risk_pct is not None else eg_total_risk)
 
     if bootstrap_mode:
         # Stationary block bootstrap path: shared (n_sims, horizon) day indices,
@@ -684,6 +688,7 @@ def three_phase_reinvestment_mc(
                 p3_risk_dollars, account,
             )
             pnl_eg_per_slot = None
+            pnl_grind_per_slot = None
             pnl_p3_per_slot = None
         else:
             eg_comm_per_slot = None
@@ -696,6 +701,19 @@ def three_phase_reinvestment_mc(
                 day_indices, eg_total_risk, account,
                 cap_daily_risk=bootstrap_cap_daily_risk,
             )
+            # Phase 2 (funded grind) uses grind_total_risk if separate;
+            # else reuses the eval stream (legacy behaviour).
+            if grind_risk_pct is not None and grind_total_risk != eg_total_risk:
+                pnl_grind_per_slot, _ = _build_per_slot_bootstrap_pnl(
+                    bootstrap_oos_R_per_slot,
+                    bootstrap_oos_sl_dists_per_slot,
+                    bootstrap_oos_fired_per_slot,
+                    bootstrap_oos_n_trades_per_slot,
+                    day_indices, grind_total_risk, account,
+                    cap_daily_risk=bootstrap_cap_daily_risk,
+                )
+            else:
+                pnl_grind_per_slot = pnl_eg_per_slot
             pnl_p3_per_slot, p3_sizings_full = _build_per_slot_bootstrap_pnl(
                 bootstrap_oos_R_per_slot,
                 bootstrap_oos_sl_dists_per_slot,
@@ -900,14 +918,23 @@ def three_phase_reinvestment_mc(
 
             pnl_eg_today = np.where(fired_today_t, gross_eg - comm_eg_today, 0.0)
             pnl_p3_today = np.where(fired_today_t, gross_p3 - comm_p3_today, 0.0)
+            # buf_safety path doesn't yet separate grind from eval risk;
+            # treat them the same (legacy behaviour).
+            pnl_grind_today = pnl_eg_today
         elif per_slot_mode:
             pnl_eg_today = pnl_eg_per_slot[:, :, day].T   # (n_sims, max_c)
             pnl_p3_today = pnl_p3_per_slot[:, :, day].T
+            pnl_grind_today = (pnl_grind_per_slot[:, :, day].T
+                               if pnl_grind_per_slot is not None
+                               else pnl_eg_today)
         else:
             pnl_eg_today = np.broadcast_to(pnl_eg[:, day:day+1], (n_sims, max_c))
             pnl_p3_today = np.broadcast_to(pnl_p3[:, day:day+1], (n_sims, max_c))
+            pnl_grind_today = pnl_eg_today   # legacy mode shares stream
 
-        d_pnl = np.where(is_pay_i, pnl_p3_today, pnl_eg_today)
+        # Phase-aware PnL routing: eval→eg, grind→grind (may differ), payout→p3
+        d_pnl = np.where(is_pay_i, pnl_p3_today,
+                np.where(is_grind_i, pnl_grind_today, pnl_eg_today))
         d_pnl = np.where(active_i, d_pnl, 0.0)
 
         # ── Apply PnL, detect blown, update bal/peak ──────────────────────
@@ -933,7 +960,14 @@ def three_phase_reinvestment_mc(
             # Per-trade risk: with cap_daily_risk on, individual trade risk is
             # phase_risk / n_trades_today. The intraday-blow test checks whether
             # buffer was below this per-trade max-adverse — single-trade granularity.
-            phase_risk = np.where(is_pay_i, p3_risk_dollars, eg_total_risk)
+            # Phase-aware per-trade risk:
+            #   eval     (phase=1) → eg_total_risk
+            #   grind    (phase=2) → grind_total_risk (may differ from eval)
+            #   payout   (phase=3) → p3_risk_dollars
+            phase_risk = np.where(
+                is_pay_i, p3_risk_dollars,
+                np.where(is_grind_i, grind_total_risk, eg_total_risk),
+            )
             n_today_for_risk = bootstrap_oos_n_trades_per_slot[:, day_indices[:, day]].T  # (n_sims, max_c)
             if bootstrap_cap_daily_risk:
                 per_trade_risk = phase_risk / np.maximum(n_today_for_risk, 1)
