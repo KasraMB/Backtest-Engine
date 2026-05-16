@@ -34,10 +34,17 @@ def build_per_slot_arrays_vec(
     per_day:            dict,
     all_oos_dates:      Sequence,
     max_trades_per_day: int = 4,
+    sl_max_pts:         float | None = None,
 ):
     """Vectorised per-slot per-OOS-day array builder.
 
     Returns (Rs, Ss, Fs, Ns, Rts, Mts) all shape (n_slots, n_oos_days [, max_trades]).
+
+    If sl_max_pts is set, trades whose individual sl_dist > sl_max_pts are
+    masked out (R=0, MAE_R=0). The per-day R sum, n_trades, fired, and mean
+    sl are then re-derived from the surviving trades — so the MC sees them
+    as if those trades never fired. Useful for filtering wide-stop setups
+    that drive deep MAE.
     """
     n_oos_days = len(all_oos_dates)
     date_to_idx = {d: i for i, d in enumerate(all_oos_dates)}
@@ -69,6 +76,8 @@ def build_per_slot_arrays_vec(
     F_stack  = np.zeros((n_cfgs, n_oos_days), dtype=bool)
     Rt_stack = np.zeros((n_cfgs, n_oos_days, max_trades_per_day), dtype=np.float32)
     Mt_stack = np.zeros((n_cfgs, n_oos_days, max_trades_per_day), dtype=np.float32)
+    # Per-trade SL distance, used only when sl_max_pts filter is active
+    St_stack = np.zeros((n_cfgs, n_oos_days, max_trades_per_day), dtype=np.float32)
 
     # The only non-vectorised part: per-cfg DataFrame -> per-day arrays.
     # This is unavoidable because the source is a pandas DataFrame keyed
@@ -98,6 +107,24 @@ def build_per_slot_arrays_vec(
             ti = sub_t['_within_day'].values.astype(np.int32)
             Rt_stack[ci, di, ti] = sub_t.R.values
             Mt_stack[ci, di, ti] = sub_t.MAE_R.values
+            St_stack[ci, di, ti] = sub_t.sl_dist.values
+
+    # ── Apply SL filter (if requested) — mask trades with sl > threshold ──
+    # Operates at the per-cfg / per-day / per-trade level. After masking, we
+    # MUST re-derive the per-day rollups (R sum, n_trades, fired, sl mean).
+    if sl_max_pts is not None:
+        # Mask: True for surviving trades (sl <= threshold AND originally non-zero sl)
+        survive = (St_stack > 0) & (St_stack <= sl_max_pts)
+        Rt_stack = np.where(survive, Rt_stack, 0.0)
+        Mt_stack = np.where(survive, Mt_stack, 0.0)
+        # Re-derive per-day rollups from masked per-trade arrays
+        N_stack = survive.sum(axis=2).astype(np.int16)              # trades per day, post-filter
+        F_stack = N_stack > 0
+        R_stack = Rt_stack.sum(axis=2).astype(np.float32)            # day's R = sum of surviving R
+        # Per-day mean SL of surviving trades (NaN if no survivors → fallback 1.0)
+        sl_sum   = (St_stack * survive).sum(axis=2)
+        sl_mean  = np.where(N_stack > 0, sl_sum / np.maximum(N_stack, 1), 1.0)
+        S_stack  = sl_mean.astype(np.float32)
 
     # ── Build (n_states=3, n_slots) cfg_id table ────────────────────────
     slot_cfg_table = np.zeros((3, n_slots), dtype=np.int32)
@@ -136,18 +163,22 @@ def build_alloc_arrays_vec(
     regime_for_9301400: np.ndarray,
     regime_for_2000:    np.ndarray,
     max_trades_per_day: int = 4,
+    sl_max_pts:         float | None = None,
 ):
-    """Stack per-session vectorised arrays for a (n_9301400, n_2000) split."""
+    """Stack per-session vectorised arrays for a (n_9301400, n_2000) split.
+
+    Optional sl_max_pts filters out trades with individual sl > threshold.
+    """
     parts = []
     if n_9301400 > 0:
         parts.append(build_per_slot_arrays_vec(
             '930+1400', n_9301400, regime_for_9301400, selection, per_day,
-            all_oos_dates, max_trades_per_day,
+            all_oos_dates, max_trades_per_day, sl_max_pts=sl_max_pts,
         ))
     if n_2000 > 0:
         parts.append(build_per_slot_arrays_vec(
             '2000', n_2000, regime_for_2000, selection, per_day,
-            all_oos_dates, max_trades_per_day,
+            all_oos_dates, max_trades_per_day, sl_max_pts=sl_max_pts,
         ))
     Rs  = np.concatenate([p[0] for p in parts], axis=0)
     Ss  = np.concatenate([p[1] for p in parts], axis=0)
