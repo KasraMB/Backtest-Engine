@@ -61,12 +61,19 @@ class RegimeResult:
     n_states:             int = 3
 
 
-def _sort_states(model, returns_flat: np.ndarray) -> np.ndarray:
+def _sort_states(model, X: np.ndarray) -> np.ndarray:
     """
     Return a permutation array that maps model states to sorted order
-    (ascending mean return: 0=bear, 1=neutral, 2=bull).
+    (ascending mean of the FIRST feature: 0=bear, 1=neutral, 2=bull).
+
+    For multivariate fits (e.g. [return, volume_z]), the first feature is
+    always the return.
     """
-    order = np.argsort(model.means_.flatten())
+    means = model.means_   # shape (n_states, n_features)
+    if means.ndim == 1:
+        order = np.argsort(means)
+    else:
+        order = np.argsort(means[:, 0])    # sort by first feature (return)
     return order
 
 
@@ -94,23 +101,33 @@ def _avg_durations_from_trans(trans: np.ndarray, n_states: int) -> dict[int, flo
     return result
 
 
-def _fit_hmm(returns: np.ndarray, n_states: int, seed: int = 42):
-    """Fit a Gaussian HMM and return (model, order) with states sorted by mean."""
+def _fit_hmm(features: np.ndarray, n_states: int, seed: int = 42):
+    """Fit a Gaussian HMM and return (model, order).
+
+    `features` is shape (N,) for univariate (just returns) OR (N, F) for
+    multivariate (e.g. [returns, volume_z]). States are sorted by mean of
+    the FIRST feature (assumed to be returns) so 0=bear, 1=neutral, 2=bull.
+    """
     from hmmlearn.hmm import GaussianHMM
-    # Sanitise: remove NaN/Inf before fitting
-    clean = returns[np.isfinite(returns)]
-    if len(clean) < n_states * 5:
-        raise ValueError(f"Not enough clean data points ({len(clean)}) to fit HMM")
+    if features.ndim == 1:
+        X = features.reshape(-1, 1)
+    else:
+        X = features
+    # Drop any rows with non-finite values
+    finite_mask = np.isfinite(X).all(axis=1)
+    X = X[finite_mask]
+    if len(X) < n_states * 5:
+        raise ValueError(f"Not enough clean data points ({len(X)}) to fit HMM")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         model = GaussianHMM(
             n_components=n_states,
-            covariance_type="diag",   # "diag" is stable for 1D; "full" requires >1D
+            covariance_type="diag",
             n_iter=1000,
             random_state=seed,
         )
-        model.fit(clean.reshape(-1, 1))
-    order = _sort_states(model, clean)
+        model.fit(X)
+    order = _sort_states(model, X)
     return model, order
 
 
@@ -131,6 +148,8 @@ def fit_regimes(
     train_ratio:   float = 0.5,
     mode:          str   = "rolling",   # "offline" | "rolling"
     seed:          int   = 42,
+    daily_volumes: Optional[np.ndarray] = None,
+    volume_window: int   = 30,
 ) -> RegimeResult:
     """
     Fit HMM and return regime labels for every day.
@@ -143,8 +162,32 @@ def fit_regimes(
     train_ratio   : fraction of days used for training in rolling mode
     mode          : "offline" (full-period fit, biased) or
                     "rolling" (expanding window, forward-safe)
+    daily_volumes : optional daily volume series shape (N,). When provided,
+                    a rolling-z-scored log volume is appended as a 2nd HMM
+                    feature, capturing volume-anomaly information alongside
+                    returns. States still sorted by mean RETURN (first feature).
+    volume_window : rolling window (days) for log-volume z-score normalisation.
     """
     n = len(daily_returns)
+
+    # Build feature matrix: returns alone, or [returns, log_vol_z]
+    if daily_volumes is None:
+        features = daily_returns
+    else:
+        if len(daily_volumes) != n:
+            raise ValueError(f"daily_volumes length {len(daily_volumes)} != daily_returns length {n}")
+        log_vol = np.log(np.maximum(np.asarray(daily_volumes, dtype=np.float64), 1.0))
+        # Rolling z-score with leading window NaN
+        vol_z = np.full(n, 0.0)
+        for t in range(n):
+            lo = max(0, t - volume_window + 1)
+            window = log_vol[lo:t + 1]
+            if len(window) >= 3:
+                mu = window.mean()
+                sd = window.std(ddof=1) if len(window) > 1 else 1.0
+                if sd > 1e-9:
+                    vol_z[t] = (log_vol[t] - mu) / sd
+        features = np.column_stack([daily_returns, vol_z])
     if n < 20:
         raise ValueError(f"Need at least 20 daily returns, got {n}")
 
@@ -155,39 +198,33 @@ def fit_regimes(
 
     labels_raw: np.ndarray
 
+    # Helper to give _fit_hmm/predict the right-shape feature matrix
+    def _feat_slice(t_start: int, t_end: int) -> np.ndarray:
+        sl = features[t_start:t_end]
+        return sl if sl.ndim == 2 else sl.reshape(-1, 1)
+
     if mode == "offline":
         # Fit on full period — biased, for reporting only
-        model, order = _fit_hmm(daily_returns, n_states, seed)
-        labels_raw   = _relabel(model.predict(daily_returns.reshape(-1, 1)), order)
+        model, order = _fit_hmm(features, n_states, seed)
+        labels_raw   = _relabel(model.predict(_feat_slice(0, n)), order)
 
     else:  # rolling / expanding window
-        # Fit on first train_ratio of data, predict the rest one day at a time
-        # using expanding window (each prediction only uses data up to that point)
         labels_raw = np.full(n, -1, dtype=np.int32)
-
         # In-sample: fit on training data and predict training labels
-        model, order = _fit_hmm(daily_returns[:train_n], n_states, seed)
+        model, order = _fit_hmm(features[:train_n], n_states, seed)
         labels_raw[:train_n] = _relabel(
-            model.predict(daily_returns[:train_n].reshape(-1, 1)), order
+            model.predict(_feat_slice(0, train_n)), order
         )
-
-        # Out-of-sample: refit each day on expanding window
-        # For efficiency, refit every `refit_freq` days instead of every day
-        refit_freq = max(1, (n - train_n) // 50)   # ~50 refits total
+        # Out-of-sample: refit every `refit_freq` days on expanding window
+        refit_freq = max(1, (n - train_n) // 50)
         current_model, current_order = model, order
         last_refit = train_n
-
         for t in range(train_n, n):
             if (t - last_refit) >= refit_freq:
-                current_model, current_order = _fit_hmm(
-                    daily_returns[:t], n_states, seed
-                )
+                current_model, current_order = _fit_hmm(features[:t], n_states, seed)
                 last_refit = t
-            # Predict current bar using current model
-            raw = current_model.predict(daily_returns[:t+1].reshape(-1, 1))[-1]
+            raw = current_model.predict(_feat_slice(0, t + 1))[-1]
             labels_raw[t] = _relabel(np.array([raw]), current_order)[0]
-
-        # Fill any remaining -1s (shouldn't happen but safety)
         labels_raw = np.where(labels_raw == -1, 1, labels_raw)
 
     # ── Build output ──────────────────────────────────────────────────────────
@@ -196,11 +233,22 @@ def fit_regimes(
     # Transition matrix from full label sequence
     trans = _build_transition_matrix(labels_raw, n_states)
 
-    # State statistics (from training model)
-    train_model, train_order = _fit_hmm(daily_returns[:train_n], n_states, seed)
-    sorted_means = train_model.means_.flatten()[train_order]
-    # covars_ shape for diag: (n_states, n_features) — take sqrt of variance
-    sorted_stds = np.sqrt(train_model.covars_.flatten()[train_order])
+    # State statistics (from training model). For multivariate, report
+    # means/stds of the RETURN feature only (the first column).
+    train_model, train_order = _fit_hmm(features[:train_n], n_states, seed)
+    means_arr = train_model.means_
+    if means_arr.ndim == 1:
+        sorted_means = means_arr[train_order]
+        sorted_stds  = np.sqrt(train_model.covars_.flatten()[train_order])
+    else:
+        sorted_means = means_arr[train_order, 0]
+        # covars_ for diag shape: (n_states, n_features) — take return-axis variance
+        covars = train_model.covars_
+        if covars.ndim == 3:
+            # full covar shape (n_states, F, F)
+            sorted_stds = np.sqrt(covars[train_order, 0, 0])
+        else:
+            sorted_stds = np.sqrt(covars[train_order, 0])
 
     # Average duration per named state — derived from transition matrix
     # (more stable than counting label runs which can have relabelling artifacts)

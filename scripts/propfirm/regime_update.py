@@ -48,7 +48,10 @@ HMM_PARAMS = dict(
     train_ratio=0.5,
     mode='rolling',
     seed=42,
+    volume_window=30,         # rolling z-score window for volume feature
 )
+
+USE_VOLUME_FEATURE = True     # set False for pure-returns (legacy) HMM
 
 
 def compute_regime(parquet_path: Path) -> tuple[dict, object]:
@@ -66,9 +69,14 @@ def compute_regime(parquet_path: Path) -> tuple[dict, object]:
     daily_dates   = pd.to_datetime(df['Date'].iloc[1:].values).date.tolist()
     daily_rets    = daily_log_ret.values.astype(np.float64)
 
+    daily_vols = None
+    if USE_VOLUME_FEATURE and 'Volume' in df.columns:
+        daily_vols = df['Volume'].iloc[1:].values.astype(np.float64)
+
     result = fit_regimes(
         daily_returns=daily_rets,
         daily_dates=daily_dates,
+        daily_volumes=daily_vols,
         **HMM_PARAMS,
     )
 
