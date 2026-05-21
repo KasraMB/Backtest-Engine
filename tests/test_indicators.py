@@ -125,6 +125,7 @@ def test_orb_value_area_wrapper():
 def test_per_state_quantile_separates_states():
     rng = np.random.default_rng(13)
     # 3 states: state 0 has small values, state 1 medium, state 2 large
+    # All states have ≥30 obs (MIN_OBS threshold)
     vals = np.concatenate([rng.normal(0, 1, 200), rng.normal(5, 1, 200), rng.normal(10, 1, 200)])
     labels = np.concatenate([np.zeros(200), np.ones(200), 2 * np.ones(200)]).astype(int)
     q = per_state_quantile(vals, labels, q=0.90, n_states=3)
@@ -134,9 +135,9 @@ def test_per_state_quantile_separates_states():
 
 
 def test_per_state_quantile_small_state_nan():
-    # State 0 has 20 obs (valid), state 1 has 3 obs (below 10-obs threshold)
-    vals = np.concatenate([np.arange(20, dtype=float), np.array([100.0, 101.0, 102.0])])
-    labels = np.concatenate([np.zeros(20, dtype=int), np.ones(3, dtype=int)])
+    # MIN_OBS=30: state 0 has 40 obs (valid), state 1 has 25 obs (below threshold)
+    vals = np.concatenate([np.arange(40, dtype=float), np.arange(100, 125, dtype=float)])
+    labels = np.concatenate([np.zeros(40, dtype=int), np.ones(25, dtype=int)])
     q = per_state_quantile(vals, labels, q=0.50, n_states=2)
     assert np.isnan(q[1])
     assert not np.isnan(q[0])

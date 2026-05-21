@@ -23,10 +23,14 @@ def per_state_quantile(
     """
     if values.shape != state_labels.shape:
         raise ValueError(f"shape mismatch: values {values.shape} vs labels {state_labels.shape}")
+    # Min-obs floor: a q-quantile from n samples has variance ~ q(1-q)/(n·f(x_q)^2).
+    # For q=0.90 with n=10, the 90th percentile is literally the max of the sample.
+    # Require ≥30 obs (≥3 × 1/(1-q) at q=0.90) before trusting the estimate.
+    MIN_OBS = 30
     out: dict[int, float] = {}
     for s in range(n_states):
         mask = state_labels == s
-        if mask.sum() < 10:
+        if mask.sum() < MIN_OBS:
             out[s] = float('nan')
             continue
         out[s] = float(np.quantile(values[mask], q))
