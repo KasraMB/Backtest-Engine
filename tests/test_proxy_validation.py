@@ -7,6 +7,7 @@ import pytest
 from backtest.ivb.proxy_validation import (
     build_proxy_trades_vec,
     permutation_null_mean_R,
+    random_entry_null_mean_R,
     evaluate_proxy,
     vxn_ev_separation_test,
 )
@@ -106,20 +107,47 @@ def test_perm_null_small_n_returns_nan():
 
 # ─── evaluate_proxy ──────────────────────────────────────────────────────────
 
-def test_evaluate_proxy_no_edge():
+def test_random_entry_null_centered_on_pool_mean():
+    """Random-entry null should be centred on the FULL POOL mean, with
+    std ≈ pool_std / sqrt(k)."""
+    rng = np.random.default_rng(0)
+    pool = rng.normal(0.05, 1.0, 5000)
+    null = random_entry_null_mean_R(pool, k_signals=200, n_perm=1000, seed=2026)
+    # Centre = pool mean
+    assert null.mean() == pytest.approx(pool.mean(), abs=0.05)
+    # Std ≈ pool_std / sqrt(k)
+    expected_se = pool.std() / np.sqrt(200)
+    assert null.std() == pytest.approx(expected_se, rel=0.15)
+
+
+def test_random_entry_null_small_pool_returns_nan():
+    """Pools < 50 obs → NaN signal."""
+    pool = np.arange(30, dtype=float)
+    null = random_entry_null_mean_R(pool, k_signals=20, n_perm=100)
+    assert np.isnan(null[0])
+
+
+def test_evaluate_proxy_no_edge_vs_pool():
+    """When proxy R is sampled from the same distribution as the pool,
+    should not pass null."""
     rng = np.random.default_rng(1)
-    R = rng.normal(0, 1, 200)
-    res = evaluate_proxy(R, cost_per_RT_dollars=13.50, avg_sl_dist_pts=25.0)
-    assert not res['passes_both']
+    pool = rng.normal(0.05, 1, 10000)
+    proxy = rng.choice(pool, size=200, replace=False)
+    res = evaluate_proxy(proxy, pool, direction=1,
+                         cost_per_RT_dollars=13.50, avg_sl_dist_pts=25.0)
+    assert not res['passes_null']
     assert res['n_trades'] == 200
-    # cost_R should equal 13.5 / (20 * 25) = 0.027
+    assert res['pool_n'] == 10000
     assert res['cost_R'] == pytest.approx(0.027, abs=1e-4)
 
 
-def test_evaluate_proxy_strong_edge():
+def test_evaluate_proxy_strong_edge_vs_pool():
+    """Proxy R systematically higher than pool → should pass null AND economic."""
     rng = np.random.default_rng(1)
-    R = rng.normal(0.30, 1, 500)   # strong +0.30R/trade edge
-    res = evaluate_proxy(R, cost_per_RT_dollars=13.50, avg_sl_dist_pts=25.0,
+    pool = rng.normal(0.05, 1, 10000)
+    proxy_R = rng.normal(0.30, 1, 500)   # strong +0.30R/trade edge
+    res = evaluate_proxy(proxy_R, pool, direction=1,
+                         cost_per_RT_dollars=13.50, avg_sl_dist_pts=25.0,
                          economic_threshold_R=0.15)
     assert res['passes_null']
     assert res['passes_economic']
@@ -127,10 +155,19 @@ def test_evaluate_proxy_strong_edge():
 
 
 def test_evaluate_proxy_insufficient_trades():
-    res = evaluate_proxy(np.array([0.5, 1.0, -0.2]),
+    pool = np.random.default_rng(2).normal(0, 1, 1000)
+    res = evaluate_proxy(np.array([0.5, 1.0, -0.2]), full_R_pool=pool, direction=1,
                          cost_per_RT_dollars=13.50, avg_sl_dist_pts=25.0)
     assert not res['passes_both']
     assert 'insufficient' in res['reason']
+
+
+def test_evaluate_proxy_invalid_direction_raises():
+    pool = np.random.default_rng(3).normal(0, 1, 1000)
+    R = np.random.default_rng(4).normal(0.1, 1, 100)
+    with pytest.raises(ValueError):
+        evaluate_proxy(R, full_R_pool=pool, direction=0,
+                       cost_per_RT_dollars=13.50, avg_sl_dist_pts=25.0)
 
 
 # ─── VXN EV-separation ───────────────────────────────────────────────────────

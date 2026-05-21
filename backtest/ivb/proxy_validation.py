@@ -161,31 +161,43 @@ def build_proxy_trades_vec(
 # Permutation null + economic threshold
 # ─────────────────────────────────────────────────────────────────────────────
 
-def permutation_null_mean_R(
-    R_values: np.ndarray,
+def random_entry_null_mean_R(
+    full_R_pool: np.ndarray,
+    k_signals: int,
     n_perm: int = 1000,
     seed: int = 2026,
 ) -> np.ndarray:
-    """Null distribution of mean(R) under random sign-flipping.
+    """Null distribution of mean(R) under random entry bar selection.
 
-    H0: the proxy carries no directional signal, so the sign of R is exchangeable
-    with +/-1 fair coin flips. Under H0, E[mean(signed_R)] = 0.
+    H0: our signal bars are not better than random entries. Under H0, picking
+    `k_signals` bars at random from the same universe (all valid forward-R
+    candidates in the test window) gives an mean(R) distribution centred on
+    pool_mean(R) with std ≈ pool_std(R) / sqrt(k_signals).
 
-    Vectorised: single (n_perm, n) sign matrix; one mean over axis=1.
-    For n=1000, n_perm=1000 → ~8 MB matrix, <100 ms.
+    This is the correct null for "did the proxy pick a better subset than
+    chance?" — replaces the sign-flip null which tests the unrelated question
+    "is the mean of these R values different from a symmetric-around-zero
+    distribution of |R|."
+
+    Vectorised: single (n_perm, k_signals) index matrix, one fancy-index, one
+    mean over axis=1. With replacement (bootstrap-style) for tractable variance
+    in small pools.
     """
-    R = np.asarray(R_values, dtype=np.float64)
+    R = np.asarray(full_R_pool, dtype=np.float64)
     R = R[np.isfinite(R)]
-    if len(R) < 20:
+    n_pool = len(R)
+    if n_pool < 50 or k_signals < 20:
         return np.array([np.nan])
     rng = np.random.default_rng(seed)
-    signs = rng.choice(np.array([-1.0, 1.0]), size=(n_perm, len(R)))
-    null_means = (signs * R[None, :]).mean(axis=1)
+    idx = rng.integers(0, n_pool, size=(n_perm, k_signals))   # with replacement
+    null_means = R[idx].mean(axis=1)
     return null_means
 
 
 def evaluate_proxy(
     proxy_R: np.ndarray,
+    full_R_pool: np.ndarray,
+    direction: int,
     cost_per_RT_dollars: float,
     avg_sl_dist_pts: float,
     economic_threshold_R: float = 0.15,
@@ -193,20 +205,34 @@ def evaluate_proxy(
     point_value: float = 20.0,
     seed: int = 2026,
 ) -> dict:
-    """Two-gate test: permutation null AND economic threshold (both in R units).
+    """Two-gate test: random-entry permutation null + economic threshold.
+
+    Both gates in R units. P-value is ONE-SIDED in the direction's expected sign
+    (long-biased proxy should show positive mean R; we test for mean_R BETTER
+    than pool, not just different).
+
+    `full_R_pool` is the per-bar forward-R for ALL valid bars in the test window
+    for THIS direction (long-side R pool for long proxies, short-side for short),
+    built once by the caller and reused across all proxies of the same direction.
 
     Returns dict with mean_R, mean_R_net, p_value, passes_null, passes_economic,
-    passes_both, and the cost_R conversion for transparency.
+    passes_both, plus pool_mean_R for diagnostic transparency.
     """
+    if direction not in (-1, 1):
+        raise ValueError(f"direction must be +/-1, got {direction}")
     R = np.asarray(proxy_R, dtype=np.float64)
     R = R[np.isfinite(R)]
     n = len(R)
+    pool = np.asarray(full_R_pool, dtype=np.float64)
+    pool = pool[np.isfinite(pool)]
     if n < 20:
         return {
             'n_trades': int(n),
             'mean_R': float('nan'),
             'mean_R_net': float('nan'),
             'cost_R': float('nan'),
+            'pool_mean_R': float(pool.mean()) if len(pool) else float('nan'),
+            'pool_n': int(len(pool)),
             'p_value': float('nan'),
             'passes_null': False,
             'passes_economic': False,
@@ -218,9 +244,13 @@ def evaluate_proxy(
     mean_R = float(R.mean())
     mean_R_net = mean_R - cost_R
 
-    null_means = permutation_null_mean_R(R, n_perm=n_perm, seed=seed)
-    # Two-sided p-value (proxy could be long-biased OR short-biased entry edge)
-    p_value = float((np.abs(null_means) >= abs(mean_R)).mean())
+    null_means = random_entry_null_mean_R(pool, k_signals=n, n_perm=n_perm, seed=seed)
+    # One-sided p-value: are we BETTER than random entry? Both long and short
+    # proxies represent "this entry has positive forward-R after sign correction
+    # — the proxy direction was already baked into how R was computed (entries
+    # with direction=+1 → R = (exit-entry)/sl_dist; direction=-1 → R = (entry-exit)/sl_dist).
+    # So in BOTH cases, a winning proxy means HIGHER mean R than random.
+    p_value = float((null_means >= mean_R).mean())
 
     passes_null = p_value < 0.05
     passes_economic = mean_R_net >= economic_threshold_R
@@ -229,11 +259,29 @@ def evaluate_proxy(
         'mean_R': mean_R,
         'mean_R_net': mean_R_net,
         'cost_R': float(cost_R),
+        'pool_mean_R': float(pool.mean()),
+        'pool_n': int(len(pool)),
         'p_value': p_value,
         'passes_null': bool(passes_null),
         'passes_economic': bool(passes_economic),
         'passes_both': bool(passes_null and passes_economic),
     }
+
+
+# Backward-compat alias for the old sign-flip null (kept for tests until removed)
+def permutation_null_mean_R(R_values: np.ndarray, n_perm: int = 1000, seed: int = 2026) -> np.ndarray:
+    """DEPRECATED — sign-flip null, replaced by random_entry_null_mean_R.
+
+    Retained only to avoid breaking imports during transition. Returns the same
+    null distribution as before. New callers should use random_entry_null_mean_R.
+    """
+    R = np.asarray(R_values, dtype=np.float64)
+    R = R[np.isfinite(R)]
+    if len(R) < 20:
+        return np.array([np.nan])
+    rng = np.random.default_rng(seed)
+    signs = rng.choice(np.array([-1.0, 1.0]), size=(n_perm, len(R)))
+    return (signs * R[None, :]).mean(axis=1)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
