@@ -65,10 +65,15 @@ def _broadcast_labels_to_bars(labels_by_date: dict[date, int],
 
     Bars on dates with no HMM label (e.g. days outside the cache) get `fallback`
     (default = neutral). Fully vectorised via pd.Series.reindex.
+
+    TZ handling (regression-tested): HMM label dates are tz-naive Python `date`
+    objects; bar_dates may be tz-aware. Both sides are converted to tz-naive
+    midnight Timestamps for the reindex to actually match.
     """
     src = pd.Series(labels_by_date)
-    src.index = pd.DatetimeIndex(src.index)
-    bar_day = bar_dates.normalize()
+    src.index = pd.DatetimeIndex(src.index)   # tz-naive
+    bar_day = bar_dates.tz_localize(None).normalize() \
+        if bar_dates.tz is not None else bar_dates.normalize()
     # Reindex on unique days first (sub-second), then propagate per bar
     unique_days = bar_day.unique()
     day_labels = src.reindex(unique_days).fillna(fallback).astype(int)
@@ -104,7 +109,27 @@ def main():
     n_states = hmm.n_states
     bar_idx = pd.DatetimeIndex(df.index)
     labels_per_bar = _broadcast_labels_to_bars(hmm.labels, bar_idx)
+
+    # Invariant 1: label coverage. Count how many UNIQUE BAR DAYS map to a real
+    # HMM label (vs the fallback). If <95% coverage, the broadcast is broken.
+    bar_day_naive = bar_idx.tz_localize(None).normalize() if bar_idx.tz is not None else bar_idx.normalize()
+    unique_bar_days = bar_day_naive.unique()
+    hmm_keys = pd.DatetimeIndex(list(hmm.labels.keys()))
+    matched = unique_bar_days.isin(hmm_keys).mean()
+    assert matched >= 0.95, (
+        f"Label coverage too low ({matched:.2%}) — HMM labels not aligning with bar dates. "
+        "Check tz/normalization in _broadcast_labels_to_bars."
+    )
+
+    # Invariant 2: per-state representation. No state should be <5% of bars.
+    state_share = np.bincount(labels_per_bar, minlength=n_states) / len(labels_per_bar)
+    assert state_share.min() >= 0.05, (
+        f"State distribution degenerate: {dict(enumerate(state_share.tolist()))}. "
+        "Expected each state >= 5% of bars."
+    )
     print(f"  n_states={n_states}, labels broadcast in {(time.perf_counter()-t_start):.2f}s", flush=True)
+    print(f"  Label coverage: {matched:.1%} of bar-days; state shares: "
+          f"{ {i: f'{s:.1%}' for i, s in enumerate(state_share)} }", flush=True)
 
     # ── ATR_20_daily + broadcast (prior-day shift) ────────────────────────
     print("Computing ATR_20_daily...", flush=True)
@@ -165,6 +190,15 @@ def main():
     print(f"  Volume thresholds   (per state): {vol_thresh}", flush=True)
     print(f"  PxChg thresholds    (per state): {pxchg_thresh}", flush=True)
 
+    # Invariant 3: thresholds must be non-NaN for all states (or only fall back
+    # to universal q via the q-CI monitor, never via insufficient sample size).
+    for name, thresh_dict in [('momentum', mom_thresh), ('volume', vol_thresh), ('pxchg', pxchg_thresh)]:
+        nan_states = [s for s, v in thresh_dict.items() if np.isnan(v)]
+        assert not nan_states, (
+            f"{name} thresholds are NaN for states {nan_states} — insufficient train_fit "
+            "bars per state. Check label broadcast (likely tz mismatch) or HMM cache validity."
+        )
+
     # ── Signals on holdoutA only ──────────────────────────────────────────
     print("Computing signals on holdoutA...", flush=True)
     ha_idx = np.where(ha_mask)[0]
@@ -179,6 +213,15 @@ def main():
     abs_short = abs_mask & (delta > 0)
     print(f"  momentum_long={mom_long.sum()}, momentum_short={mom_short.sum()}, "
           f"absorption_long={abs_long.sum()}, absorption_short={abs_short.sum()}", flush=True)
+
+    # Invariant 4: at q=0.90 momentum each direction should fire on ~5% of holdoutA
+    # RTH bars (state-conditional, ~10% of bars per direction-relevant subset).
+    # Absorption is rarer (vol & |Δp| positively correlated → intersection sparse).
+    n_ha = int(ha_mask.sum())
+    mom_share = (mom_long.sum() + mom_short.sum()) / max(n_ha, 1)
+    if mom_share < 0.005 or mom_share > 0.50:
+        print(f"  WARNING: momentum signal share {mom_share:.2%} of holdoutA bars is "
+              "outside expected 0.5%-50% range — threshold may be miscalibrated.", flush=True)
 
     # ── Build proxy trades + evaluate each ────────────────────────────────
     print("Building proxy trades + permutation null (holdoutA)...", flush=True)
