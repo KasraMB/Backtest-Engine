@@ -42,16 +42,18 @@ def bootstrap_quantile_ci(
 ) -> tuple[float, float]:
     """Percentile-bootstrap CI for the q-quantile of `values`.
 
+    Fully vectorised — single (n_boot, n) resample matrix, one np.quantile call.
+    For typical (n≈500, n_boot=1000) this is ~4 MB and <50 ms.
+
     Returns (lo, hi) at the requested CI level (default 95%).
     """
-    if len(values) < 10:
+    n = len(values)
+    if n < 10:
         return float('nan'), float('nan')
     rng = np.random.default_rng(seed)
-    n = len(values)
-    samples = np.empty(n_boot, dtype=np.float64)
-    for b in range(n_boot):
-        idx = rng.integers(0, n, size=n)
-        samples[b] = np.quantile(values[idx], q)
+    idx = rng.integers(0, n, size=(n_boot, n))   # (n_boot, n) resample indices
+    boot = np.asarray(values, dtype=np.float64)[idx]
+    samples = np.quantile(boot, q, axis=1)        # one call → (n_boot,) quantiles
     alpha = (1.0 - ci) / 2.0
     return float(np.quantile(samples, alpha)), float(np.quantile(samples, 1.0 - alpha))
 
