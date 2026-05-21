@@ -1,0 +1,40 @@
+{
+  "phase": "phase_1_holdoutA",
+  "spec": "ivb_v11_spec.json",
+  "slice": "train_holdoutA (2021)",
+  "pre_registered": {
+    "cost_per_RT_dollars": 13.5,
+    "n_perm": 1000,
+    "n_trade_floor": 40,
+    "perm_p_threshold": 0.05,
+    "ci_level": 0.95,
+    "horizon_bars": 360,
+    "seeds": {
+      "bootstrap": 2026,
+      "permutation": 2026
+    }
+  },
+  "signal_counts": {
+    "total": 168,
+    "long_fades": 81,
+    "short_fades": 87
+  },
+  "results": {
+    "n_signals_raw": 168,
+    "n_trades_valid": 167,
+    "n_floor": 40,
+    "meets_n_floor": true,
+    "mean_R_gross": -0.00029295572042910555,
+    "mean_R_net": -0.040568820452066286,
+    "ci_lower_95_one_sided": -0.1356865132615641,
+    "perm_p_value": 0.593,
+    "null_mean": -0.02000524747626223,
+    "null_std": 0.08147433559566489,
+    "mean_cost_R": 0.04008805451288176,
+    "passes_ci_gate": false,
+    "passes_perm_concordant": false,
+    "passes_overall": false,
+    "disagreement_flag": false
+  },
+  "verdict": "FAIL_TERMINATE_V11"
+}
