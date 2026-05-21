@@ -118,9 +118,15 @@ def main():
     delta = bar_delta(bv, av)
     pxchg_abs = np.abs(close - df['open'].to_numpy(np.float64))
 
-    # ── Train-fit mask (split source from holdoutA) ───────────────────────
-    fit_mask = (bar_idx >= fit_s) & (bar_idx <= fit_e)
-    ha_mask  = (bar_idx >= ha_s)  & (bar_idx <= ha_e)
+    # ── RTH filter (IVB trades RTH only; also avoids session-boundary leak
+    #    where overnight bars get mis-bucketed to the calendar date) ───────
+    bar_min = bar_idx.hour * 60 + bar_idx.minute
+    rth_mask = (bar_min >= 9 * 60 + 30) & (bar_min <= 15 * 60 + 30)
+
+    # ── Train-fit / holdoutA masks (RTH-filtered) ─────────────────────────
+    fit_mask = (bar_idx >= fit_s) & (bar_idx <= fit_e) & rth_mask
+    ha_mask  = (bar_idx >= ha_s)  & (bar_idx <= ha_e)  & rth_mask
+    print(f"  RTH bars: fit={fit_mask.sum():,}, holdoutA={ha_mask.sum():,}", flush=True)
 
     # ── Per-state thresholds on train_fit only ────────────────────────────
     print("Per-state quantile thresholds (train_fit only)...", flush=True)
@@ -166,9 +172,11 @@ def main():
     mom_long  = momentum_signal(delta, labels_per_bar, mom_thresh, +1, n_states) & ha_mask
     mom_short = momentum_signal(delta, labels_per_bar, mom_thresh, -1, n_states) & ha_mask
     abs_mask  = absorption_signal(vol, pxchg_abs, labels_per_bar, vol_thresh, pxchg_thresh, n_states) & ha_mask
-    # Absorption direction inferred from sign of bar_delta (was-bid-side absorption = short bias, etc.)
-    abs_long  = abs_mask & (delta > 0)
-    abs_short = abs_mask & (delta < 0)
+    # Absorption direction (FIXED — was inverted): delta>0 means aggressive BUYERS
+    # absorbed by sell-side liquidity at this level → bearish reversal → SHORT bias.
+    # delta<0 means aggressive sellers absorbed by buyers → LONG bias.
+    abs_long  = abs_mask & (delta < 0)
+    abs_short = abs_mask & (delta > 0)
     print(f"  momentum_long={mom_long.sum()}, momentum_short={mom_short.sum()}, "
           f"absorption_long={abs_long.sum()}, absorption_short={abs_short.sum()}", flush=True)
 
@@ -177,6 +185,26 @@ def main():
     t0 = time.perf_counter()
 
     avg_sl_dist_pts = float(np.nanmean(sl_dist_per_bar[ha_mask]))
+
+    # Build full per-direction R pools ONCE (every RTH bar in holdoutA treated as
+    # a hypothetical signal). The random-entry null samples from these pools.
+    ha_bar_indices = np.where(ha_mask)[0]
+    print(f"Building full R pools for random-entry null ({len(ha_bar_indices):,} bars per direction)...", flush=True)
+    t0 = time.perf_counter()
+    pool_long  = build_proxy_trades_vec(
+        ha_bar_indices, close, high, low, sl_dist_per_bar, +1, HORIZON_BARS,
+    ).R
+    pool_short = build_proxy_trades_vec(
+        ha_bar_indices, close, high, low, sl_dist_per_bar, -1, HORIZON_BARS,
+    ).R
+    pool_long  = pool_long[np.isfinite(pool_long)]
+    pool_short = pool_short[np.isfinite(pool_short)]
+    print(f"  pool_long: n={len(pool_long):,} mean_R={pool_long.mean():+.4f} "
+          f"std={pool_long.std():.3f}", flush=True)
+    print(f"  pool_short: n={len(pool_short):,} mean_R={pool_short.mean():+.4f} "
+          f"std={pool_short.std():.3f}", flush=True)
+    print(f"  Pools built in {(time.perf_counter()-t0):.2f}s", flush=True)
+
     results = {}
     for name, mask, direction in [
         ('momentum_long',   mom_long,  +1),
@@ -190,8 +218,10 @@ def main():
             sl_dist_per_bar=sl_dist_per_bar, direction=direction,
             horizon_bars=HORIZON_BARS,
         )
+        pool = pool_long if direction == 1 else pool_short
         res = evaluate_proxy(
-            trades.R, cost_per_RT_dollars=COST_PER_RT_DOLLARS,
+            trades.R, full_R_pool=pool, direction=direction,
+            cost_per_RT_dollars=COST_PER_RT_DOLLARS,
             avg_sl_dist_pts=avg_sl_dist_pts,
             economic_threshold_R=ECON_THRESHOLD_R_NET,
             n_perm=N_PERM, point_value=POINT_VALUE, seed=SEED_PERM,
@@ -213,15 +243,14 @@ def main():
     vxn_z = vxn_z_prior_day_daily(vxn, window=60)
     vxn_per_bar = broadcast_vxn_z_to_1m(vxn_z, bar_idx)
 
-    # Per-day forward-R: pool all 4 directions' trades by day, take avg-R
-    # Use union of all signal masks; per-day average R as the EV proxy
-    union_mask = mom_long | mom_short | abs_long | abs_short
-    all_sigs = np.where(union_mask)[0]
-    # Direction per signal: we need to rebuild — use bar_delta sign as proxy (matches above)
-    all_dir = np.where(delta[all_sigs] > 0, 1, -1).astype(np.int64)
-    # Build trades per direction (vectorised batch)
-    long_sigs  = all_sigs[all_dir == 1]
-    short_sigs = all_sigs[all_dir == -1]
+    # Per-day forward-R: pool LONG signals (correct direction) and SHORT signals
+    # (correct direction) separately, then aggregate per day.
+    # mom_long / abs_long are already direction-correct (absorption direction
+    # was fixed above to match the absorption-reversal thesis).
+    long_mask  = mom_long  | abs_long
+    short_mask = mom_short | abs_short
+    long_sigs  = np.where(long_mask)[0]
+    short_sigs = np.where(short_mask)[0]
     long_trades  = build_proxy_trades_vec(long_sigs,  close, high, low, sl_dist_per_bar, +1, HORIZON_BARS)
     short_trades = build_proxy_trades_vec(short_sigs, close, high, low, sl_dist_per_bar, -1, HORIZON_BARS)
 
