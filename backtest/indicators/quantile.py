@@ -1,9 +1,17 @@
 """
-Per-HMM-state quantile + block-bootstrap CI.
+Bootstrap CI utilities: quantile and mean.
+
+  - bootstrap_quantile_ci: percentile-bootstrap CI for the q-quantile of values
+  - bootstrap_mean_ci:     percentile-bootstrap CI for the mean of values
+  - ci_width_pct_of_threshold: q-CI width as fraction of point estimate
+  - per_state_quantile:    per-HMM-state quantile thresholds
 
 Per v9-final: q-quantile for orderflow proxies is computed per HMM state.
 Stage 4 monitor: if bootstrap CI width > 15% of threshold value, fall back to
 universal q regardless of DSR.
+
+v10 uses bootstrap_mean_ci for the primary gate (CI lower bound > 0 of mean R
+after costs).
 """
 from __future__ import annotations
 
@@ -58,6 +66,36 @@ def bootstrap_quantile_ci(
     idx = rng.integers(0, n, size=(n_boot, n))   # (n_boot, n) resample indices
     boot = np.asarray(values, dtype=np.float64)[idx]
     samples = np.quantile(boot, q, axis=1)        # one call → (n_boot,) quantiles
+    alpha = (1.0 - ci) / 2.0
+    return float(np.quantile(samples, alpha)), float(np.quantile(samples, 1.0 - alpha))
+
+
+def bootstrap_mean_ci(
+    values: np.ndarray,
+    n_boot: int = 1000,
+    ci: float = 0.95,
+    seed: int = 2026,
+    one_sided: bool = False,
+) -> tuple[float, float]:
+    """Percentile-bootstrap CI for the MEAN of `values`.
+
+    Fully vectorised: single (n_boot, n) resample matrix, one np.mean axis=1.
+    Used by v10 as the primary gate (lower CI bound of mean R after costs > 0).
+
+    If `one_sided=True`, returns (lo, +inf) where lo is the (1-ci) percentile
+    of the bootstrap mean distribution — i.e. a one-sided lower-bound CI.
+    Otherwise returns the two-sided CI at the requested coverage.
+    """
+    n = len(values)
+    if n < 10:
+        return float('nan'), float('nan')
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, n, size=(n_boot, n))
+    boot = np.asarray(values, dtype=np.float64)[idx]
+    samples = boot.mean(axis=1)
+    if one_sided:
+        alpha = 1.0 - ci
+        return float(np.quantile(samples, alpha)), float('inf')
     alpha = (1.0 - ci) / 2.0
     return float(np.quantile(samples, alpha)), float(np.quantile(samples, 1.0 - alpha))
 

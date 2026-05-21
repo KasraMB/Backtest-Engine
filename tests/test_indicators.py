@@ -7,7 +7,7 @@ import pytest
 
 from backtest.indicators.atr import atr_daily, daily_ohlc_from_1m, broadcast_daily_to_1m
 from backtest.indicators.value_area import volume_profile, value_area, orb_value_area, _fd_bin_count
-from backtest.indicators.quantile import per_state_quantile, bootstrap_quantile_ci, ci_width_pct_of_threshold
+from backtest.indicators.quantile import per_state_quantile, bootstrap_quantile_ci, bootstrap_mean_ci, ci_width_pct_of_threshold
 
 
 # ── ATR ──────────────────────────────────────────────────────────────────────
@@ -149,6 +149,24 @@ def test_bootstrap_ci_brackets_point():
     point = np.quantile(vals, 0.90)
     lo, hi = bootstrap_quantile_ci(vals, q=0.90, n_boot=500, seed=2026)
     assert lo < point < hi
+
+
+def test_bootstrap_mean_ci_brackets_true_mean():
+    rng = np.random.default_rng(7)
+    vals = rng.normal(0.5, 1.0, 500)
+    lo, hi = bootstrap_mean_ci(vals, n_boot=1000, ci=0.95)
+    assert lo < vals.mean() < hi
+    # SE of mean should be ~ 1/sqrt(500) ≈ 0.045; CI width ≈ 1.96 × 2 × 0.045 ≈ 0.176
+    assert 0.10 < (hi - lo) < 0.30
+
+
+def test_bootstrap_mean_ci_one_sided_lower():
+    rng = np.random.default_rng(8)
+    vals = rng.normal(0.0, 1.0, 500)
+    lo, hi = bootstrap_mean_ci(vals, n_boot=1000, ci=0.95, one_sided=True)
+    assert hi == float('inf')
+    # Lower bound is 5th percentile of bootstrap means — should be < 0 for centred data
+    assert lo < 0
 
 
 def test_ci_width_pct_decreases_with_n():
