@@ -1,0 +1,299 @@
+"""
+Stage 3 proxy validation: forward-R trade builder, permutation null,
+economic threshold check, and VXN EV-separation test.
+
+All hot loops are vectorised:
+  - build_proxy_trades_vec: pre-allocated (N_sig, horizon) fancy-indexed view,
+    np.maximum.accumulate / np.minimum.accumulate per row for MFE/MAE, single
+    vectorised SL-hit detection.
+  - permutation_null_R: single (n_perm, N) sign-flip matrix, one mean over axis=1.
+  - vxn_ev_separation_test: single (n_perm, N_days) label-shuffle matrix.
+
+Pre-registered constants for Stage 3 are sourced from ivb/constants.py at the
+caller layer; this module only takes them as args so it stays test-clean.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Trade builder
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class ProxyTrades:
+    """Vectorised trade tape — all fields are (N_signals,) numpy arrays."""
+    entry_bar:   np.ndarray   # int, source bar index
+    exit_bar:    np.ndarray   # int, bar of first SL-hit or end-of-horizon
+    R:           np.ndarray   # float, signed R = pnl_pts / sl_dist
+    mfe_R:       np.ndarray   # float, max favourable excursion in R units
+    mae_R:       np.ndarray   # float, max adverse excursion in R units (>=0)
+    hit_sl:      np.ndarray   # bool, True if SL was breached within horizon
+    sl_dist_pts: np.ndarray   # float, SL distance per signal (γ × ATR_20)
+
+
+def build_proxy_trades_vec(
+    signal_bars: np.ndarray,        # int, (N_sig,) bar indices where signal fired
+    close:       np.ndarray,        # (N_bars,)
+    high:        np.ndarray,        # (N_bars,)
+    low:         np.ndarray,        # (N_bars,)
+    sl_dist_per_bar: np.ndarray,    # (N_bars,) γ × ATR_20_daily, per source bar
+    direction:   int,               # +1 long, -1 short
+    horizon_bars: int = 60,
+) -> ProxyTrades:
+    """Walk forward `horizon_bars` from each signal; compute R, MFE, MAE.
+
+    SL-first within bar (per v9-final patch 9): if SL is hit and TP would also
+    be hit in the same bar, SL wins (conservative).
+
+    Vectorisation:
+      1. Drop signals too close to end of array (no full horizon)
+      2. Build (N_sig, horizon) index matrix via broadcasting
+      3. Fancy-index high/low/close — produces (N_sig, horizon) panels
+      4. Per-row running max/min for MFE/MAE
+      5. Detect SL-hit via single elementwise compare + argmax(any) per row
+      6. Exit price = SL-hit bar's price, or last bar's close if no SL hit
+    """
+    N_bars = len(close)
+    if direction not in (-1, 1):
+        raise ValueError(f"direction must be +/-1, got {direction}")
+    if len(signal_bars) == 0:
+        empty = np.array([], dtype=np.int64)
+        empty_f = np.array([], dtype=np.float64)
+        empty_b = np.array([], dtype=bool)
+        return ProxyTrades(empty, empty, empty_f, empty_f, empty_f, empty_b, empty_f)
+
+    # Discard signals that don't have a full horizon
+    valid = signal_bars <= (N_bars - 1 - horizon_bars)
+    sig = signal_bars[valid].astype(np.int64)
+    N_sig = len(sig)
+    if N_sig == 0:
+        empty = np.array([], dtype=np.int64); empty_f = np.array([], dtype=np.float64); empty_b = np.array([], dtype=bool)
+        return ProxyTrades(empty, empty, empty_f, empty_f, empty_f, empty_b, empty_f)
+
+    # Index matrix: (N_sig, horizon+1) covering bars [sig+1, sig+horizon] inclusive
+    # (entry is FILLED next bar after signal; first valid eval bar is sig+1)
+    offsets = np.arange(1, horizon_bars + 1, dtype=np.int64)        # (H,)
+    idx_mat = sig[:, None] + offsets[None, :]                       # (N_sig, H)
+
+    # Entry price = close at signal bar (model: limit/market fill on the signal bar close)
+    entry_px  = close[sig].astype(np.float64)                       # (N_sig,)
+    sl_dist   = sl_dist_per_bar[sig].astype(np.float64)             # (N_sig,)
+    # Guard zero/NaN SL distances
+    bad_sl = (~np.isfinite(sl_dist)) | (sl_dist <= 0)
+    sl_dist = np.where(bad_sl, np.nan, sl_dist)
+
+    sl_price = entry_px - direction * sl_dist                       # long: entry - dist; short: entry + dist
+
+    # Pull forward panels — single fancy-indexing op each
+    panel_high = high[idx_mat]                                      # (N_sig, H)
+    panel_low  = low[idx_mat]
+    panel_close = close[idx_mat]
+
+    # SL-hit detection per bar:
+    #   long:  bar low  <= sl_price  (broadcast sl_price across H axis)
+    #   short: bar high >= sl_price
+    if direction == 1:
+        sl_hit_panel = panel_low <= sl_price[:, None]
+    else:
+        sl_hit_panel = panel_high >= sl_price[:, None]
+
+    any_sl_hit = sl_hit_panel.any(axis=1)                           # (N_sig,)
+    # First-hit bar index within the horizon (0..H-1); for no-hit rows = H-1 (unused)
+    first_hit_col = np.argmax(sl_hit_panel, axis=1)
+    # When any_sl_hit is False, argmax returns 0 — guard that.
+
+    # Exit price: SL price (conservative tick fill at SL level) if hit,
+    # else close at end of horizon.
+    exit_px = np.where(any_sl_hit, sl_price, panel_close[:, -1])
+
+    # Exit bar index in source array
+    exit_bar = np.where(
+        any_sl_hit,
+        sig + 1 + first_hit_col,
+        sig + horizon_bars,
+    ).astype(np.int64)
+
+    # PnL points (signed): (exit - entry) * direction
+    pnl_pts = (exit_px - entry_px) * direction
+    R = pnl_pts / sl_dist                                            # may contain NaN where SL invalid
+
+    # MFE / MAE over the FULL horizon (or up to SL-hit bar)
+    # To respect SL-first, mask out post-SL bars before computing MFE/MAE.
+    # Build a (N_sig, H) mask where True = bar is at/after SL-hit (inclusive of hit bar).
+    col_idx = np.arange(horizon_bars)[None, :]                       # (1, H)
+    post_hit_mask = any_sl_hit[:, None] & (col_idx > first_hit_col[:, None])  # bars AFTER hit
+    # We want MFE/MAE INCLUDING the hit bar itself. So mask only the strictly-after bars.
+
+    # Replace post-hit highs with -inf for long-MFE (so they don't count), and
+    # post-hit lows with +inf for long-MAE.
+    if direction == 1:
+        eff_high = np.where(post_hit_mask, -np.inf, panel_high)
+        eff_low  = np.where(post_hit_mask,  np.inf, panel_low)
+        mfe_pts  = eff_high.max(axis=1) - entry_px
+        mae_pts  = entry_px - eff_low.min(axis=1)
+    else:
+        eff_high = np.where(post_hit_mask, -np.inf, panel_high)
+        eff_low  = np.where(post_hit_mask,  np.inf, panel_low)
+        mfe_pts  = entry_px - eff_low.min(axis=1)
+        mae_pts  = eff_high.max(axis=1) - entry_px
+
+    mfe_R = mfe_pts / sl_dist
+    mae_R = mae_pts / sl_dist
+    # MAE should be >= 0; numerical floor (rare ties)
+    mae_R = np.maximum(mae_R, 0.0)
+
+    return ProxyTrades(
+        entry_bar   = sig,
+        exit_bar    = exit_bar,
+        R           = R,
+        mfe_R       = mfe_R,
+        mae_R       = mae_R,
+        hit_sl      = any_sl_hit,
+        sl_dist_pts = sl_dist,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Permutation null + economic threshold
+# ─────────────────────────────────────────────────────────────────────────────
+
+def permutation_null_mean_R(
+    R_values: np.ndarray,
+    n_perm: int = 1000,
+    seed: int = 2026,
+) -> np.ndarray:
+    """Null distribution of mean(R) under random sign-flipping.
+
+    H0: the proxy carries no directional signal, so the sign of R is exchangeable
+    with +/-1 fair coin flips. Under H0, E[mean(signed_R)] = 0.
+
+    Vectorised: single (n_perm, n) sign matrix; one mean over axis=1.
+    For n=1000, n_perm=1000 → ~8 MB matrix, <100 ms.
+    """
+    R = np.asarray(R_values, dtype=np.float64)
+    R = R[np.isfinite(R)]
+    if len(R) < 20:
+        return np.array([np.nan])
+    rng = np.random.default_rng(seed)
+    signs = rng.choice(np.array([-1.0, 1.0]), size=(n_perm, len(R)))
+    null_means = (signs * R[None, :]).mean(axis=1)
+    return null_means
+
+
+def evaluate_proxy(
+    proxy_R: np.ndarray,
+    cost_per_RT_dollars: float,
+    avg_sl_dist_pts: float,
+    economic_threshold_R: float = 0.15,
+    n_perm: int = 1000,
+    point_value: float = 20.0,
+    seed: int = 2026,
+) -> dict:
+    """Two-gate test: permutation null AND economic threshold (both in R units).
+
+    Returns dict with mean_R, mean_R_net, p_value, passes_null, passes_economic,
+    passes_both, and the cost_R conversion for transparency.
+    """
+    R = np.asarray(proxy_R, dtype=np.float64)
+    R = R[np.isfinite(R)]
+    n = len(R)
+    if n < 20:
+        return {
+            'n_trades': int(n),
+            'mean_R': float('nan'),
+            'mean_R_net': float('nan'),
+            'cost_R': float('nan'),
+            'p_value': float('nan'),
+            'passes_null': False,
+            'passes_economic': False,
+            'passes_both': False,
+            'reason': 'insufficient trades',
+        }
+
+    cost_R = cost_per_RT_dollars / (point_value * avg_sl_dist_pts)
+    mean_R = float(R.mean())
+    mean_R_net = mean_R - cost_R
+
+    null_means = permutation_null_mean_R(R, n_perm=n_perm, seed=seed)
+    # Two-sided p-value (proxy could be long-biased OR short-biased entry edge)
+    p_value = float((np.abs(null_means) >= abs(mean_R)).mean())
+
+    passes_null = p_value < 0.05
+    passes_economic = mean_R_net >= economic_threshold_R
+    return {
+        'n_trades': int(n),
+        'mean_R': mean_R,
+        'mean_R_net': mean_R_net,
+        'cost_R': float(cost_R),
+        'p_value': p_value,
+        'passes_null': bool(passes_null),
+        'passes_economic': bool(passes_economic),
+        'passes_both': bool(passes_null and passes_economic),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VXN EV-separation test
+# ─────────────────────────────────────────────────────────────────────────────
+
+def vxn_ev_separation_test(
+    forward_R_per_day: np.ndarray,
+    vxn_z_per_day:     np.ndarray,
+    effect_size_threshold: float = 0.10,
+    n_perm: int = 1000,
+    seed: int = 2026,
+) -> dict:
+    """Split days by median(vxn_z); test if mean forward-R differs across halves.
+
+    Pass iff |Δμ_R| > effect_size_threshold AND permutation p < 0.05.
+
+    Vectorisation: single (n_perm, N_days) permutation matrix for label shuffles;
+    vectorised group means via boolean masking inside a single broadcast.
+    """
+    R = np.asarray(forward_R_per_day, dtype=np.float64)
+    z = np.asarray(vxn_z_per_day, dtype=np.float64)
+    mask = np.isfinite(R) & np.isfinite(z)
+    R = R[mask]; z = z[mask]
+    n = len(R)
+    if n < 40:
+        return {'n_days': int(n), 'delta_mu_R': float('nan'),
+                'p_value': float('nan'), 'passes': False, 'reason': 'insufficient days'}
+
+    med = float(np.median(z))
+    hi_mask = z >= med
+    lo_mask = ~hi_mask
+    mu_hi = R[hi_mask].mean()
+    mu_lo = R[lo_mask].mean()
+    obs_delta = float(mu_hi - mu_lo)
+
+    # Permutation: shuffle the hi/lo labels n_perm times. Vectorised:
+    # generate n_perm independent random rankings of [0..n-1], take top half as hi.
+    rng = np.random.default_rng(seed)
+    # rng.permuted with axis=1 is the fastest vectorised shuffle
+    base = np.broadcast_to(np.arange(n), (n_perm, n)).copy()
+    shuffled = rng.permuted(base, axis=1)
+    # For each perm row, take first ceil(n/2) indices as "hi" group
+    n_hi = int(np.ceil(n / 2))
+    hi_idx = shuffled[:, :n_hi]                                # (n_perm, n_hi)
+    # Sum R over hi-indices per row; convert to mean; then derive lo mean
+    R_arr = R                                                  # (n,)
+    sum_hi = R_arr[hi_idx].sum(axis=1)                         # (n_perm,)
+    sum_all = R_arr.sum()
+    sum_lo = sum_all - sum_hi
+    n_lo = n - n_hi
+    null_delta = sum_hi / n_hi - sum_lo / n_lo                 # (n_perm,)
+
+    p_value = float((np.abs(null_delta) >= abs(obs_delta)).mean())
+    passes = (abs(obs_delta) >= effect_size_threshold) and (p_value < 0.05)
+    return {
+        'n_days': int(n),
+        'mu_R_high_vxn': float(mu_hi),
+        'mu_R_low_vxn':  float(mu_lo),
+        'delta_mu_R':    obs_delta,
+        'p_value':       p_value,
+        'passes':        bool(passes),
+    }
