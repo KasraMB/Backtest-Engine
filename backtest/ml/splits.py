@@ -36,11 +36,16 @@ TRAIN_FIT_START       = "2019-01-01"; TRAIN_FIT_END       = "2020-12-31"
 TRAIN_HOLDOUTA_START  = "2021-01-01"; TRAIN_HOLDOUTA_END  = "2021-12-31"
 TRAIN_HOLDOUTB_START  = "2022-01-01"; TRAIN_HOLDOUTB_END  = "2022-12-31"
 
+# IVB v10 dev-A: existence test single-touch slice.
+# Note: identical to train_fit by design — v10 plan §1 sets dev-A = 2019-2020.
+DEV_A_START           = "2019-01-01"; DEV_A_END           = "2020-12-31"
+
 SPLITS: dict[str, Tuple[str, Optional[str]]] = {
     "train":           (TRAIN_START,           TRAIN_END),
     "train_fit":       (TRAIN_FIT_START,       TRAIN_FIT_END),
     "train_holdoutA":  (TRAIN_HOLDOUTA_START,  TRAIN_HOLDOUTA_END),
     "train_holdoutB":  (TRAIN_HOLDOUTB_START,  TRAIN_HOLDOUTB_END),
+    "dev_A":           (DEV_A_START,           DEV_A_END),
     "validation":      (VALIDATION_START,      VALIDATION_END),
     "test1":           (TEST1_START,           TEST1_END),
     "test2":           (TEST2_START,           TEST2_END),
