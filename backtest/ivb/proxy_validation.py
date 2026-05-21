@@ -268,20 +268,6 @@ def evaluate_proxy(
     }
 
 
-# Backward-compat alias for the old sign-flip null (kept for tests until removed)
-def permutation_null_mean_R(R_values: np.ndarray, n_perm: int = 1000, seed: int = 2026) -> np.ndarray:
-    """DEPRECATED — sign-flip null, replaced by random_entry_null_mean_R.
-
-    Retained only to avoid breaking imports during transition. Returns the same
-    null distribution as before. New callers should use random_entry_null_mean_R.
-    """
-    R = np.asarray(R_values, dtype=np.float64)
-    R = R[np.isfinite(R)]
-    if len(R) < 20:
-        return np.array([np.nan])
-    rng = np.random.default_rng(seed)
-    signs = rng.choice(np.array([-1.0, 1.0]), size=(n_perm, len(R)))
-    return (signs * R[None, :]).mean(axis=1)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

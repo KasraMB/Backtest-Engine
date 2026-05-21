@@ -6,7 +6,6 @@ import pytest
 
 from backtest.ivb.proxy_validation import (
     build_proxy_trades_vec,
-    permutation_null_mean_R,
     random_entry_null_mean_R,
     evaluate_proxy,
     vxn_ev_separation_test,
@@ -87,23 +86,6 @@ def test_build_trades_invalid_sl_raises_nan():
 
 
 # ─── Permutation null ────────────────────────────────────────────────────────
-
-def test_perm_null_centered_on_zero():
-    rng = np.random.default_rng(0)
-    R = rng.normal(0, 1, 500)
-    null = permutation_null_mean_R(R, n_perm=1000, seed=2026)
-    # Null should be centred near 0 (sign-flip leaves abs values unchanged)
-    assert abs(null.mean()) < 0.05
-    # Null std should be ≈ R.std() / sqrt(n)
-    expected_se = R.std() / np.sqrt(len(R))
-    assert null.std() == pytest.approx(expected_se, rel=0.15)
-
-
-def test_perm_null_small_n_returns_nan():
-    R = np.array([1.0, 2.0, 3.0])
-    null = permutation_null_mean_R(R, n_perm=100)
-    assert np.isnan(null[0])
-
 
 # ─── evaluate_proxy ──────────────────────────────────────────────────────────
 
