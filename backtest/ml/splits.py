@@ -31,11 +31,19 @@ TEST1_END        = "2024-12-31"
 TEST2_START      = "2025-01-01"
 TEST2_END: Optional[str] = None   # None = up to latest available bar
 
+# IVB v9-final 3-way subdivision of train (no overlap with validation/test).
+TRAIN_FIT_START       = "2019-01-01"; TRAIN_FIT_END       = "2020-12-31"
+TRAIN_HOLDOUTA_START  = "2021-01-01"; TRAIN_HOLDOUTA_END  = "2021-12-31"
+TRAIN_HOLDOUTB_START  = "2022-01-01"; TRAIN_HOLDOUTB_END  = "2022-12-31"
+
 SPLITS: dict[str, Tuple[str, Optional[str]]] = {
-    "train":      (TRAIN_START,      TRAIN_END),
-    "validation": (VALIDATION_START, VALIDATION_END),
-    "test1":      (TEST1_START,      TEST1_END),
-    "test2":      (TEST2_START,      TEST2_END),
+    "train":           (TRAIN_START,           TRAIN_END),
+    "train_fit":       (TRAIN_FIT_START,       TRAIN_FIT_END),
+    "train_holdoutA":  (TRAIN_HOLDOUTA_START,  TRAIN_HOLDOUTA_END),
+    "train_holdoutB":  (TRAIN_HOLDOUTB_START,  TRAIN_HOLDOUTB_END),
+    "validation":      (VALIDATION_START,      VALIDATION_END),
+    "test1":           (TEST1_START,           TEST1_END),
+    "test2":           (TEST2_START,           TEST2_END),
 }
 
 TZ = "America/New_York"
