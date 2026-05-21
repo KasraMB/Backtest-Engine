@@ -60,21 +60,29 @@ SEED_PERM             = 2026
 
 def _broadcast_labels_to_bars(labels_by_date: dict[date, int],
                               bar_dates: pd.DatetimeIndex,
-                              fallback: int = 1) -> np.ndarray:
+                              fallback: int = -1) -> np.ndarray:
     """Map daily HMM labels onto per-1m-bar array.
 
-    Bars on dates with no HMM label (e.g. days outside the cache) get `fallback`
-    (default = neutral). Fully vectorised via pd.Series.reindex.
+    Calendar/session conventions:
+      - HMM cache uses Sierra Chart's **session-START** date convention:
+        Sunday 18:00 ET - Monday 17:00 ET → labelled "Sunday".
+      - 1m parquet bars use calendar dates of the session-END (Tradovate convention):
+        Monday RTH bars → calendar "Monday".
+      So `HMM_key + 1 calendar day = parquet bar date`.
 
-    TZ handling (regression-tested): HMM label dates are tz-naive Python `date`
-    objects; bar_dates may be tz-aware. Both sides are converted to tz-naive
-    midnight Timestamps for the reindex to actually match.
+    TZ handling: HMM keys are tz-naive Python date objects; bar_dates may be
+    tz-aware. Both converted to tz-naive midnight Timestamps for the reindex
+    to actually match.
+
+    Default fallback is -1 (sentinel for unlabelled bars — calendar Sundays in
+    overnight session, holidays, etc.). RTH-only callers will never see -1
+    after RTH masking since every RTH bar has a corresponding HMM session.
     """
-    src = pd.Series(labels_by_date)
-    src.index = pd.DatetimeIndex(src.index)   # tz-naive
+    # Shift HMM keys by +1 calendar day to align Sierra session-start → bar session-end
+    src_raw = pd.Series(labels_by_date)
+    src = pd.Series(src_raw.values, index=pd.DatetimeIndex(src_raw.index) + pd.Timedelta(days=1))
     bar_day = bar_dates.tz_localize(None).normalize() \
         if bar_dates.tz is not None else bar_dates.normalize()
-    # Reindex on unique days first (sub-second), then propagate per bar
     unique_days = bar_day.unique()
     day_labels = src.reindex(unique_days).fillna(fallback).astype(int)
     return day_labels.reindex(bar_day).to_numpy(np.int64)
@@ -109,27 +117,10 @@ def main():
     n_states = hmm.n_states
     bar_idx = pd.DatetimeIndex(df.index)
     labels_per_bar = _broadcast_labels_to_bars(hmm.labels, bar_idx)
-
-    # Invariant 1: label coverage. Count how many UNIQUE BAR DAYS map to a real
-    # HMM label (vs the fallback). If <95% coverage, the broadcast is broken.
-    bar_day_naive = bar_idx.tz_localize(None).normalize() if bar_idx.tz is not None else bar_idx.normalize()
-    unique_bar_days = bar_day_naive.unique()
-    hmm_keys = pd.DatetimeIndex(list(hmm.labels.keys()))
-    matched = unique_bar_days.isin(hmm_keys).mean()
-    assert matched >= 0.95, (
-        f"Label coverage too low ({matched:.2%}) — HMM labels not aligning with bar dates. "
-        "Check tz/normalization in _broadcast_labels_to_bars."
-    )
-
-    # Invariant 2: per-state representation. No state should be <5% of bars.
-    state_share = np.bincount(labels_per_bar, minlength=n_states) / len(labels_per_bar)
-    assert state_share.min() >= 0.05, (
-        f"State distribution degenerate: {dict(enumerate(state_share.tolist()))}. "
-        "Expected each state >= 5% of bars."
-    )
     print(f"  n_states={n_states}, labels broadcast in {(time.perf_counter()-t_start):.2f}s", flush=True)
-    print(f"  Label coverage: {matched:.1%} of bar-days; state shares: "
-          f"{ {i: f'{s:.1%}' for i, s in enumerate(state_share)} }", flush=True)
+    # Coverage/state-share invariants are checked AFTER RTH filter below
+    # (overnight Sunday bars correctly fall back to -1 since NQ doesn't trade
+    # Sunday until 18:00 ET and those bars aren't relevant to IVB).
 
     # ── ATR_20_daily + broadcast (prior-day shift) ────────────────────────
     print("Computing ATR_20_daily...", flush=True)
@@ -152,6 +143,26 @@ def main():
     fit_mask = (bar_idx >= fit_s) & (bar_idx <= fit_e) & rth_mask
     ha_mask  = (bar_idx >= ha_s)  & (bar_idx <= ha_e)  & rth_mask
     print(f"  RTH bars: fit={fit_mask.sum():,}, holdoutA={ha_mask.sum():,}", flush=True)
+
+    # Invariant 1: RTH bar label coverage. Every RTH bar should have a real
+    # HMM label (no -1 fallback). Overnight unlabelled bars are correctly
+    # outside the RTH mask and ignored.
+    rth_all = fit_mask | ha_mask
+    rth_labelled = (labels_per_bar[rth_all] >= 0).mean()
+    assert rth_labelled >= 0.99, (
+        f"RTH label coverage too low ({rth_labelled:.2%}) — HMM labels not aligning. "
+        f"Check session-start vs session-end shift in _broadcast_labels_to_bars."
+    )
+
+    # Invariant 2: per-state representation on the WORKING set (train_fit ∪ holdoutA RTH).
+    rth_labels = labels_per_bar[rth_all]
+    state_share = np.bincount(rth_labels[rth_labels >= 0], minlength=n_states) / max((rth_labels >= 0).sum(), 1)
+    assert state_share.min() >= 0.05, (
+        f"State distribution degenerate: {dict(enumerate(state_share.tolist()))}. "
+        f"Expected each state >= 5% of RTH bars."
+    )
+    print(f"  RTH label coverage: {rth_labelled:.1%}; state shares: "
+          f"{ {i: f'{s:.1%}' for i, s in enumerate(state_share)} }", flush=True)
 
     # ── Per-state thresholds on train_fit only ────────────────────────────
     print("Per-state quantile thresholds (train_fit only)...", flush=True)
