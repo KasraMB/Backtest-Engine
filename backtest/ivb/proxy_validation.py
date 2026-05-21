@@ -33,6 +33,8 @@ class ProxyTrades:
     mae_R:       np.ndarray   # float, max adverse excursion in R units (>=0)
     hit_sl:      np.ndarray   # bool, True if SL was breached within horizon
     sl_dist_pts: np.ndarray   # float, SL distance per signal (γ × ATR_20)
+    hit_tp:      np.ndarray = None   # type: ignore[assignment]  # bool, True if TP fired (NaN-equivalent / False if no TP path)
+    hit_eod:     np.ndarray = None   # type: ignore[assignment]  # bool, True if exit was forced by EOD cap
 
 
 def build_proxy_trades_vec(
@@ -43,11 +45,13 @@ def build_proxy_trades_vec(
     sl_dist_per_bar: np.ndarray,    # (N_bars,) γ × ATR_20_daily, per source bar
     direction:   int,               # +1 long, -1 short
     horizon_bars: int = 60,
+    tp_dist_per_bar: 'np.ndarray | None' = None,    # (N_bars,) optional TP distance per signal bar
+    max_exit_bar_per_signal: 'np.ndarray | None' = None,  # (N_sig,) optional EOD-cap index per signal
 ) -> ProxyTrades:
     """Walk forward `horizon_bars` from each signal; compute R, MFE, MAE.
 
-    SL-first within bar (per v9-final patch 9): if SL is hit and TP would also
-    be hit in the same bar, SL wins (conservative).
+    SL-first within bar (per v9-final patch 9 / v10 micro-spec 9): if SL is hit
+    AND TP would also be hit on the same bar, SL wins (conservative).
 
     Vectorisation:
       1. Drop signals too close to end of array (no full horizon)
@@ -55,7 +59,12 @@ def build_proxy_trades_vec(
       3. Fancy-index high/low/close — produces (N_sig, horizon) panels
       4. Per-row running max/min for MFE/MAE
       5. Detect SL-hit via single elementwise compare + argmax(any) per row
-      6. Exit price = SL-hit bar's price, or last bar's close if no SL hit
+      6. Detect TP-hit symmetrically (when tp_dist_per_bar provided)
+      7. EOD cap (when max_exit_bar_per_signal provided): bars at/after the cap
+         are excluded from SL/TP detection; exit price defaults to bar-cap close
+      8. Exit precedence: SL-first (ties → SL), then TP, then EOD/horizon-end
+
+    Optional args preserve v9 backward compat (Stage 3 calls without them).
     """
     N_bars = len(close)
     if direction not in (-1, 1):
@@ -93,57 +102,93 @@ def build_proxy_trades_vec(
     panel_low  = low[idx_mat]
     panel_close = close[idx_mat]
 
-    # SL-hit detection per bar:
-    #   long:  bar low  <= sl_price  (broadcast sl_price across H axis)
-    #   short: bar high >= sl_price
-    if direction == 1:
-        sl_hit_panel = panel_low <= sl_price[:, None]
+    # ── EOD cap (optional): build a (N_sig, H) "valid bar" mask. Bars at column
+    # offsets >= cap_col are excluded from SL/TP detection and forced-exit at
+    # the cap bar's close.
+    H = horizon_bars
+    col_idx = np.arange(H)[None, :]                                 # (1, H)
+    if max_exit_bar_per_signal is not None:
+        max_exit = max_exit_bar_per_signal[valid].astype(np.int64)  # (N_sig,)
+        # Cap column = (max_exit - sig) - 1, clamped to [0, H-1]. Bar at col
+        # cap_col is the LAST eligible bar (closes at EOD); cols > cap_col masked.
+        cap_col = np.clip(max_exit - sig - 1, 0, H - 1)             # (N_sig,)
     else:
-        sl_hit_panel = panel_high >= sl_price[:, None]
+        cap_col = np.full(N_sig, H - 1, dtype=np.int64)              # everything in-horizon
+    valid_bar = col_idx <= cap_col[:, None]                         # (N_sig, H) bool
+
+    # ── SL-hit detection per bar (masked by EOD cap):
+    if direction == 1:
+        sl_hit_panel = (panel_low <= sl_price[:, None]) & valid_bar
+    else:
+        sl_hit_panel = (panel_high >= sl_price[:, None]) & valid_bar
 
     any_sl_hit = sl_hit_panel.any(axis=1)                           # (N_sig,)
-    # First-hit bar index within the horizon (0..H-1); for no-hit rows = H-1 (unused)
-    first_hit_col = np.argmax(sl_hit_panel, axis=1)
-    # When any_sl_hit is False, argmax returns 0 — guard that.
+    first_sl_col = np.argmax(sl_hit_panel, axis=1)                  # 0 when no hit
 
-    # Exit price: SL price (conservative tick fill at SL level) if hit,
-    # else close at end of horizon.
-    exit_px = np.where(any_sl_hit, sl_price, panel_close[:, -1])
+    # ── TP-hit detection (optional, symmetric to SL):
+    if tp_dist_per_bar is not None:
+        tp_dist = tp_dist_per_bar[sig].astype(np.float64)
+        bad_tp = (~np.isfinite(tp_dist)) | (tp_dist <= 0)
+        tp_dist = np.where(bad_tp, np.nan, tp_dist)
+        tp_price = entry_px + direction * tp_dist                   # long: entry+dist; short: entry-dist
+        if direction == 1:
+            tp_hit_panel = (panel_high >= tp_price[:, None]) & valid_bar
+        else:
+            tp_hit_panel = (panel_low  <= tp_price[:, None]) & valid_bar
+        any_tp_hit = tp_hit_panel.any(axis=1)
+        first_tp_col = np.argmax(tp_hit_panel, axis=1)
+    else:
+        tp_dist = np.zeros_like(sl_dist)
+        tp_price = np.zeros_like(entry_px)
+        any_tp_hit = np.zeros(N_sig, dtype=bool)
+        first_tp_col = np.full(N_sig, H, dtype=np.int64)            # sentinel "never hit"
+
+    # ── Exit precedence: SL-first ties; if neither, TP; if neither, EOD/horizon.
+    # If SL hits at col S and TP hits at col T:
+    #   - S < T → SL wins
+    #   - S > T → TP wins
+    #   - S == T → SL wins (same-bar tie, v10 micro-spec 9)
+    sl_wins_priority = any_sl_hit & (~any_tp_hit | (first_sl_col <= first_tp_col))
+    tp_wins_priority = any_tp_hit & ~sl_wins_priority
+
+    # Compute exit bar offset (col within horizon) and exit price per case
+    exit_col = np.where(
+        sl_wins_priority, first_sl_col,
+        np.where(tp_wins_priority, first_tp_col, cap_col)
+    )
+    exit_px = np.where(
+        sl_wins_priority, sl_price,
+        np.where(tp_wins_priority, tp_price,
+                 panel_close[np.arange(N_sig), cap_col])
+    )
 
     # Exit bar index in source array
-    exit_bar = np.where(
-        any_sl_hit,
-        sig + 1 + first_hit_col,
-        sig + horizon_bars,
-    ).astype(np.int64)
+    exit_bar = (sig + 1 + exit_col).astype(np.int64)
 
-    # PnL points (signed): (exit - entry) * direction
+    # PnL points (signed)
     pnl_pts = (exit_px - entry_px) * direction
-    R = pnl_pts / sl_dist                                            # may contain NaN where SL invalid
+    R = pnl_pts / sl_dist
 
-    # MFE / MAE over the FULL horizon (or up to SL-hit bar)
-    # To respect SL-first, mask out post-SL bars before computing MFE/MAE.
-    # Build a (N_sig, H) mask where True = bar is at/after SL-hit (inclusive of hit bar).
-    col_idx = np.arange(horizon_bars)[None, :]                       # (1, H)
-    post_hit_mask = any_sl_hit[:, None] & (col_idx > first_hit_col[:, None])  # bars AFTER hit
-    # We want MFE/MAE INCLUDING the hit bar itself. So mask only the strictly-after bars.
+    # EOD-forced exit flag (no SL, no TP, horizon-cap reached)
+    any_eod_exit = (~sl_wins_priority) & (~tp_wins_priority)
 
-    # Replace post-hit highs with -inf for long-MFE (so they don't count), and
-    # post-hit lows with +inf for long-MAE.
+    # MFE / MAE over the [entry+1, exit_col] inclusive window — mask bars
+    # strictly AFTER the chosen exit (whether SL, TP, or EOD).
+    post_exit_mask = col_idx > exit_col[:, None]                    # bars strictly after exit
+
     if direction == 1:
-        eff_high = np.where(post_hit_mask, -np.inf, panel_high)
-        eff_low  = np.where(post_hit_mask,  np.inf, panel_low)
+        eff_high = np.where(post_exit_mask, -np.inf, panel_high)
+        eff_low  = np.where(post_exit_mask,  np.inf, panel_low)
         mfe_pts  = eff_high.max(axis=1) - entry_px
         mae_pts  = entry_px - eff_low.min(axis=1)
     else:
-        eff_high = np.where(post_hit_mask, -np.inf, panel_high)
-        eff_low  = np.where(post_hit_mask,  np.inf, panel_low)
+        eff_high = np.where(post_exit_mask, -np.inf, panel_high)
+        eff_low  = np.where(post_exit_mask,  np.inf, panel_low)
         mfe_pts  = entry_px - eff_low.min(axis=1)
         mae_pts  = eff_high.max(axis=1) - entry_px
 
     mfe_R = mfe_pts / sl_dist
     mae_R = mae_pts / sl_dist
-    # MAE should be >= 0; numerical floor (rare ties)
     mae_R = np.maximum(mae_R, 0.0)
 
     return ProxyTrades(
@@ -152,8 +197,10 @@ def build_proxy_trades_vec(
         R           = R,
         mfe_R       = mfe_R,
         mae_R       = mae_R,
-        hit_sl      = any_sl_hit,
+        hit_sl      = sl_wins_priority,
         sl_dist_pts = sl_dist,
+        hit_tp      = tp_wins_priority,
+        hit_eod     = any_eod_exit,
     )
 
 
