@@ -450,6 +450,7 @@ def _run_single(
     _cancel_min = config.order_cancel_time.hour * 60 + config.order_cancel_time.minute
     _times_min  = (data.df_1m.index.hour * 60 + data.df_1m.index.minute).to_numpy()
     cancel_mask = _times_min >= _cancel_min
+    _fill_next_open = (config.fill_mode == 'next_open')
 
     # Parallel Phase 1 pre-computation — each trading day is independent;
     # Numba functions inside _run_phase1 use nogil=True for true parallelism.
@@ -492,8 +493,38 @@ def _run_single(
         # ── Step 1: Pending order ──────────────────────────────────────────
         if pending is not None:
 
+            _pending_is_market = (pending.order.order_type == OrderType.MARKET)
+
+            # Synthetic next-open MARKET fill: fill at THIS bar's open, bypassing
+            # the cancel_mask / expiry / limit-cancel logic (a market order placed
+            # last bar must execute now, not be cancelled). Mirrors the pending
+            # open sequence (open → on_fill → MAE/MFE → same-bar-exit).
+            if _pending_is_market:
+                from backtest.engine.execution import FillResult
+                fill_price = bar.open
+                if config.slippage_points > 0:
+                    # Adverse slippage on entry: long pays up, short sells down.
+                    fill_price = fill_price + pending.order.direction * config.slippage_points
+                try:
+                    contracts = risk_manager.resolve_contracts(pending.order, account, fill_price)
+                except ValueError:
+                    pending = None
+                    contracts = 0
+                if pending is not None:
+                    _validate_sl_tp_at_fill(pending.order, fill_price)
+                    fill = FillResult(fill_price=fill_price, contracts=contracts)
+                    position = _open_position(pending.order, fill, i, order_placed_bar=pending.registered_bar)
+                    strategy._on_fill(position, data, i)
+                    _update_mae_mfe(position, bar)
+                    same_bar = engine.check_same_bar_exit(position, bar, fill.fill_price)
+                    if same_bar is not None:
+                        trade = engine.build_trade(position, i, same_bar.exit_price, same_bar.exit_reason)
+                        _record_trade(trade, trades, account, equity_curve)
+                        position = None
+                    pending = None
+
             # Cancel any pending order at or after session end (11:00 ET)
-            if cancel_mask[i]:
+            elif cancel_mask[i]:
                 logger.debug(f"Bar {i}: pending order cancelled — session end")
                 pending = None
 
@@ -592,8 +623,17 @@ def _run_single(
             if i >= strategy.min_lookback and active_bar_mask[i]:
                 order = strategy._generate_signals(data, i)
                 if order is not None:
-                    if order.order_type == OrderType.MARKET:
-                        # Market orders fill at bar close — no remaining bar
+                    if order.order_type == OrderType.MARKET and _fill_next_open:
+                        # Realistic execution: a market order signalled on bar i
+                        # can only be filled starting bar i+1. Register as pending;
+                        # the pending step fills it at the next bar's OPEN.
+                        pending = PendingOrder(
+                            order=order,
+                            registered_bar=i,
+                            bars_remaining=order.expiry_bars,
+                        )
+                    elif order.order_type == OrderType.MARKET:
+                        # Legacy: market orders fill at bar close — no remaining bar
                         # range exists, so same-bar SL/TP cannot be hit.
                         fill_price = bar.close
                         try:

@@ -36,6 +36,12 @@ class RunConfig:
     order_cancel_time: time = field(default_factory=lambda: time(11, 0))  # cancel pending orders at this time
     reverse_signals: bool = False   # flip every signal: long→short, short→long (SL/TP offsets preserved)
     track_equity_curve: bool = True  # set False in sweeps to skip 2M per-bar appends
+    # Market-order fill timing:
+    #   'signal_close' (default, legacy): fill at the signal bar's close (look-ahead;
+    #                  preserves all existing baselines bit-for-bit)
+    #   'next_open':    fill at the NEXT bar's open — realistic live execution, since
+    #                  you can only act AFTER the signal bar has closed.
+    fill_mode: str = 'signal_close'
     params: dict = field(default_factory=dict)
 
     def __post_init__(self):
