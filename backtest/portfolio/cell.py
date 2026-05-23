@@ -50,6 +50,10 @@ class CellResult:
     wr:        float
     sum_R:     float
     by_year:   dict                   # {year: {'n': N, 'mean_R': float, 'sumR': float}}
+    proxy_sl_fraction: float = 0.0    # fraction of trades with NO real stop (R is the
+                                      # 0.25-floor proxy from extract_normalised_trades →
+                                      # not a valid risk multiple; cell must be excluded)
+    min_sl_dist:       float = 0.0    # smallest stop distance (pts) across trades
 
     @property
     def years_positive(self) -> int:
@@ -133,10 +137,13 @@ def backtest_cell(
             'sumR': float(grp['R'].sum()),
             'wr': float((grp['R'] > 0).mean()),
         }
+    proxy_sl_fraction = float(np.mean([t.sl_price is None for t in res.trades]))
     return CellResult(
         cell=cell, trades=trades, n_trades=len(trades),
         mean_R=float(R.mean()), wr=float((R > 0).mean()),
         sum_R=float(R.sum()), by_year=by_year,
+        proxy_sl_fraction=proxy_sl_fraction,
+        min_sl_dist=float(sl.min()),
     )
 
 
@@ -147,8 +154,16 @@ def inclusion_filter(
     min_years_positive: int = 4,
     min_years_total: int = 5,
     require_bootstrap_p5_positive: bool = True,
+    max_proxy_sl_fraction: float = 0.0,
 ) -> tuple[bool, str]:
     """Apply pre-registered inclusion criteria. Returns (passed, reason)."""
+    # A cell is only admissible if R is a true risk multiple, i.e. every trade
+    # has a real stop. No-SL (time/EOD-exit) strategies fall back to the
+    # 0.25-floor proxy in extract_normalised_trades, making R invalid and
+    # price-scale-inflated — they cannot be risk-normalised for this framework.
+    if result.proxy_sl_fraction > max_proxy_sl_fraction:
+        return False, (f"proxy_sl_fraction={result.proxy_sl_fraction:.2f} > "
+                       f"{max_proxy_sl_fraction} (no real stop → R invalid)")
     if result.n_trades < min_trades:
         return False, f"n={result.n_trades} < {min_trades}"
     if result.mean_R < min_mean_R:
