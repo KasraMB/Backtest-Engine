@@ -160,15 +160,15 @@ class HeikinAshiStrategy(BaseStrategy):
         if bull_now and bear_prev:
             if self.require_no_wick and abs(ha_o_j - ha_l_j) >= 0.01:
                 return None
-            sl = round(round((cl - self.sl_atr_mult * atr) / 0.25) * 0.25, 10)
-            tp = round(round((cl + self.rr_ratio * self.sl_atr_mult * atr) / 0.25) * 0.25, 10)
+            sl = self._round_tick((cl - self.sl_atr_mult * atr))
+            tp = self._round_tick((cl + self.rr_ratio * self.sl_atr_mult * atr))
             return Order(direction=1, size_value=self.risk_pct, size_type=SizeType.PCT_RISK,
                          order_type=OrderType.MARKET, sl_price=sl, tp_price=tp)
         if bear_now and bull_prev:
             if self.require_no_wick and abs(ha_o_j - ha_h_j) >= 0.01:
                 return None
-            sl = round(round((cl + self.sl_atr_mult * atr) / 0.25) * 0.25, 10)
-            tp = round(round((cl - self.rr_ratio * self.sl_atr_mult * atr) / 0.25) * 0.25, 10)
+            sl = self._round_tick((cl + self.sl_atr_mult * atr))
+            tp = self._round_tick((cl - self.rr_ratio * self.sl_atr_mult * atr))
             return Order(direction=-1, size_value=self.risk_pct, size_type=SizeType.PCT_RISK,
                          order_type=OrderType.MARKET, sl_price=sl, tp_price=tp)
         return None
@@ -177,11 +177,11 @@ class HeikinAshiStrategy(BaseStrategy):
         atr = float(self._atr[i]) if self._atr[i] > 0 else float(self._atr[max(0, i - 1)])
         sl_dist = self.sl_atr_mult * atr
         if position.is_long():
-            sl = round(round((position.entry_price - sl_dist) / 0.25) * 0.25, 10)
-            tp = round(round((position.entry_price + self.rr_ratio * sl_dist) / 0.25) * 0.25, 10)
+            sl = self._round_tick((position.entry_price - sl_dist))
+            tp = self._round_tick((position.entry_price + self.rr_ratio * sl_dist))
         else:
-            sl = round(round((position.entry_price + sl_dist) / 0.25) * 0.25, 10)
-            tp = round(round((position.entry_price - self.rr_ratio * sl_dist) / 0.25) * 0.25, 10)
+            sl = self._round_tick((position.entry_price + sl_dist))
+            tp = self._round_tick((position.entry_price - self.rr_ratio * sl_dist))
         position.set_initial_sl_tp(sl, tp)
 
     def manage_position(self, data: MarketData, i: int, position: OpenPosition) -> Optional[PositionUpdate]:

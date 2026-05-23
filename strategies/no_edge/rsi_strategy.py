@@ -152,14 +152,14 @@ class RSIStrategy(BaseStrategy):
         rsi_j, rsi_prev = self._rsi_rs[j], self._rsi_rs[j - 1]
         # Long: RSI crosses below oversold
         if rsi_j < self.oversold and rsi_prev >= self.oversold:
-            sl = round(round((data.close_1m[i] - self.sl_atr_multiplier * atr) / 0.25) * 0.25, 10)
-            tp = round(round((data.close_1m[i] + self.rr_ratio * self.sl_atr_multiplier * atr) / 0.25) * 0.25, 10)
+            sl = self._round_tick((data.close_1m[i] - self.sl_atr_multiplier * atr))
+            tp = self._round_tick((data.close_1m[i] + self.rr_ratio * self.sl_atr_multiplier * atr))
             return Order(direction=1, size_value=self.risk_pct, size_type=SizeType.PCT_RISK,
                          order_type=OrderType.MARKET, sl_price=sl, tp_price=tp)
         # Short: RSI crosses above overbought
         if rsi_j > self.overbought and rsi_prev <= self.overbought:
-            sl = round(round((data.close_1m[i] + self.sl_atr_multiplier * atr) / 0.25) * 0.25, 10)
-            tp = round(round((data.close_1m[i] - self.rr_ratio * self.sl_atr_multiplier * atr) / 0.25) * 0.25, 10)
+            sl = self._round_tick((data.close_1m[i] + self.sl_atr_multiplier * atr))
+            tp = self._round_tick((data.close_1m[i] - self.rr_ratio * self.sl_atr_multiplier * atr))
             return Order(direction=-1, size_value=self.risk_pct, size_type=SizeType.PCT_RISK,
                          order_type=OrderType.MARKET, sl_price=sl, tp_price=tp)
         return None
@@ -171,11 +171,11 @@ class RSIStrategy(BaseStrategy):
             return
         sl_dist = self.sl_atr_multiplier * atr
         if position.is_long():
-            sl = round(round((entry - sl_dist) / 0.25) * 0.25, 10)
-            tp = round(round((entry + self.rr_ratio * sl_dist) / 0.25) * 0.25, 10)
+            sl = self._round_tick((entry - sl_dist))
+            tp = self._round_tick((entry + self.rr_ratio * sl_dist))
         else:
-            sl = round(round((entry + sl_dist) / 0.25) * 0.25, 10)
-            tp = round(round((entry - self.rr_ratio * sl_dist) / 0.25) * 0.25, 10)
+            sl = self._round_tick((entry + sl_dist))
+            tp = self._round_tick((entry - self.rr_ratio * sl_dist))
         position.set_initial_sl_tp(sl, tp)
 
     def manage_position(

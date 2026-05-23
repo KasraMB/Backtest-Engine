@@ -210,7 +210,11 @@ class VWAPMeanRevStrategy(BaseStrategy):
             return self.starting_equity
         n = len(self.closed_trades)
         while self._eq_cache_n < n:
-            self._eq_cache += self.closed_trades[self._eq_cache_n].net_pnl_dollars
+            # Recompute net $ at this instrument's point value (Trade.net_pnl_dollars
+            # uses a module-level NQ point value). For NQ this is bit-for-bit equal.
+            t = self.closed_trades[self._eq_cache_n]
+            self._eq_cache += ((t.pnl_points - 2 * t.slippage_points) * t.contracts * self.point_value
+                               - t.commission_per_contract * 2 * t.contracts)
             self._eq_cache_n += 1
         return self._eq_cache
 
@@ -279,14 +283,14 @@ class VWAPMeanRevStrategy(BaseStrategy):
         if sl_dist <= 0.0:
             return None
         if direction == 1:
-            sl_price = _tick(entry - sl_dist)
-            tp_price = _tick(entry + self.rr_ratio * sl_dist)
+            sl_price = self._round_tick(entry - sl_dist)
+            tp_price = self._round_tick(entry + self.rr_ratio * sl_dist)
         else:
-            sl_price = _tick(entry + sl_dist)
-            tp_price = _tick(entry - self.rr_ratio * sl_dist)
+            sl_price = self._round_tick(entry + sl_dist)
+            tp_price = self._round_tick(entry - self.rr_ratio * sl_dist)
 
         equity    = self._current_equity()
-        contracts = int(equity * self.risk_per_trade / (sl_dist * POINT_VALUE))
+        contracts = int(equity * self.risk_per_trade / (sl_dist * self.point_value))
         if contracts < 1:
             return None
 

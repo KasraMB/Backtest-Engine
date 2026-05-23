@@ -175,11 +175,11 @@ class LondonBreakoutStrategy(BaseStrategy):
             return
 
         if position.is_long():
-            sl = _tick_round(entry - self.sl_atr_multiplier * atr)
-            tp = _tick_round(entry + self.rr_ratio * self.sl_atr_multiplier * atr)
+            sl = self._round_tick(entry - self.sl_atr_multiplier * atr)
+            tp = self._round_tick(entry + self.rr_ratio * self.sl_atr_multiplier * atr)
         else:
-            sl = _tick_round(entry + self.sl_atr_multiplier * atr)
-            tp = _tick_round(entry - self.rr_ratio * self.sl_atr_multiplier * atr)
+            sl = self._round_tick(entry + self.sl_atr_multiplier * atr)
+            tp = self._round_tick(entry - self.rr_ratio * self.sl_atr_multiplier * atr)
 
         position.set_initial_sl_tp(sl, tp)
 

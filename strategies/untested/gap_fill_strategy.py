@@ -146,14 +146,14 @@ class GapFillStrategy(BaseStrategy):
             return None   # only trade gap-ups for short
 
         # SL distance = gap_size * sl_frac
-        sl_dist = _tick(max(gap_abs * self.sl_frac, TICK * 4))
+        sl_dist = self._round_tick(max(gap_abs * self.sl_frac, TICK * 4))
         self._pending_sl_dist     = sl_dist
         self._pending_prior_close = self._prev_close
 
         if gap_up:
             # Fade gap up → SHORT
-            tp_px = _tick(self._prev_close)
-            sl_px = _tick(curr_open + sl_dist)
+            tp_px = self._round_tick(self._prev_close)
+            sl_px = self._round_tick(curr_open + sl_dist)
             return Order(
                 direction    = -1,
                 order_type   = OrderType.MARKET,
@@ -167,8 +167,8 @@ class GapFillStrategy(BaseStrategy):
             )
         else:
             # Fade gap down → LONG
-            tp_px = _tick(self._prev_close)
-            sl_px = _tick(curr_open - sl_dist)
+            tp_px = self._round_tick(self._prev_close)
+            sl_px = self._round_tick(curr_open - sl_dist)
             return Order(
                 direction    = 1,
                 order_type   = OrderType.MARKET,
@@ -185,24 +185,24 @@ class GapFillStrategy(BaseStrategy):
         """Recompute SL from actual fill; TP anchored to prior close."""
         fill    = position.entry_price
         prior   = self._pending_prior_close
-        sl_dist = _tick(max(self._pending_sl_dist, TICK))
+        sl_dist = self._round_tick(max(self._pending_sl_dist, TICK))
 
         if position.is_long():
             tp_dist = prior - fill
-            sl = _tick(fill - sl_dist)
+            sl = self._round_tick(fill - sl_dist)
         else:
             tp_dist = fill - prior
-            sl = _tick(fill + sl_dist)
+            sl = self._round_tick(fill + sl_dist)
 
         if tp_dist < 1.0:
             # Gap already filled by the time we entered; extend TP past prior close
             # by half the SL distance so the trade can still produce a small gain.
             if position.is_long():
-                tp = _tick(fill + sl_dist * 0.5)
+                tp = self._round_tick(fill + sl_dist * 0.5)
             else:
-                tp = _tick(fill - sl_dist * 0.5)
+                tp = self._round_tick(fill - sl_dist * 0.5)
         else:
-            tp = _tick(prior)
+            tp = self._round_tick(prior)
 
         position.set_initial_sl_tp(sl, tp)
 

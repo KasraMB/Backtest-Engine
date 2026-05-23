@@ -171,15 +171,15 @@ class ORBStopStrategy(BaseStrategy):
 
         # sl_price in Order is used for PCT_RISK sizing from stop_px.
         # tp_price is a wide placeholder — on_fill overwrites both from actual fill.
-        sl_dist = _tick(max(self.sl_atr_mult * atr, TICK * 4))  # min 1pt SL
-        tp_dist = _tick(sl_dist * self.rr_ratio)
+        sl_dist = self._round_tick(max(self.sl_atr_mult * atr, TICK * 4))  # min 1pt SL
+        tp_dist = self._round_tick(sl_dist * self.rr_ratio)
         self._pending_sl_dist = sl_dist
 
         if go_long:
-            stop_px = _tick(self._range_high + TICK)
+            stop_px = self._round_tick(self._range_high + TICK)
             # sl_price used for PCT_RISK sizing; tp_price set wide (on_fill overrides both)
-            sl_px   = _tick(stop_px - sl_dist)
-            tp_px   = _tick(stop_px + tp_dist + 100.0)  # wide placeholder, on_fill corrects
+            sl_px   = self._round_tick(stop_px - sl_dist)
+            tp_px   = self._round_tick(stop_px + tp_dist + 100.0)  # wide placeholder, on_fill corrects
             return Order(
                 direction   = 1,
                 order_type  = OrderType.STOP,
@@ -192,9 +192,9 @@ class ORBStopStrategy(BaseStrategy):
                 trade_reason= "orb_long",
             )
         else:
-            stop_px = _tick(self._range_low - TICK)
-            sl_px   = _tick(stop_px + sl_dist)
-            tp_px   = _tick(stop_px - tp_dist - 100.0)  # wide placeholder, on_fill corrects
+            stop_px = self._round_tick(self._range_low - TICK)
+            sl_px   = self._round_tick(stop_px + sl_dist)
+            tp_px   = self._round_tick(stop_px - tp_dist - 100.0)  # wide placeholder, on_fill corrects
             return Order(
                 direction   = -1,
                 order_type  = OrderType.STOP,
@@ -210,14 +210,14 @@ class ORBStopStrategy(BaseStrategy):
     def on_fill(self, position: OpenPosition, data: MarketData, i: int) -> None:
         """Recompute SL/TP from actual fill price to guarantee exact RR."""
         fill    = position.entry_price
-        sl_dist = _tick(max(self._pending_sl_dist, TICK))
-        tp_dist = _tick(sl_dist * self.rr_ratio)
+        sl_dist = self._round_tick(max(self._pending_sl_dist, TICK))
+        tp_dist = self._round_tick(sl_dist * self.rr_ratio)
         if position.is_long():
-            sl = _tick(fill - sl_dist)
-            tp = _tick(fill + tp_dist)
+            sl = self._round_tick(fill - sl_dist)
+            tp = self._round_tick(fill + tp_dist)
         else:
-            sl = _tick(fill + sl_dist)
-            tp = _tick(fill - tp_dist)
+            sl = self._round_tick(fill + sl_dist)
+            tp = self._round_tick(fill - tp_dist)
         position.set_initial_sl_tp(sl, tp)
 
     def manage_position(self, data: MarketData, i: int,

@@ -210,7 +210,7 @@ class IntradayIntervalMomentumHuang(BaseStrategy):
             # For long: set SL above current price → forced exit
             # For short: set SL below current price → forced exit
             if position.is_long():
-                return PositionUpdate(new_sl_price=current_price + 0.25)
+                return PositionUpdate(new_sl_price=current_price + self.tick_size)
             else:
-                return PositionUpdate(new_sl_price=current_price - 0.25)
+                return PositionUpdate(new_sl_price=current_price - self.tick_size)
         return None

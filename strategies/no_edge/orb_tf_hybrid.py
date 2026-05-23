@@ -44,9 +44,10 @@ def _tick(price: float) -> float:
     return round(round(price / TICK) * TICK, 10)
 
 
-def _load_daily():
+def _load_daily(symbol: str):
     """Load D1 data with ATR5, SMA200, SMA20/50/100, prev close."""
-    df = pd.read_parquet(_PATH)
+    path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', f'{symbol}_1day_full_data.parquet')
+    df = pd.read_parquet(path)
     df = df.rename(columns={'Last': 'Close'})
     df['Date'] = pd.to_datetime(df['Date']).dt.normalize()
     df = df.sort_values('Date').reset_index(drop=True)
@@ -79,14 +80,13 @@ def _load_daily():
     )
 
 
-_CACHE = None
+_CACHE: dict = {}
 
 
-def _get_daily():
-    global _CACHE
-    if _CACHE is None:
-        _CACHE = _load_daily()
-    return _CACHE
+def _get_daily(symbol: str = 'NQ'):
+    if symbol not in _CACHE:
+        _CACHE[symbol] = _load_daily(symbol)
+    return _CACHE[symbol]
 
 
 class ORBTFHybridStrategy(BaseStrategy):
@@ -149,7 +149,7 @@ class ORBTFHybridStrategy(BaseStrategy):
     def _setup(self, data: MarketData) -> None:
         if self._dates is not None:
             return
-        dates, atr5, atr14, sma200, sma20, sma50, sma100, close, prev_close = _get_daily()
+        dates, atr5, atr14, sma200, sma20, sma50, sma100, close, prev_close = _get_daily(self.instrument_symbol)
         self._dates = dates
         self._atr5 = atr5
         self._atr14 = atr14
@@ -222,9 +222,9 @@ class ORBTFHybridStrategy(BaseStrategy):
         entry = float(data.open_1m[i])
 
         # Long breakout level
-        long_level = _tick(float(data.close_1m[i - 1] if i > 0 else open_price) + atr5 * self.atr_space_mult)
+        long_level = self._round_tick(float(data.close_1m[i - 1] if i > 0 else open_price) + atr5 * self.atr_space_mult)
         # Short breakout level
-        short_level = _tick(float(data.close_1m[i - 1] if i > 0 else open_price) - atr5 * self.atr_space_mult)
+        short_level = self._round_tick(float(data.close_1m[i - 1] if i > 0 else open_price) - atr5 * self.atr_space_mult)
 
         # Trend filter (D1 SMA20 vs SMA100)
         direction = 0
@@ -239,9 +239,9 @@ class ORBTFHybridStrategy(BaseStrategy):
                 if np.isnan(sma_f) or np.isnan(sma_s) or sma_f <= sma_s:
                     return None
             direction = 1
-            sl_price = _tick(entry * (1 - self.sl_pct))
+            sl_price = self._round_tick(entry * (1 - self.sl_pct))
             sl_dist = entry - sl_price
-            tp_price = _tick(entry + self.rr_ratio * sl_dist)
+            tp_price = self._round_tick(entry + self.rr_ratio * sl_dist)
 
         # Short breakout
         elif close_price < short_level:
@@ -251,15 +251,15 @@ class ORBTFHybridStrategy(BaseStrategy):
                 if np.isnan(sma_f) or np.isnan(sma_s) or sma_f >= sma_s:
                     return None
             direction = -1
-            sl_price = _tick(entry * (1 + self.sl_pct))
+            sl_price = self._round_tick(entry * (1 + self.sl_pct))
             sl_dist = sl_price - entry
-            tp_price = _tick(entry - self.rr_ratio * sl_dist)
+            tp_price = self._round_tick(entry - self.rr_ratio * sl_dist)
 
         if direction == 0:
             return None
 
         equity = self._current_equity()
-        contracts = max(1, int(equity * self.risk_per_trade / (sl_dist * POINT_VALUE)))
+        contracts = max(1, int(equity * self.risk_per_trade / (sl_dist * self.point_value)))
 
         self._traded_today = True
         self._direction = direction
@@ -304,18 +304,18 @@ class ORBTFHybridStrategy(BaseStrategy):
 
         # Update trailing stop
         if dir_mult == 1:
-            new_sl = _tick(close - self.trail_atr_mult * atr14)
+            new_sl = self._round_tick(close - self.trail_atr_mult * atr14)
             if new_sl > self._trail_sl:
                 self._trail_sl = new_sl
             # Only update if we're in profit or breakeven
-            pnl = (close - self._entry_price) * position.contracts * POINT_VALUE
+            pnl = (close - self._entry_price) * position.contracts * self.point_value
             if pnl >= 0:
                 return PositionUpdate(new_sl_price=new_sl)
         else:
-            new_sl = _tick(close + self.trail_atr_mult * atr14)
+            new_sl = self._round_tick(close + self.trail_atr_mult * atr14)
             if new_sl < self._trail_sl:
                 self._trail_sl = new_sl
-            pnl = (self._entry_price - close) * position.contracts * POINT_VALUE
+            pnl = (self._entry_price - close) * position.contracts * self.point_value
             if pnl >= 0:
                 return PositionUpdate(new_sl_price=new_sl)
 

@@ -222,31 +222,31 @@ class AsiaBreakoutStrategy(BaseStrategy):
 
         # SL/TP distances
         if self.sl_type == 'range':
-            sl_dist = _tick(max(asia_range, TICK * 4))
+            sl_dist = self._round_tick(max(asia_range, TICK * 4))
         else:
-            sl_dist = _tick(max(self.sl_atr_mult * atr, TICK * 4))
-        tp_dist = _tick(sl_dist * self.rr_ratio)
+            sl_dist = self._round_tick(max(self.sl_atr_mult * atr, TICK * 4))
+        tp_dist = self._round_tick(sl_dist * self.rr_ratio)
 
         self._order_placed = True
 
         # ── Build order ────────────────────────────────────────────────────
         if self.entry_mode == 'breakout':
             if go_long:
-                stop_px = _tick(asia_h + TICK)
+                stop_px = self._round_tick(asia_h + TICK)
                 return Order(
                     direction=1, order_type=OrderType.STOP,
                     size_type=SizeType.PCT_RISK, size_value=self.risk_per_trade,
                     stop_price=stop_px,
-                    sl_price=_tick(stop_px - sl_dist), tp_price=_tick(stop_px + tp_dist),
+                    sl_price=self._round_tick(stop_px - sl_dist), tp_price=self._round_tick(stop_px + tp_dist),
                     expiry_bars=self._expiry_bars, trade_reason='asia_break_long',
                 )
             else:
-                stop_px = _tick(asia_l - TICK)
+                stop_px = self._round_tick(asia_l - TICK)
                 return Order(
                     direction=-1, order_type=OrderType.STOP,
                     size_type=SizeType.PCT_RISK, size_value=self.risk_per_trade,
                     stop_price=stop_px,
-                    sl_price=_tick(stop_px + sl_dist), tp_price=_tick(stop_px - tp_dist),
+                    sl_price=self._round_tick(stop_px + sl_dist), tp_price=self._round_tick(stop_px - tp_dist),
                     expiry_bars=self._expiry_bars, trade_reason='asia_break_short',
                 )
 
@@ -255,21 +255,21 @@ class AsiaBreakoutStrategy(BaseStrategy):
             # If momentum was up, fade by going short when price tags Asia high
             if go_long:
                 # go_long after contrarian → we expect price to reach Asia low and rebound
-                stop_px = _tick(asia_l)
+                stop_px = self._round_tick(asia_l)
                 return Order(
                     direction=1, order_type=OrderType.STOP,
                     size_type=SizeType.PCT_RISK, size_value=self.risk_per_trade,
                     stop_price=stop_px,
-                    sl_price=_tick(stop_px - sl_dist), tp_price=_tick(stop_px + tp_dist),
+                    sl_price=self._round_tick(stop_px - sl_dist), tp_price=self._round_tick(stop_px + tp_dist),
                     expiry_bars=self._expiry_bars, trade_reason='asia_fade_long',
                 )
             else:
-                stop_px = _tick(asia_h)
+                stop_px = self._round_tick(asia_h)
                 return Order(
                     direction=-1, order_type=OrderType.STOP,
                     size_type=SizeType.PCT_RISK, size_value=self.risk_per_trade,
                     stop_price=stop_px,
-                    sl_price=_tick(stop_px + sl_dist), tp_price=_tick(stop_px - tp_dist),
+                    sl_price=self._round_tick(stop_px + sl_dist), tp_price=self._round_tick(stop_px - tp_dist),
                     expiry_bars=self._expiry_bars, trade_reason='asia_fade_short',
                 )
 
@@ -282,7 +282,7 @@ class AsiaBreakoutStrategy(BaseStrategy):
                     direction=1, order_type=OrderType.MARKET,
                     size_type=SizeType.PCT_RISK, size_value=self.risk_per_trade,
                     stop_price=0.0,
-                    sl_price=_tick(curr - sl_dist), tp_price=_tick(curr + tp_dist),
+                    sl_price=self._round_tick(curr - sl_dist), tp_price=self._round_tick(curr + tp_dist),
                     expiry_bars=390, trade_reason='asia_ny_long',
                 )
             else:
@@ -292,7 +292,7 @@ class AsiaBreakoutStrategy(BaseStrategy):
                     direction=-1, order_type=OrderType.MARKET,
                     size_type=SizeType.PCT_RISK, size_value=self.risk_per_trade,
                     stop_price=0.0,
-                    sl_price=_tick(curr + sl_dist), tp_price=_tick(curr - tp_dist),
+                    sl_price=self._round_tick(curr + sl_dist), tp_price=self._round_tick(curr - tp_dist),
                     expiry_bars=390, trade_reason='asia_ny_short',
                 )
 
@@ -310,12 +310,12 @@ class AsiaBreakoutStrategy(BaseStrategy):
         if self.sl_type == 'range':
             position.set_initial_sl_tp(position.sl_price, position.tp_price)
             return
-        sl_dist = _tick(max(self.sl_atr_mult * atr, TICK * 4))
-        tp_dist = _tick(sl_dist * self.rr_ratio)
+        sl_dist = self._round_tick(max(self.sl_atr_mult * atr, TICK * 4))
+        tp_dist = self._round_tick(sl_dist * self.rr_ratio)
         if position.is_long():
-            position.set_initial_sl_tp(_tick(fill - sl_dist), _tick(fill + tp_dist))
+            position.set_initial_sl_tp(self._round_tick(fill - sl_dist), self._round_tick(fill + tp_dist))
         else:
-            position.set_initial_sl_tp(_tick(fill + sl_dist), _tick(fill - tp_dist))
+            position.set_initial_sl_tp(self._round_tick(fill + sl_dist), self._round_tick(fill - tp_dist))
 
     def manage_position(self, data: MarketData, i: int,
                         position: OpenPosition) -> Optional[PositionUpdate]:

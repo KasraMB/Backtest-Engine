@@ -52,13 +52,14 @@ def _tick(price: float) -> float:
     return round(round(price / TICK) * TICK, 10)
 
 
-def _load_daily_arrays(sma_fast: int, sma_slow: int, lookback: int) -> tuple:
+def _load_daily_arrays(symbol: str, sma_fast: int, sma_slow: int, lookback: int) -> tuple:
     """
     Returns (date, sma_fast, sma_slow, hh, ll, atr14, close, prev_high, prev_low).
     hh/ll = rolling max/min of prior `lookback` bars (excluding the bar itself).
     prev_high/prev_low = the prior completed bar's actual high/low (for initial SL).
     """
-    df = pd.read_parquet(_DAILY_DATA_PATH)
+    path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', f'{symbol}_1day_full_data.parquet')
+    df = pd.read_parquet(path)
     df = df.rename(columns={'Last': 'Close'})
     df['Date'] = pd.to_datetime(df['Date']).dt.normalize()
     df = df.sort_values('Date').reset_index(drop=True)
@@ -95,10 +96,10 @@ def _load_daily_arrays(sma_fast: int, sma_slow: int, lookback: int) -> tuple:
 _DAILY_CACHE: dict = {}
 
 
-def _get_daily_arrays(sma_fast: int, sma_slow: int, lookback: int) -> tuple:
-    key = (sma_fast, sma_slow, lookback)
+def _get_daily_arrays(symbol: str, sma_fast: int, sma_slow: int, lookback: int) -> tuple:
+    key = (symbol, sma_fast, sma_slow, lookback)
     if key not in _DAILY_CACHE:
-        _DAILY_CACHE[key] = _load_daily_arrays(sma_fast, sma_slow, lookback)
+        _DAILY_CACHE[key] = _load_daily_arrays(symbol, sma_fast, sma_slow, lookback)
     return _DAILY_CACHE[key]
 
 
@@ -165,7 +166,7 @@ class TrendFollowingStrategy(BaseStrategy):
             self._bar_day = idx.normalize().view(np.int64) // (86_400 * 10**9)
 
         d_dates, d_sma_f, d_sma_s, d_hh, d_ll, d_atr14, d_close, d_phigh, d_plow = (
-            _get_daily_arrays(self.sma_fast, self.sma_slow, self.lookback)
+            _get_daily_arrays(self.instrument_symbol, self.sma_fast, self.sma_slow, self.lookback)
         )
 
         bar_dates = idx.normalize().values.astype('datetime64[D]')
@@ -242,16 +243,16 @@ class TrendFollowingStrategy(BaseStrategy):
 
         # Original: SL anchored at prior bar's High/Low (not entry price), fixed ATR buffer
         if direction == 1:
-            sl_price = _tick(prev_high - sl_dist)
+            sl_price = self._round_tick(prev_high - sl_dist)
             tp_price = None
         else:
-            sl_price = _tick(prev_low + sl_dist)
+            sl_price = self._round_tick(prev_low + sl_dist)
             tp_price = None
 
         self._entry_atr_dist = sl_dist  # stored for trailing — fixed for life of trade
 
         equity    = self._current_equity()
-        contracts = max(1, int(equity * self.risk_per_trade / (sl_dist * POINT_VALUE)))
+        contracts = max(1, int(equity * self.risk_per_trade / (sl_dist * self.point_value)))
 
         self._traded_today = True
         return Order(
@@ -287,14 +288,14 @@ class TrendFollowingStrategy(BaseStrategy):
         if self._direction == 1:
             if bar_high > self._high_wm:
                 self._high_wm = bar_high
-                new_sl = _tick(self._high_wm - self._entry_atr_dist)
+                new_sl = self._round_tick(self._high_wm - self._entry_atr_dist)
                 if new_sl > self._trail_sl:
                     self._trail_sl = new_sl
                     return PositionUpdate(new_sl_price=new_sl)
         else:
             if bar_low < self._low_wm:
                 self._low_wm = bar_low
-                new_sl = _tick(self._low_wm + self._entry_atr_dist)
+                new_sl = self._round_tick(self._low_wm + self._entry_atr_dist)
                 if new_sl < self._trail_sl:
                     self._trail_sl = new_sl
                     return PositionUpdate(new_sl_price=new_sl)

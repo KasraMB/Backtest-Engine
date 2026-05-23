@@ -45,14 +45,15 @@ def _tick(price: float) -> float:
     return round(round(price / TICK) * TICK, 10)
 
 
-def _load_daily_arrays() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def _load_daily_arrays(symbol: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Load NQ_1day_full_data.parquet and return:
+    Load {symbol}_1day_full_data.parquet and return:
         (date_arr, atr5_arr, sma200_arr, close_arr)
     date_arr is numpy datetime64[D], sorted ascending.
     ATR uses Wilder's method (simple rolling mean of TR — standard for D1 ATR).
     """
-    df = pd.read_parquet(_DAILY_DATA_PATH)
+    path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', f'{symbol}_1day_full_data.parquet')
+    df = pd.read_parquet(path)
     df = df.rename(columns={'Last': 'Close'})
     df['Date'] = pd.to_datetime(df['Date']).dt.normalize()
     df = df.sort_values('Date').reset_index(drop=True)
@@ -74,15 +75,14 @@ def _load_daily_arrays() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray
     return date_arr, atr5_arr, sma200_arr, close_arr
 
 
-# Module-level cache so multiple backtest runs reuse the loaded arrays
-_DAILY_CACHE: Optional[tuple] = None
+# Module-level cache (keyed by instrument symbol) so runs reuse loaded arrays
+_DAILY_CACHE: dict = {}
 
 
-def _get_daily_arrays() -> tuple:
-    global _DAILY_CACHE
-    if _DAILY_CACHE is None:
-        _DAILY_CACHE = _load_daily_arrays()
-    return _DAILY_CACHE
+def _get_daily_arrays(symbol: str = 'NQ') -> tuple:
+    if symbol not in _DAILY_CACHE:
+        _DAILY_CACHE[symbol] = _load_daily_arrays(symbol)
+    return _DAILY_CACHE[symbol]
 
 
 class ORBATRBreakoutStrategy(BaseStrategy):
@@ -164,7 +164,7 @@ class ORBATRBreakoutStrategy(BaseStrategy):
                 self._orb_open_int[k] = float(data.open_1m[j])
 
         # Load daily arrays
-        d_dates, d_atr5, d_sma200, d_close = _get_daily_arrays()
+        d_dates, d_atr5, d_sma200, d_close = _get_daily_arrays(self.instrument_symbol)
 
         # For each 1m bar at date D, find the last daily row with Date < D.
         # searchsorted('left') returns the first position >= D, so -1 gives last < D.
@@ -231,8 +231,8 @@ class ORBATRBreakoutStrategy(BaseStrategy):
             d1_atr   = float(self._bar_d1_atr5[i])
             if orb_open is not None and not np.isnan(d1_atr) and d1_atr > 0:
                 space = d1_atr * self.atr_space_mult
-                self._long_level  = _tick(orb_open + space)
-                self._short_level = _tick(orb_open - space)
+                self._long_level  = self._round_tick(orb_open + space)
+                self._short_level = self._round_tick(orb_open - space)
                 self._levels_set  = True
 
         # Entry window guard (runner's signal_bar_mask already ensures M30 closes only)
@@ -272,14 +272,14 @@ class ORBATRBreakoutStrategy(BaseStrategy):
         if sl_dist <= 0.0:
             return None
         if direction == 1:
-            sl_price = _tick(entry - sl_dist)
-            tp_price = _tick(entry + self.rr_ratio * sl_dist)
+            sl_price = self._round_tick(entry - sl_dist)
+            tp_price = self._round_tick(entry + self.rr_ratio * sl_dist)
         else:
-            sl_price = _tick(entry + sl_dist)
-            tp_price = _tick(entry - self.rr_ratio * sl_dist)
+            sl_price = self._round_tick(entry + sl_dist)
+            tp_price = self._round_tick(entry - self.rr_ratio * sl_dist)
 
         equity    = self._current_equity()
-        contracts = max(1, int(equity * self.risk_per_trade / (sl_dist * POINT_VALUE)))
+        contracts = max(1, int(equity * self.risk_per_trade / (sl_dist * self.point_value)))
 
         return Order(
             direction    = direction,

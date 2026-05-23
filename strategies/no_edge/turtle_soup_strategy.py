@@ -190,8 +190,8 @@ class TurtleSoupStrategy(BaseStrategy):
         # Fade the short breakout: price drops back below breakout high
         if not np.isnan(self._short_breakout) and cl < self._short_breakout:
             sl_dist  = sl_buf + (self._short_breakout - cl)
-            sl_price = _tick(self._short_breakout + sl_buf)
-            tp_price = _tick(cl - self.rr_ratio * sl_dist)
+            sl_price = self._round_tick(self._short_breakout + sl_buf)
+            tp_price = self._round_tick(cl - self.rr_ratio * sl_dist)
             equity   = self._current_equity()
             contracts = max(1, int(equity * self.risk_per_trade / (sl_dist * POINT_VALUE)))
             self._traded_4h = True
@@ -209,8 +209,8 @@ class TurtleSoupStrategy(BaseStrategy):
         # Fade the long breakout: price rallies back above breakout low
         if not np.isnan(self._long_breakout) and cl > self._long_breakout:
             sl_dist  = sl_buf + (cl - self._long_breakout)
-            sl_price = _tick(self._long_breakout - sl_buf)
-            tp_price = _tick(cl + self.rr_ratio * sl_dist)
+            sl_price = self._round_tick(self._long_breakout - sl_buf)
+            tp_price = self._round_tick(cl + self.rr_ratio * sl_dist)
             equity   = self._current_equity()
             contracts = max(1, int(equity * self.risk_per_trade / (sl_dist * POINT_VALUE)))
             self._traded_4h = True
