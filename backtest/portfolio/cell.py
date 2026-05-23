@@ -119,6 +119,15 @@ def backtest_cell(
     # deliberately NOT subtracted here — the propfirm sim charges micro/mini
     # commission itself at the actually-traded contract size.
     pnl = pnl - slip
+    # No-SL (time/EOD-exit) trades have no stop distance; extract_normalised_trades
+    # falls back to a degenerate 0.25-floor proxy that makes R price-scale-inflated.
+    # For those trades use the cell's MEAN ABSOLUTE net P&L (its typical trade
+    # magnitude) as the risk unit, so R is a comparable, instrument-agnostic
+    # quantity. Real-SL trades keep their true stop distance (unchanged).
+    no_sl = np.array([t.sl_price is None for t in res.trades], dtype=bool)
+    if no_sl.any():
+        risk_unit = max(float(np.mean(np.abs(pnl))), 1e-6)
+        sl = np.where(no_sl, risk_unit, sl)
     R = pnl / np.maximum(sl, 1e-6)
     mae = np.array([float(getattr(t, 'mae_points', 0.0) or 0.0) for t in res.trades],
                    dtype=np.float64)
@@ -154,16 +163,12 @@ def inclusion_filter(
     min_years_positive: int = 4,
     min_years_total: int = 5,
     require_bootstrap_p5_positive: bool = True,
-    max_proxy_sl_fraction: float = 0.0,
 ) -> tuple[bool, str]:
-    """Apply pre-registered inclusion criteria. Returns (passed, reason)."""
-    # A cell is only admissible if R is a true risk multiple, i.e. every trade
-    # has a real stop. No-SL (time/EOD-exit) strategies fall back to the
-    # 0.25-floor proxy in extract_normalised_trades, making R invalid and
-    # price-scale-inflated — they cannot be risk-normalised for this framework.
-    if result.proxy_sl_fraction > max_proxy_sl_fraction:
-        return False, (f"proxy_sl_fraction={result.proxy_sl_fraction:.2f} > "
-                       f"{max_proxy_sl_fraction} (no real stop → R invalid)")
+    """Apply pre-registered inclusion criteria. Returns (passed, reason).
+
+    No-SL (time/EOD-exit) cells are admissible: their R is normalised by mean
+    absolute P&L in backtest_cell (proxy_sl_fraction is retained for reporting,
+    not as a gate)."""
     if result.n_trades < min_trades:
         return False, f"n={result.n_trades} < {min_trades}"
     if result.mean_R < min_mean_R:
