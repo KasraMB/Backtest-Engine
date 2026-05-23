@@ -91,6 +91,15 @@ def backtest_cell(
         return CellResult(cell=cell, trades=pd.DataFrame(), n_trades=0,
                           mean_R=0.0, wr=0.0, sum_R=0.0, by_year={})
 
+    # Round-trip slippage. extract_normalised_trades returns GROSS points
+    # (exit_price - entry_price). For market next-open entries the entry side
+    # of slippage is already baked into entry_price by the runner, so the gross
+    # points already carry one side; for limit entries the runner applies no
+    # entry slippage. Subtracting one slippage_pt completes a realistic round
+    # trip in both cases (market: entry+exit; limit: exit only). Commission is
+    # deliberately NOT subtracted here — the propfirm sim charges micro/mini
+    # commission itself at the actually-traded contract size.
+    pnl = pnl - slippage_pt
     R = pnl / np.maximum(sl, 1e-6)
     mae = np.array([float(getattr(t, 'mae_points', 0.0) or 0.0) for t in res.trades],
                    dtype=np.float64)
