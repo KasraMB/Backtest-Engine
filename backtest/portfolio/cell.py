@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from backtest.data.market_data import MarketData
+from backtest.portfolio.instruments import spec as instrument_spec
 from backtest.propfirm.lucidflex import extract_normalised_trades
 from backtest.runner.config import RunConfig
 from backtest.runner.runner import run_backtest
@@ -70,20 +71,34 @@ class CellResult:
 def backtest_cell(
     cell: Cell,
     md: MarketData,
-    slippage_pt: float = DEFAULT_SLIPPAGE_PT,
+    slippage_pt: Optional[float] = None,
     commission_side: float = DEFAULT_COMMISSION_RT_2,
     fill_mode: str = DEFAULT_FILL_MODE,
     order_cancel: datetime.time = DEFAULT_ORDER_CANCEL,
     starting_capital: float = 100_000,
 ) -> CellResult:
-    """Run a single cell with realistic execution. Returns CellResult."""
+    """Run a single cell with realistic execution. Returns CellResult.
+
+    Per-instrument economics (tick size, slippage, point value) come from the
+    InstrumentSpec for cell.instrument and are injected into both the engine
+    (cfg.tick_size) and the strategy (params), so ES/YM trade on their true grid.
+    """
+    ispec = instrument_spec(cell.instrument)
+    slip  = ispec.slippage_points if slippage_pt is None else slippage_pt
+    params = {
+        **cell.params,
+        'tick_size':         ispec.tick_size,
+        'point_value':       ispec.mini_point_value,
+        'instrument_symbol': cell.instrument,
+    }
     cfg = RunConfig(
         starting_capital=starting_capital,
         commission_per_contract=commission_side,
-        slippage_points=slippage_pt,
+        slippage_points=slip,
+        tick_size=ispec.tick_size,
         fill_mode=fill_mode,
         order_cancel_time=order_cancel,
-        params=cell.params,
+        params=params,
     )
     res = run_backtest(cell.strategy_class, cfg, data=md, validate=False)
     pnl, sl = extract_normalised_trades(res.trades)
@@ -99,7 +114,7 @@ def backtest_cell(
     # trip in both cases (market: entry+exit; limit: exit only). Commission is
     # deliberately NOT subtracted here — the propfirm sim charges micro/mini
     # commission itself at the actually-traded contract size.
-    pnl = pnl - slippage_pt
+    pnl = pnl - slip
     R = pnl / np.maximum(sl, 1e-6)
     mae = np.array([float(getattr(t, 'mae_points', 0.0) or 0.0) for t in res.trades],
                    dtype=np.float64)

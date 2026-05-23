@@ -8,7 +8,7 @@ Public API:
   - portfolio_daily_R(...)   -> equal-weight combined daily R
   - propfirm_p_profit(...)   -> bootstrap propfirm sim on daily R
 """
-from backtest.portfolio.data import load_instrument
+from backtest.portfolio.data import load_instrument, load_instrument_window
 from backtest.portfolio.cell import (
     Cell, CellResult, backtest_cell, inclusion_filter, summarize_cells,
 )
@@ -17,7 +17,7 @@ from backtest.portfolio.sim import (
 )
 
 __all__ = [
-    'load_instrument', 'Cell', 'CellResult', 'backtest_cell',
-    'inclusion_filter', 'summarize_cells', 'build_per_day_arrays',
-    'portfolio_daily_R', 'propfirm_p_profit',
+    'load_instrument', 'load_instrument_window', 'Cell', 'CellResult',
+    'backtest_cell', 'inclusion_filter', 'summarize_cells',
+    'build_per_day_arrays', 'portfolio_daily_R', 'propfirm_p_profit',
 ]

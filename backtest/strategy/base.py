@@ -49,6 +49,19 @@ class BaseStrategy(ABC):
         # Set by the runner from RunConfig.reverse_signals before the bar loop.
         self._reverse_mode: bool = False
 
+        # Per-instrument economics (default = NQ, so existing NQ behaviour and
+        # baselines are bit-for-bit unchanged). The portfolio cell backtest
+        # injects the correct values for ES/YM via params.
+        p = params or {}
+        self.tick_size:        float = float(p.get('tick_size',   0.25))
+        self.point_value:      float = float(p.get('point_value', 20.0))
+        self.instrument_symbol: str  = str(p.get('instrument_symbol', 'NQ'))
+
+    def _round_tick(self, price: float) -> float:
+        """Round a price to this instrument's tick grid."""
+        t = self.tick_size
+        return round(round(price / t) * t, 10)
+
     def signal_bar_mask(self, data: 'MarketData') -> Optional['np.ndarray']:
         """Return a boolean array (length = n_bars) marking bars where
         generate_signals should be called.  The runner also uses this as the

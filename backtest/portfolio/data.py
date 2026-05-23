@@ -88,3 +88,46 @@ def load_instrument(symbol: str, cache_ok: bool = True) -> MarketData:
     with open(cache_path, 'wb') as f:
         pickle.dump(md, f)
     return md
+
+
+def _build_md_from_frames(df_1m: pd.DataFrame, df_5m: pd.DataFrame) -> MarketData:
+    """Construct a MarketData from (already-sliced) 1m/5m frames. bar_map and all
+    arrays are rebuilt from the SAME frames so indices stay aligned."""
+    from datetime import time as _time
+    loader = DataLoader(data_dir=str(DATA))
+    a1 = {c: df_1m[c].to_numpy(np.float64) for c in ('open', 'high', 'low', 'close', 'volume')}
+    a5 = {c: df_5m[c].to_numpy(np.float64) for c in ('open', 'high', 'low', 'close', 'volume')}
+    rth = (df_1m.index.time >= _time(9, 30)) & (df_1m.index.time <= _time(17, 0))
+    return MarketData(
+        df_1m=df_1m, df_5m=df_5m,
+        open_1m=a1['open'], high_1m=a1['high'], low_1m=a1['low'],
+        close_1m=a1['close'], volume_1m=a1['volume'],
+        open_5m=a5['open'], high_5m=a5['high'], low_5m=a5['low'],
+        close_5m=a5['close'], volume_5m=a5['volume'],
+        bar_map=loader._build_bar_map(df_1m, df_5m),
+        trading_dates=sorted(set(df_1m[rth].index.date)),
+    )
+
+
+def load_instrument_window(
+    symbol: str,
+    lo: 'pd.Timestamp | None' = None,
+    hi: 'pd.Timestamp | None' = None,
+    cache_ok: bool = True,
+) -> MarketData:
+    """Load an instrument and slice it to [lo, hi] (inclusive), returning a
+    MarketData whose 1m/5m frames, arrays, and bar_map are all consistent with
+    the sliced window. Shared by the Phase 2 driver and the NQ regression guard
+    so the slicing logic lives in exactly one place."""
+    md_full = load_instrument(symbol, cache_ok=cache_ok)
+    if lo is None and hi is None:
+        return md_full
+    m1 = np.ones(len(md_full.df_1m), dtype=bool)
+    m5 = np.ones(len(md_full.df_5m), dtype=bool)
+    if lo is not None:
+        m1 &= md_full.df_1m.index >= lo
+        m5 &= md_full.df_5m.index >= lo
+    if hi is not None:
+        m1 &= md_full.df_1m.index <= hi
+        m5 &= md_full.df_5m.index <= hi
+    return _build_md_from_frames(md_full.df_1m[m1], md_full.df_5m[m5])

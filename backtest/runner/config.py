@@ -32,6 +32,7 @@ class RunConfig:
     starting_capital: float
     slippage_points: float = 0.0
     commission_per_contract: float = 0.0
+    tick_size: float = 0.25   # instrument minimum price increment (NQ/ES 0.25, YM 1.0)
     eod_exit_time: time = field(default_factory=lambda: time(17, 0))
     order_cancel_time: time = field(default_factory=lambda: time(11, 0))  # cancel pending orders at this time
     reverse_signals: bool = False   # flip every signal: long→short, short→long (SL/TP offsets preserved)

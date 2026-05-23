@@ -93,6 +93,12 @@ class BaseStrategy(ABC):
         self.closed_trades: list = []
         self._reverse_mode: bool = False
 
+        # Per-instrument economics (default = NQ, bit-for-bit unchanged).
+        p = params or {}
+        self.tick_size:        float = float(p.get('tick_size',   0.25))
+        self.point_value:      float = float(p.get('point_value', 20.0))
+        self.instrument_symbol: str  = str(p.get('instrument_symbol', 'NQ'))
+
         # Allow trading_hours override via params.
         # Accepts a list of (start, end) time tuples, e.g.:
         #   params={"trading_hours": [(time(10,0), time(14,0))]}
@@ -101,6 +107,11 @@ class BaseStrategy(ABC):
         #   params={"trading_hours": "10:00-14:00,15:00-16:00"}
         if params and "trading_hours" in params:
             self.trading_hours = _parse_trading_hours(params["trading_hours"])
+
+    def _round_tick(self, price: float) -> float:
+        """Round a price to this instrument's tick grid."""
+        t = self.tick_size
+        return round(round(price / t) * t, 10)
 
     # ── Reversal helpers ─────────────────────────────────────────────────────
 

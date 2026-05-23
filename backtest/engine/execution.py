@@ -76,10 +76,12 @@ class ExecutionEngine:
     SL priority is a global invariant — never configurable.
     """
 
-    def __init__(self, slippage_points: float, commission_per_contract: float, eod_exit_time: time):
+    def __init__(self, slippage_points: float, commission_per_contract: float,
+                 eod_exit_time: time, tick_size: float = 0.25):
         self.slippage_points = slippage_points
         self.commission_per_contract = commission_per_contract
         self.eod_exit_time = eod_exit_time
+        self.tick_size = tick_size
 
     # ------------------------------------------------------------------
     # Fill logic
@@ -117,7 +119,7 @@ class ExecutionEngine:
         return FillResult(fill_price=bar.close, contracts=0)
 
     def _try_limit_fill(self, order: Order, bar: Bar) -> Optional[FillResult]:
-        lp = round_to_tick(order.limit_price)
+        lp = round_to_tick(order.limit_price, self.tick_size)
         if order.is_long():
             if bar.low <= lp:
                 return FillResult(fill_price=lp, contracts=0)
@@ -127,21 +129,21 @@ class ExecutionEngine:
         return None
 
     def _try_stop_fill(self, order: Order, bar: Bar) -> Optional[FillResult]:
-        sp = round_to_tick(order.stop_price)
+        sp = round_to_tick(order.stop_price, self.tick_size)
         if order.is_long():
             if bar.high >= sp:
-                fill_price = round_to_tick(max(bar.open, sp))
+                fill_price = round_to_tick(max(bar.open, sp), self.tick_size)
                 return FillResult(fill_price=fill_price, contracts=0)
         else:
             if bar.low <= sp:
-                fill_price = round_to_tick(min(bar.open, sp))
+                fill_price = round_to_tick(min(bar.open, sp), self.tick_size)
                 return FillResult(fill_price=fill_price, contracts=0)
         return None
 
     def _try_stop_limit_fill(self, order: Order, bar: Bar) -> Optional[FillResult]:
         """Stop triggers first, then limit fills using limit rules."""
-        sp = round_to_tick(order.stop_price)
-        lp = round_to_tick(order.limit_price)
+        sp = round_to_tick(order.stop_price, self.tick_size)
+        lp = round_to_tick(order.limit_price, self.tick_size)
 
         if order.is_long():
             if bar.high >= sp:
@@ -300,8 +302,8 @@ class ExecutionEngine:
 
         Returns ExitResult if the update triggers a forced exit, None otherwise.
         """
-        new_sl = round_to_tick(update.new_sl_price) if update.new_sl_price is not None else None
-        new_tp = round_to_tick(update.new_tp_price) if update.new_tp_price is not None else None
+        new_sl = round_to_tick(update.new_sl_price, self.tick_size) if update.new_sl_price is not None else None
+        new_tp = round_to_tick(update.new_tp_price, self.tick_size) if update.new_tp_price is not None else None
 
         # Cross-validation: SL and TP must not cross
         if new_sl is not None and new_tp is not None:

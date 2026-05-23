@@ -410,6 +410,7 @@ def _run_single(
         slippage_points=config.slippage_points,
         commission_per_contract=config.commission_per_contract,
         eod_exit_time=config.eod_exit_time,
+        tick_size=config.tick_size,
     )
     risk_manager = RiskManager()
     account = Account(balance=config.starting_capital)
@@ -513,7 +514,7 @@ def _run_single(
                 if pending is not None:
                     _validate_sl_tp_at_fill(pending.order, fill_price)
                     fill = FillResult(fill_price=fill_price, contracts=contracts)
-                    position = _open_position(pending.order, fill, i, order_placed_bar=pending.registered_bar)
+                    position = _open_position(pending.order, fill, i, order_placed_bar=pending.registered_bar, tick_size=config.tick_size)
                     strategy._on_fill(position, data, i)
                     _update_mae_mfe(position, bar)
                     same_bar = engine.check_same_bar_exit(position, bar, fill.fill_price)
@@ -572,7 +573,7 @@ def _run_single(
                         position = trade_or_position  # None if fully closed
                     else:
                         # New position from scratch
-                        position = _open_position(pending.order, fill, i, order_placed_bar=pending.registered_bar)
+                        position = _open_position(pending.order, fill, i, order_placed_bar=pending.registered_bar, tick_size=config.tick_size)
 
                         # Strategy sets SL/TP; wrapper handles reversal if needed
                         strategy._on_fill(position, data, i)
@@ -646,7 +647,7 @@ def _run_single(
 
                             from backtest.engine.execution import FillResult
                             fill = FillResult(fill_price=fill_price, contracts=contracts)
-                            position = _open_position(order, fill, i, order_placed_bar=i)
+                            position = _open_position(order, fill, i, order_placed_bar=i, tick_size=config.tick_size)
 
                             # Strategy sets SL/TP; wrapper handles reversal if needed
                             strategy._on_fill(position, data, i)
@@ -738,15 +739,16 @@ def run_backtest(
 # Private helpers
 # ---------------------------------------------------------------------------
 
-def _open_position(order: Order, fill, entry_bar: int, order_placed_bar: int = None) -> OpenPosition:
+def _open_position(order: Order, fill, entry_bar: int, order_placed_bar: int = None,
+                   tick_size: float = 0.25) -> OpenPosition:
     """Create an OpenPosition from a filled order. All prices rounded to tick grid."""
     return OpenPosition(
         direction=order.direction,
-        entry_price=round_to_tick(fill.fill_price),
+        entry_price=round_to_tick(fill.fill_price, tick_size),
         entry_bar=entry_bar,
         contracts=fill.contracts,
-        sl_price=round_to_tick(order.sl_price) if order.sl_price is not None else None,
-        tp_price=round_to_tick(order.tp_price) if order.tp_price is not None else None,
+        sl_price=round_to_tick(order.sl_price, tick_size) if order.sl_price is not None else None,
+        tp_price=round_to_tick(order.tp_price, tick_size) if order.tp_price is not None else None,
         trail_points=order.trail_points,
         trail_activation_points=order.trail_activation_points,
         trade_reason=order.trade_reason,
@@ -871,6 +873,6 @@ def _apply_delta(
     if contracts_to_open > 0:
         from backtest.engine.execution import FillResult
         new_fill = FillResult(fill_price=fill.fill_price, contracts=contracts_to_open)
-        new_position = _open_position(order, new_fill, bar_idx)
+        new_position = _open_position(order, new_fill, bar_idx, tick_size=engine.tick_size)
 
     return new_position
