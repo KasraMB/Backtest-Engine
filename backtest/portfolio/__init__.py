@@ -13,11 +13,13 @@ from backtest.portfolio.cell import (
     Cell, CellResult, backtest_cell, inclusion_filter, summarize_cells,
 )
 from backtest.portfolio.sim import (
-    build_per_day_arrays, portfolio_daily_R, propfirm_p_profit,
+    build_per_day_arrays, build_per_slot_arrays, portfolio_daily_R,
+    propfirm_p_profit, propfirm_p_profit_slots,
 )
 
 __all__ = [
     'load_instrument', 'load_instrument_window', 'Cell', 'CellResult',
     'backtest_cell', 'inclusion_filter', 'summarize_cells',
-    'build_per_day_arrays', 'portfolio_daily_R', 'propfirm_p_profit',
+    'build_per_day_arrays', 'build_per_slot_arrays', 'portfolio_daily_R',
+    'propfirm_p_profit', 'propfirm_p_profit_slots',
 ]
