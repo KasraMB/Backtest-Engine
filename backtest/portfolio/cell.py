@@ -106,6 +106,16 @@ def backtest_cell(
     )
     res = run_backtest(cell.strategy_class, cfg, data=md, validate=False)
     pnl, sl = extract_normalised_trades(res.trades)
+    # Narrow correction: only override sl_dist when a move-to-BREAK-EVEN has
+    # collapsed sl_price ~= entry (which would explode R via div-by-near-zero).
+    # Trailing stops (which leave SL at a meaningful distance from entry) are
+    # unaffected -> NQ baseline preserved for TrendFollowing etc.
+    for i, t in enumerate(res.trades):
+        isl = getattr(t, 'initial_sl_price', None)
+        if isl is None or t.sl_price is None:
+            continue
+        if abs(t.entry_price - t.sl_price) < 0.5:   # BE detected
+            sl[i] = abs(t.entry_price - isl)
     if len(pnl) == 0:
         return CellResult(cell=cell, trades=pd.DataFrame(), n_trades=0,
                           mean_R=0.0, wr=0.0, sum_R=0.0, by_year={})
