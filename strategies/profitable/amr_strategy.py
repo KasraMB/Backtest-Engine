@@ -17,6 +17,7 @@ from typing import Optional
 import numpy as np
 
 from backtest.data.market_data import MarketData
+from backtest.news import build_news_fair_arrays, load_news_calendar
 from backtest.strategy.base import BaseStrategy
 from backtest.strategy.enums import OrderType, SizeType
 from backtest.strategy.order import Order
@@ -30,6 +31,8 @@ _SESSION_MAP: dict[str, int] = {
     "1400": 14 * 60,
     "2000": 20 * 60,
     "300":  3  * 60,
+    "1800": 18 * 60,        # 6pm reopen (vid2 primary fair-price anchor)
+    "830":  8  * 60 + 30,   # 8:30 news (vid3 highest-win-rate reversion)
 }
 
 try:
@@ -75,7 +78,7 @@ def _compute_signals(
     n:          int,
     threshold_uw:   float,   # Upper Wick close-position threshold (default 0.8)
     threshold_mw:   float,   # Marubozu wick/range ratio threshold (default 0.15)
-    displacement_style: int, # 0=Upper Wick, 1=Marubozu
+    displacement_style: int, # 0=Upper Wick, 1=Marubozu, 2=PrevCandle
     atr_mult:       float,
     session_opens:  np.ndarray,   # int32, session open times in minutes
     window_mins_arr: np.ndarray,  # int32, per-session window durations
@@ -91,6 +94,9 @@ def _compute_signals(
     sl_ticks_mid:  int,
     sl_ticks_high: int,
     tp_multiple:   float,
+    use_news_override: int,         # 1=consult news-aware fair/block arrays
+    news_fair_override: np.ndarray, # (N,) float64, NaN where inactive
+    news_block_mask:    np.ndarray, # (N,) bool, True = no entry
 ) -> tuple:
     MAX_SW = 200
     N      = len(closes)
@@ -141,6 +147,16 @@ def _compute_signals(
                     fair_valid  = 1
                     elapsed     = diff
                     break
+
+        # ── News-aware override (information-conditional fair price) ──────
+        # Only adjusts the fair VALUE within an already-active session window;
+        # never enables trading outside session windows. block_mask still
+        # suppresses entries near news (handled below).
+        if use_news_override == 1 and within:
+            nf = news_fair_override[i]
+            if nf == nf:  # not NaN
+                active_fair = nf
+                # fair_valid stays 1; within stays True; elapsed unchanged.
 
         # ── SL / TP ────────────────────────────────────────────────────────
         if av < atr_sl_low:
@@ -219,6 +235,10 @@ def _compute_signals(
         if elapsed < skip_first_mins:
             continue
 
+        # ── News block (no entry within pre_event_w..post_event_m of any event) ─
+        if use_news_override == 1 and news_block_mask[i]:
+            continue
+
         # ── Displacement candle ────────────────────────────────────────────
         candle_range = hi - lo
         range_safe   = candle_range if candle_range > 0.0 else 0.01
@@ -241,6 +261,19 @@ def _compute_signals(
             is_maru     = (total_wick / range_safe) <= threshold_mw
             bull_cond   = bull_cond and is_maru
             bear_cond   = bear_cond and is_maru
+        elif displacement_style == 2:  # PrevCandle: body bigger than previous bar's
+            # body, low total-wick ratio (the trader's literal "displacement candle").
+            # Fires at session opens where the 14-bar ATR gate would suppress signals.
+            body_i      = cl - op if cl >= op else op - cl
+            body_prev   = (closes[i - 1] - opens[i - 1] if closes[i - 1] >= opens[i - 1]
+                           else opens[i - 1] - closes[i - 1]) if i >= 1 else 0.0
+            body_top    = cl if cl >= op else op
+            body_bottom = op if op <= cl else cl
+            total_wick  = (hi - body_top) + (body_bottom - lo)
+            is_low_wick = (total_wick / range_safe) <= threshold_mw
+            bigger      = body_i > body_prev
+            bull_cond   = (cl >= op) and bigger and is_low_wick and atr_ok
+            bear_cond   = (cl < op)  and bigger and is_low_wick and atr_ok
 
         # ── Direction filter (Pine: longDirectionOK / shortDirectionOK) ───
         in_first     = elapsed <= against_fair_mins
@@ -314,6 +347,14 @@ class AnchoredMeanReversionStrategy(BaseStrategy):
         # Per-session trade constraints (unchanged from v1)
         self.session_config: dict = dict(p.get("session_config", {}))
 
+        # News-aware fair price (default OFF -> bit-for-bit unchanged)
+        self.use_news_fair: bool = bool(p.get("use_news_fair", False))
+        self.news_z_thresh: float = float(p.get("news_z_thresh", 1.0))
+        self.post_event_m:  int   = int(p.get("post_event_m", 15))
+        self.pre_event_w:   int   = int(p.get("pre_event_w",   5))
+        self.news_calendar_path: str = str(
+            p.get("news_calendar_path", "data/news_calendar_us.csv"))
+
         self._times_min:  Optional[np.ndarray] = None
         self._long_sig:   Optional[np.ndarray] = None
         self._short_sig:  Optional[np.ndarray] = None
@@ -357,7 +398,31 @@ class AnchoredMeanReversionStrategy(BaseStrategy):
 
         n_sess       = len(session_opens)
         link_s2_to_s1 = 1 if (self.link1400to930 and n_sess >= 2) else 0
-        disp_style   = 0 if self.displacement_style == "Upper Wick" else 1
+        disp_style   = (0 if self.displacement_style == "Upper Wick"
+                        else 2 if self.displacement_style == "PrevCandle"
+                        else 1)
+
+        # ── Optional news-aware fair-price override ──────────────────────
+        # Precomputed CAUSALLY in pure Python/numpy (see backtest/news/fair_price.py).
+        # Default OFF -> arrays are all-NaN / all-False -> kernel ignores them -> NQ
+        # baseline bit-for-bit identical.
+        N = len(data.close_1m)
+        if self.use_news_fair:
+            cal = load_news_calendar(self.news_calendar_path)
+            news_fair, news_block = build_news_fair_arrays(
+                data.df_1m.index,
+                data.open_1m, data.close_1m,
+                session_opens_min=[int(s) for s in session_opens.tolist()],
+                calendar_df=cal,
+                z_thresh=self.news_z_thresh,
+                post_event_m=self.post_event_m,
+                pre_event_w=self.pre_event_w,
+            )
+            use_news_flag = 1
+        else:
+            news_fair  = np.full(N, np.nan, dtype=np.float64)
+            news_block = np.zeros(N, dtype=np.bool_)
+            use_news_flag = 0
 
         self._long_sig, self._short_sig, self._sl_arr, self._tp_arr = _compute_signals(
             data.high_1m, data.low_1m, data.close_1m, data.open_1m,
@@ -373,6 +438,7 @@ class AnchoredMeanReversionStrategy(BaseStrategy):
             self.atr_sl_low, self.atr_sl_high,
             self.sl_ticks_low, self.sl_ticks_mid, self.sl_ticks_high,
             self.tp_multiple,
+            use_news_flag, news_fair, news_block,
         )
         self._sig_mask = self._long_sig | self._short_sig
 
