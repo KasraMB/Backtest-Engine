@@ -14,63 +14,146 @@ AMR anchor: AMR cfg495+ToD has p~0.55, RR=1.0, lambda~0.4, MAE_R~0.6 on wins.
 The sweep includes this point to verify the sim reproduces ~54% p_profit.
 """
 from __future__ import annotations
-
+from concurrent.futures import ProcessPoolExecutor
 import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
+import time
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
 from backtest.portfolio.sim import build_per_slot_arrays, propfirm_p_profit_slots
 
 SL_PTS = 16.0
+SLIPPAGE_PTS = 0.5             # 2-tick/side RT on NQ -> baked into R like backtest_cell does
+SLIP_R = SLIPPAGE_PTS / SL_PTS # ~0.0313 R drag per trade (win AND loss)
 MAX_TRADES_PER_DAY = 10
 N_TRAIN_DAYS = 1000
 SEEDS = (2026, 2027)
 ERP_GRID = (0.3, 0.4, 0.5, 0.7)
 
 
-def gen_trades(p: float, RR: float, lam: float, mae_alpha: float,
-               rho: float, n_days: int, seed: int) -> pd.DataFrame:
-    """Generate a synthetic trade DataFrame (cols: date, R, sl_dist, MAE_R).
-
-    Hidden 2-state Markov regime per day: stays with prob rho. GOOD scales p
-    by 1.2 (capped 1), BAD by 0.8. Within day: n trades ~ Poisson(lam),
-    capped. Per trade win ~ Bernoulli(p_today); R = +RR or -1; MAE_R coupled.
+def gen_trades(
+    p: float,
+    RR: float,
+    lam: float,
+    mae_alpha: float,
+    rho: float,
+    n_days: int,
+    seed: int,
+) -> pd.DataFrame:
     """
-    rng = np.random.default_rng(seed)
-    base_date = pd.Timestamp('2019-01-01')
-    state = 0   # 0=GOOD, 1=BAD
-    rows = []
-    for d in range(n_days):
-        # Markov transition
-        if rng.random() > rho:
-            state = 1 - state
-        p_today = min(max(p * (1.2 if state == 0 else 0.8), 0.01), 0.99)
-        n_t = min(rng.poisson(lam), MAX_TRADES_PER_DAY)
-        if n_t == 0:
-            continue
-        dt = base_date + pd.Timedelta(days=d)
-        wins = rng.random(n_t) < p_today
-        for w in wins:
-            if w:
-                R = float(RR)
-                mae_mean = mae_alpha * min(RR, 1.0) + 0.2
-                mae = max(0.0, mae_mean + rng.uniform(-0.1, 0.1))
-            else:
-                R = -1.0
-                mae = 1.0 + float(rng.exponential(0.1))
-            rows.append({'date': dt, 'R': R, 'sl_dist': SL_PTS, 'MAE_R': mae})
-    return pd.DataFrame(rows)
+    Vectorized synthetic trade generator.
+    """
 
+    rng = np.random.default_rng(seed)
+
+    # -------------------------------------------------
+    # Daily hidden Markov state
+    # -------------------------------------------------
+    states = np.empty(n_days, dtype=np.int8)
+
+    state = 0  # 0=GOOD, 1=BAD
+
+    for d in range(n_days):
+        if rng.random() > rho:
+            state ^= 1
+        states[d] = state
+
+    # GOOD=1.2x, BAD=0.8x
+    p_days = np.clip(
+        p * np.where(states == 0, 1.2, 0.8),
+        0.01,
+        0.99,
+    )
+
+    # -------------------------------------------------
+    # Trades/day
+    # -------------------------------------------------
+    n_trades = np.minimum(
+        rng.poisson(lam, size=n_days),
+        MAX_TRADES_PER_DAY,
+    )
+
+    total_trades = int(n_trades.sum())
+
+    if total_trades == 0:
+        return pd.DataFrame(
+            columns=['date', 'R', 'sl_dist', 'MAE_R']
+        )
+
+    # -------------------------------------------------
+    # Expand day index -> per-trade rows
+    # -------------------------------------------------
+    day_idx = np.repeat(np.arange(n_days), n_trades)
+
+    p_trade = p_days[day_idx]
+
+    # -------------------------------------------------
+    # Wins/losses
+    # -------------------------------------------------
+    wins = rng.random(total_trades) < p_trade
+
+    # -------------------------------------------------
+    # R values
+    # -------------------------------------------------
+    R = np.where(
+        wins,
+        RR - SLIP_R,
+        -1.0 - SLIP_R,
+    )
+
+    # -------------------------------------------------
+    # MAE
+    # -------------------------------------------------
+    mae = np.empty(total_trades, dtype=np.float32)
+
+    win_mask = wins
+    loss_mask = ~wins
+
+    mae_mean = mae_alpha * min(RR, 1.0) + 0.2
+
+    n_wins = int(win_mask.sum())
+    n_losses = total_trades - n_wins
+
+    mae[win_mask] = np.maximum(
+        0.0,
+        mae_mean + rng.uniform(-0.1, 0.1, size=n_wins),
+    )
+
+    mae[loss_mask] = (
+        1.0
+        + rng.exponential(0.1, size=n_losses)
+    )
+
+    # -------------------------------------------------
+    # Dates
+    # -------------------------------------------------
+    base_date = np.datetime64('2019-01-01')
+
+    dates = (
+        base_date
+        + day_idx.astype('timedelta64[D]')
+    )
+
+    # -------------------------------------------------
+    # Build DataFrame once
+    # -------------------------------------------------
+    return pd.DataFrame({
+        'date': dates,
+        'R': R.astype(np.float32),
+        'sl_dist': np.full(total_trades, SL_PTS, dtype=np.float32),
+        'MAE_R': mae,
+    })
 
 def measure_pprofit(df: pd.DataFrame) -> float:
     if len(df) == 0:
         return 0.0
+    t0 = time.perf_counter()
     arr = build_per_slot_arrays([df])
+    print(f'build_per_slot_arrays: {time.perf_counter() - t0:.3f}s')
     best = 0.0
     for erp in ERP_GRID:
         pp = float(np.mean([propfirm_p_profit_slots(arr, erp, budget=1000, n_sims=8000,
@@ -78,6 +161,31 @@ def measure_pprofit(df: pd.DataFrame) -> float:
         if pp > best:
             best = pp
     return best
+
+def run_cell(args):
+    mae_name, alpha, rho, lam, RR, p = args
+
+    df = gen_trades(
+        p=p,
+        RR=RR,
+        lam=lam,
+        mae_alpha=alpha,
+        rho=rho,
+        n_days=N_TRAIN_DAYS,
+        seed=2026,
+    )
+
+    pp = measure_pprofit(df)
+
+    return {
+        'MAE': mae_name,
+        'rho': rho,
+        'lam': lam,
+        'RR': RR,
+        'p': p,
+        'p_profit': pp,
+        'n_trades': len(df),
+    }
 
 
 def main():
@@ -92,25 +200,29 @@ def main():
     print('=== ANCHOR check (AMR cfg495+ToD ~ p=0.56, RR=1.0, lambda=0.4, MAE=0.6, rho=0.5) ===')
     anchor = gen_trades(p=0.56, RR=1.0, lam=0.4, mae_alpha=0.4, rho=0.5,
                         n_days=1000, seed=2026)
+    t0 = time.perf_counter()
     anchor_pp = measure_pprofit(anchor)
+    print(f'measure_pprofit time = {time.perf_counter() - t0:.2f}s')
     print(f'  n={len(anchor)} mean_R={anchor.R.mean():+.4f} | sim p_profit={anchor_pp:.4f}')
     print(f'  (empirical AMR cfg495+ToD = ~0.54 at $1K; calibration {"OK" if 0.40 < anchor_pp < 0.65 else "OFF"})')
     print()
 
     print('=== FEASIBILITY SWEEP ===')
     print('p_profit > 0.80 cells flagged with ***; > 0.70 with **; > 0.60 with *')
-    rows = []
-    for mae_name, alpha in MAE_REGIMES:
-        for rho in RHO_GRID:
-            for lam in LAM_GRID:
-                for RR in RR_GRID:
-                    for p in P_GRID:
-                        df = gen_trades(p, RR, lam, alpha, rho,
-                                        n_days=N_TRAIN_DAYS, seed=2026)
-                        pp = measure_pprofit(df)
-                        rows.append({'MAE': mae_name, 'rho': rho, 'lam': lam,
-                                     'RR': RR, 'p': p, 'p_profit': pp,
-                                     'n_trades': len(df)})
+
+
+    params = [
+    (mae_name, alpha, rho, lam, RR, p)
+        for mae_name, alpha in MAE_REGIMES
+        for rho in RHO_GRID
+        for lam in LAM_GRID
+        for RR in RR_GRID
+        for p in P_GRID
+    ]
+
+    with ProcessPoolExecutor() as ex:
+        rows = list(ex.map(run_cell, params))
+
     df_all = pd.DataFrame(rows)
     df_all.to_csv(REPO / 'results' / 'feasibility_sweep.csv', index=False)
 

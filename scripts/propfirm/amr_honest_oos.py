@@ -30,7 +30,7 @@ from backtest.propfirm.lucidflex import LUCIDFLEX_ACCOUNTS, extract_normalised_t
 from backtest.propfirm.three_phase_mc import three_phase_reinvestment_mc
 from backtest.runner.config import RunConfig
 from backtest.runner.runner import run_backtest
-from strategies.profitable.amr_strategy import AnchoredMeanReversionStrategy
+from strategies.amr_strategy import AnchoredMeanReversionStrategy
 
 A = LUCIDFLEX_ACCOUNTS['50K']
 BUDGET = 1000.0

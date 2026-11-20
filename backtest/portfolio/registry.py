@@ -1,6 +1,6 @@
 """Pre-registered portfolio cells (strategy × instrument).
 
-Auto-discovers strategy classes from `strategies/{profitable,no_edge,untested}/`.
+Auto-discovers strategy classes from the flat `strategies` package.
 LOCKED at first import: cell list cannot change after Phase 2 starts.
 """
 from __future__ import annotations
@@ -8,8 +8,10 @@ from __future__ import annotations
 import importlib
 import inspect
 import pkgutil
-from pathlib import Path
 from typing import Type
+
+import strategies
+from strategies import DISCOVERY_ORDER
 
 from backtest.portfolio.cell import Cell
 from backtest.strategy.base import BaseStrategy as _BaseStrategyA
@@ -40,28 +42,32 @@ _SKIP_NAMES = {
 
 
 def _discover_strategies() -> list[Type[BaseStrategy]]:
-    """Walk strategies/{profitable,no_edge,untested} and return all
+    """Walk the strategies package and return all
     BaseStrategy subclasses, deduplicated by class name."""
     out: dict[str, Type[BaseStrategy]] = {}
-    pkg_root = Path(__file__).resolve().parents[2] / 'strategies'
-    for sub in ('profitable', 'no_edge', 'untested'):
-        sub_pkg = importlib.import_module(f'strategies.{sub}')
-        for finder, name, ispkg in pkgutil.iter_modules(sub_pkg.__path__):
-            if ispkg or name.startswith('_'):
+    module_names = {
+        name for _, name, ispkg in pkgutil.iter_modules(strategies.__path__)
+        if not ispkg and not name.startswith('_')
+    }
+    # Retain historical cell ordering so saved portfolio results keep the same
+    # interpretation. Discover new strategy modules after the existing ones.
+    names = [name for name in DISCOVERY_ORDER if name in module_names]
+    names.extend(sorted(module_names.difference(DISCOVERY_ORDER)))
+    for name in names:
+        module_name = f'strategies.{name}'
+        mod = importlib.import_module(module_name)
+        for obj_name, obj in inspect.getmembers(mod, inspect.isclass):
+            if obj in _STRATEGY_BASES:
                 continue
-            mod = importlib.import_module(f'strategies.{sub}.{name}')
-            for obj_name, obj in inspect.getmembers(mod, inspect.isclass):
-                if obj in _STRATEGY_BASES:
-                    continue
-                if not any(issubclass(obj, b) for b in _STRATEGY_BASES):
-                    continue
-                if obj.__module__ != f'strategies.{sub}.{name}':
-                    continue                           # imported elsewhere
-                if obj_name in _SKIP_NAMES:
-                    continue
-                if obj_name in out:
-                    continue                           # dedup (e.g. AMR v1)
-                out[obj_name] = obj
+            if not any(issubclass(obj, b) for b in _STRATEGY_BASES):
+                continue
+            if obj.__module__ != module_name:
+                continue                           # imported elsewhere
+            if obj_name in _SKIP_NAMES:
+                continue
+            if obj_name in out:
+                continue                           # dedup (e.g. AMR v1)
+            out[obj_name] = obj
     return list(out.values())
 
 

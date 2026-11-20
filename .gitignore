@@ -1,28 +1,52 @@
-# Data — ignore raw/cache files, keep key outputs
-data/*
-!data/.gitkeep
-!data/ml_dataset.parquet
-!data/validated_configs.json
-
-# Python cache
-**/__pycache__/
-**/.pytest_cache/
-
-# Local working files
-verification_output.txt
-tmp*
+# Python environments, caches, and build outputs
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
 venv*/
-docs/superpowers/
+build/
+dist/
+*.egg-info/
+.coverage
+htmlcov/
 
-# Sweep result directories (keep active amr_v2)
-sweep_results_*/
-!sweep_results_amr_v2/
-sweeps/sweep_results*/
-
-# Trade logs
-trade_logs/*
+# Local data and generated research artifacts
+/data/*
+!/data/validated_configs.json
+/cache/
+/models/
+/results/
+/archive/
+/sweeps/
+/sweep_results_*/
+/trade_logs/
+/tearsheets/
+/*.csv
+/*.pkl
+/*.pkl.*
+*.log
 *.html
+*_err.txt
+*_out.txt
+sweep_output_direct.txt
+verification_output.txt
 
-# Propfirm regime daemon runtime artifacts
-regime_today.json
-scripts/propfirm/regime_update.log
+# Scratch work and local tooling
+tmp*
+.claude/
+.codex/
+.agents/
+.aws/
+.env
+.env.*
+!.env.example
+/docs/superpowers/
+/graphify-out/
+/tasks/
+/regime_today.json
+/bash.exe.stackdump
+
+# Workstation files
+.DS_Store
+Thumbs.db

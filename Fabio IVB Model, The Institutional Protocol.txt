@@ -1,0 +1,99 @@
+﻿Inputs: 
+ORB_Start_H_NY(8), 
+ORB_Start_M_NY(30), 
+ORB_Dur_Min(30), 
+Trade_End_H_NY(14), 
+Trade_End_M_NY(0), 
+TP_RR_Ratio(1.0), 
+Num_Contracts(1), 
+DeltaThreshold(200), 
+UseCumulativeDelta(false), 
+CumDeltaThreshold(500); 
+Variables: 
+ORB_Start_Time(0), ORB_End_Time(0), Trade_End_Time(0), 
+ORB_Inited(false), ORB_Session_Ended(false), 
+ORB_High(0), ORB_Low(0), 
+Long_Done_Today(false), Was_Long(false), 
+Pos_SL(0), Pos_TP(0), 
+Cur_Date_Int(0), Prev_Bar_Time(0), Bar_Time(0), 
+In_ORB(false), Trade_Active(false), 
+EP(0), SL_Price(0), TP_Price(0), 
+BarDelta(0), CumDelta(0), DeltaOK(false); 
+{ ===== ONE-TIME SETUP ===== } 
+Once begin 
+ORB_Start_Time = ORB_Start_H_NY * 100 + ORB_Start_M_NY; 
+Value1 = IntPortion(ORB_Start_Time / 100); 
+Value2 = Mod(ORB_Start_Time, 100); 
+Value3 = Value1 * 60 + Value2 + ORB_Dur_Min; 
+Value3 = Mod(Value3, 24 * 60); 
+if Value3 < 0 then Value3 = Value3 + 24 * 60; 
+ORB_End_Time = IntPortion(Value3 / 60) * 100 + Mod(Value3, 60); 
+Trade_End_Time = Trade_End_H_NY * 100 + Trade_End_M_NY; 
+end; 
+{ ===== SKIP FIRST BAR ===== } 
+if CurrentBar < 2 then begin 
+Cur_Date_Int = Date; Prev_Bar_Time = Time; 
+end; 
+if CurrentBar >= 2 then begin 
+{ ===== NEW DAY RESET ===== } 
+if Date <> Cur_Date_Int then begin 
+Cur_Date_Int = Date; 
+ORB_Inited = false; ORB_Session_Ended = false; 
+ORB_High = 0; ORB_Low = 0; 
+Long_Done_Today = false; Was_Long = false; 
+Pos_SL = 0; Pos_TP = 0; 
+CumDelta = 0; 
+end; 
+Bar_Time = Time; 
+In_ORB = (Bar_Time > ORB_Start_Time) and (Bar_Time <= ORB_End_Time); 
+Trade_Active = (Bar_Time > ORB_End_Time) and (Bar_Time <= Trade_End_Time); 
+{ ===== DELTA CALCULATION ===== } 
+BarDelta = Upticks - Downticks; 
+if Bar_Time > ORB_Start_Time and Bar_Time <= Trade_End_Time then 
+CumDelta = CumDelta + BarDelta; 
+{ continued on next page... }
+{ ...continued from previous page } 
+{ ===== BUILD ORB ===== } 
+if In_ORB then begin 
+if ORB_Inited = false then begin 
+ORB_High = High; ORB_Low = Low; ORB_Inited = true; 
+end 
+else begin 
+if High > ORB_High then ORB_High = High; 
+if Low < ORB_Low then ORB_Low = Low; 
+end; 
+end; 
+if ORB_Session_Ended = false and ORB_Inited and Bar_Time > ORB_End_Time then ORB_Session_Ended = true; 
+{ ===== DETECT LONG -> FLAT TO CLEAR LEVELS ===== } 
+if MarketPosition = 1 then Was_Long = true; 
+if MarketPosition = 0 and Was_Long then begin 
+Was_Long = false; Pos_SL = 0; Pos_TP = 0; 
+end; 
+{ ===== EOD EXIT ===== } 
+if Bar_Time >= Trade_End_Time and Prev_Bar_Time < Trade_End_Time then begin if MarketPosition = 1 then 
+Sell ("EOD-L") this bar on close; 
+end; 
+Prev_Bar_Time = Bar_Time; 
+{ ===== TP / SL WHILE LONG ===== } 
+if MarketPosition = 1 and Pos_SL <> 0 and Pos_TP <> 0 then begin Sell ("L-TP") next bar at Pos_TP limit; 
+Sell ("L-SL") next bar at Pos_SL stop; 
+end; 
+{ ===== ENTRY LOGIC ===== } 
+if ORB_Session_Ended 
+and Trade_Active 
+and Long_Done_Today = false 
+and MarketPosition = 0 
+and Close > ORB_High then begin 
+EP = Close; SL_Price = ORB_Low; 
+if SL_Price < EP then begin 
+DeltaOK = BarDelta >= DeltaThreshold; 
+if UseCumulativeDelta then 
+DeltaOK = DeltaOK and (CumDelta >= CumDeltaThreshold); 
+if DeltaOK then begin 
+TP_Price = EP + TP_RR_Ratio * (EP - SL_Price); 
+Pos_SL = SL_Price; Pos_TP = TP_Price; 
+Buy ("ORB-L MKT") Num_Contracts contracts this bar on close; Long_Done_Today = true; 
+end; 
+end; 
+end; 
+end;

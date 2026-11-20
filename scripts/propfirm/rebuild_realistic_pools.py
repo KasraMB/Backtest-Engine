@@ -35,7 +35,7 @@ sys.path.insert(0, str(REPO))
 from backtest.propfirm.lucidflex import extract_normalised_trades
 from backtest.runner.config import RunConfig
 from backtest.runner.runner import run_backtest
-from strategies.profitable.amr_strategy import AnchoredMeanReversionStrategy
+from strategies.amr_strategy import AnchoredMeanReversionStrategy
 
 CONFIGS_TO_REBUILD = ['cfg_406', 'cfg_495', 'cfg_152']
 SLIPPAGE = 0.5
