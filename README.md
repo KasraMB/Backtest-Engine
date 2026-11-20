@@ -1,128 +1,124 @@
-# NQ Futures Backtest Engine
+# Futures Backtest Engine
 
-Intraday NQ futures backtesting framework with an ML signal pipeline, prop firm Monte Carlo, and a correlated multi-account reinvestment simulator. Built for sweep-scale workloads — hundreds of thousands of configurations run on a single laptop in hours, not days.
+Python software for intraday futures research, with bar-based execution, parameter sweeps, an optional ML pipeline, and account/reinvestment simulations. The main scripts use NQ one-minute and five-minute bars; some strategies accept instrument-specific settings for other contracts.
 
----
+The project separates strategy signals from execution, risk, performance reporting, and account simulation. Results describe the configured model and input data. They do not establish a profitable live strategy.
 
-## Highlights
+## Capabilities
 
-**Engine**
-- 1m + 5m bar execution with realistic fill logic (slippage, commission, SL/TP, EOD exits)
-- Numba-JIT signal kernels: signals pre-computed in one forward pass, `generate_signals()` is O(1) per bar
-- `signal_bar_mask()` hook lets strategies declare candidate bars — runner skips the rest
-- Module-level signal cache keyed by `(data_id, params)` — sweep configs sharing a dataset pay setup once
-- ATR-tiered position sizing — MNQ micros ↔ NQ minis based on risk target
+- Bar-based order handling with configurable commissions, slippage, tick size, stop/target exits, and session-end liquidation.
+- A `BaseStrategy` interface with signal, fill, and position-management callbacks. Strategies can supply a `signal_bar_mask()` to skip irrelevant bars while flat.
+- Parameter sweeps that reuse cached signals or trade arrays where the strategy and filter permit it, with checkpoints in selected sweep scripts.
+- Walk-forward ML training, validation-based threshold selection, and optional HMM-based regime analysis.
+- Monte Carlo evaluation/funded-account models and a reinvestment simulator in which accounts within a simulated path share market draws.
 
-**ML Pipeline**
-- Walk-forward CV (2019–2022 train, 2023 validation, held-out test sets never touched)
-- HMM regime detection feeds regime-conditional trade pools into the prop firm sim
-- Ensemble model with sample weighting and threshold optimisation
+## Getting started
 
-**Prop Firm Monte Carlo**
-- Full LucidFlex eval + funded lifecycle: trailing EOD MLL with Initial-Trail lock, consistency rule, 5-day payout cycle, payout cap, balance deduction
-- Sweeps **all 4 account sizes** (25K / 50K / 100K / 150K) and the full 10×10 ERP × FRP grid per config
-- **Decomposed optimization**: ERP picked to maximise pass rate; FRP picked to maximise median EV/day given that ERP
-- 10× kernel call reduction by separating eval and funded sweeps (eval depends only on ERP, funded only on FRP)
-
-**Correlated Reinvestment Simulator** (`backtest/propfirm/correlated_mc.py`)
-- Replaces the independence assumption: accounts within one sim share daily market draws (correlated blowups), accounts across sims are independent
-- Regime-aware PnL draws via fitted HMM transition matrix — every sim runs its own market path
-- Account management strategy space: `greedy`, `on_fail`, `on_pass`, `on_close`, `on_payout`, `staggered` × `max_concurrent` × reserve cushion × stagger schedule
-- Multi-config slots with `1/N` risk scaling and intraday conflict resolution by `entry_time_min`
-- **Numba JIT kernel with `prange`** — ~15 µs per sim → 80 ms per combo at 5,000 sims; ~70× speedup over the vectorised NumPy baseline
-
-**Parameter Sweeps**
-- Decomposed: structural params (Sweep A) → filter params (Sweep B, post-processing) → risk × account (Phase 2) → reinvestment MC (Phase 3) → account management (final sweep)
-- Sweep B applies skip / TP-beyond-fair filters as NumPy boolean masks on cached A trade arrays — **757k filter combos in seconds**, no new backtests
-- Atomic checkpoints (tmp + `os.replace`) survive mid-write kills; resume picks up where it stopped
-- Lazy `_parent` + `_indices` records: B keeps top-N by Sortino in a heap, never instantiates the full PnL arrays
-
----
-
-## Architecture
-
-```
-DataLoader → MarketData → run_backtest() → RunResult → PerformanceEngine → TearsheetRenderer
-                                                  │
-                                                  ├→ Prop firm MC (Numba)         → EV/day, pass rate, payout
-                                                  └→ Correlated reinvestment MC   → P($0), P(>budget), P(goal)
-                              ↑
-                         ML pipeline (walk-forward, HMM regime, ensemble filter)
-```
-
-| Module | Purpose |
-|---|---|
-| `backtest/data/` | Data loading, MarketData container |
-| `backtest/runner/` | Per-bar execution loop, fills, SL/TP |
-| `backtest/engine/` | Position and order state machines |
-| `backtest/performance/` | Metrics, tearsheet, trade log |
-| `backtest/propfirm/lucidflex.py` | Per-account Monte Carlo (eval + funded Numba kernels) |
-| `backtest/propfirm/correlated_mc.py` | Multi-account correlated reinvestment sim, JIT'd |
-| `backtest/ml/` | Walk-forward training, features, ensemble |
-| `backtest/regime/` | HMM regime detection |
-| `strategies/` | Strategy implementations |
-| `sweeps/logs/` | Sweep results (git-tracked, shareable) |
-
----
-
-## Quick Start
+Run commands from the repository root in a virtual environment. For the core backtester and tests:
 
 ```bash
-pip install pandas numpy pytest plotly hmmlearn pyarrow fastparquet scipy numba
-
-python run.py                    # full backtest → tearsheet.html
-python run_ml_collect.py         # ML dataset → data/ml_dataset.parquet
-python run_ml_train.py           # train model → models/<name>.pkl
-python make_baseline.py --check  # verify trade hashes unchanged
-python -m pytest tests/ -v       # run tests (414 passing)
+python -m venv .venv
+# Activate .venv before continuing.
+python -m pip install numpy pandas scipy numba pyarrow pytest
+python -m pytest tests/test_core_objects.py tests/test_engine.py tests/test_runner.py -q
 ```
 
----
+The selected tests exercise core objects, execution, and the runner with synthetic inputs. The broader suite includes strategy and research tests with additional dependencies or data requirements:
 
-## Writing a Strategy
+```bash
+python -m pip install hmmlearn xgboost scikit-learn
+python -m pytest tests/ -q
+```
+
+Dependency versions are not pinned in this repository. Record the Python and package versions used for any reported experiment. No fixed passing-test count is claimed here.
+
+### Run a backtest with local data
+
+Supply your own data. The loader accepts text exports with date/time and OHLCV fields and maps supported headers to the engine's column names. See [the loader](backtest/data/loader.py) and [data cleaning](backtest/data/cleaner.py) for parsing, timezone, and filtering behavior.
+
+This example expects `data/NQ_1m.txt` and `data/NQ_5m.txt`. Adjust the filenames and date range to your data. The strategy is an existing example, not a recommendation or a claim of positive expected returns.
 
 ```python
-class MyStrategy(BaseStrategy):
-    def generate_signals(self, data: MarketData, i: int) -> Optional[Order]:
-        # called each bar when flat — return Order or None
-        ...
+from backtest.data.loader import DataLoader
+from backtest.runner.config import RunConfig
+from backtest.runner.runner import run_backtest
+from strategies.no_edge.asia_breakout_strategy import AsiaBreakoutStrategy
 
-    def on_fill(self, position: OpenPosition, data: MarketData, i: int) -> None:
-        position.set_initial_sl_tp(sl_price=..., tp_price=...)
-
-    def manage_position(self, data: MarketData, i: int,
-                        position: OpenPosition) -> Optional[PositionUpdate]:
-        ...
+data = DataLoader(data_dir="data").load(
+    path_1m="NQ_1m.txt",
+    path_5m="NQ_5m.txt",
+    start_date="2022-01-01",
+    end_date="2022-01-31",
+)
+config = RunConfig(
+    starting_capital=100_000,
+    slippage_points=0.25,
+    commission_per_contract=1.75,
+    fill_mode="next_open",
+)
+result = run_backtest(AsiaBreakoutStrategy, config, data=data)
+print(f"Trades: {len(result.trades)}")
 ```
 
-Override `signal_bar_mask(data)` to declare candidate bars — the runner skips everything else.
+The example costs are illustrative. `slippage_points` is in price points per fill, and commission is charged per contract per side. Review strategy parameters and session settings before interpreting an output.
 
----
+Historical driver scripts also use `data/NQ_1m.parquet`, `data/NQ_5m.parquet`, and `data/NQ_bar_map.npy`. Other strategies can require additional daily or auxiliary data. Data coverage depends on the files supplied; the repository does not guarantee a complete history through the present.
 
-## Data
+Some drivers retain imports from earlier strategy locations. For example, `run.py` imports `strategies.asia_breakout_strategy`, while the current file is under `strategies/no_edge/`. Update those imports and configure the inputs before using a historical driver. The direct API example above uses the current path.
 
-- **Instrument**: NQ (E-mini Nasdaq 100 futures) — `POINT_VALUE = 20.0`, `TICK_SIZE = 0.25`
-- **Bars**: 1m + 5m, 2019–present
-- **ML splits**: train 2019–2022, validation 2023, test sets held out
+## Execution assumptions
 
----
+Market-order timing is configured in [RunConfig](backtest/runner/config.py):
 
-## Prop Firm Pipeline
+- `signal_close` is the legacy default. Filling at the same bar's close can introduce lookahead when the signal requires that close to be known.
+- `next_open` defers a market-order fill until the next bar's open. It addresses that timing assumption; it does not validate every feature, signal, or exit rule.
 
-The full pipeline answers four questions in order:
+OHLC bars do not identify the complete intrabar price path, queue position, or available liquidity. Stop/target ordering and fills are model assumptions, particularly when both levels fall inside one bar. Inspect [the runner](backtest/runner/runner.py) and [execution engine](backtest/engine/) and test sensitivity to costs and fill settings.
 
-1. **What strategy parameters work?** — Sweep A/B searches the config space, ranked by daily Sortino
-2. **At what risk level?** — Phase 2 sweeps ERP × FRP × account size for the top survivors
-3. **What survival rate?** — Phase 3 reinvestment MC on each survivor
-4. **How should you manage multiple accounts?** — Correlated MC sweeps account management strategies × all pairs of top configs
+## Research status and data separation
 
-LucidFlex MLL rules implemented faithfully: initial MLL = `start − mll_amount`, trails the EOD peak, caps and locks at `start + $100` once the Initial Trail Balance (`start + mll_amount + $100`) is crossed, and locks immediately on a payout request.
+[The ML split definitions](backtest/ml/splits.py) currently label 2019-2022 as training, 2023 as validation, 2024 as `test1`, and 2025 onward as `test2`. These labels describe code partitions, not proof that those periods were untouched throughout development. Individual experiments can use different boundaries.
 
----
+Some historical parameters were tuned using later dates. `run.py` explicitly notes tuning on 2022-2025 for one parameter set. Those dates cannot be treated as an independent holdout for that selection process. Historical result files should be read with their experiment history, costs, and configuration.
 
-## Performance Notes
+For a new evaluation, record the data version, information available at each decision, selection procedure, and permitted training/validation dates. Freeze the selected procedure before examining a final evaluation period, and document any later reuse. Broad parameter searches also require accounting for selection effects and dependence between observations.
 
-- All Monte Carlo kernels use `@njit(parallel=True, cache=True, fastmath=True)` — released GIL, vectorised across paths
-- Correlated MC: per-sim state lives as `(n_sims, max_c)` NumPy arrays; `prange` across sims gives near-linear scaling on additional cores
-- Sweep checkpoints are atomic (tmp + `os.replace` + `fsync`) — never corrupted on interrupt
-- ML feature extraction uses a module-level cache so repeated calls during walk-forward training are instant
+The ML entry points are `run_ml_collect.py` and `run_ml_train.py`; collection produces `data/ml_dataset.parquet`, and training can save models under `models/`. They are research drivers with their own configuration and input requirements, rather than a single end-to-end validation guarantee.
+
+## Account and reinvestment simulation
+
+[`backtest/propfirm/lucidflex.py`](backtest/propfirm/lucidflex.py) contains four configured account sizes, evaluation/funded risk grids, drawdown and consistency logic, and payout accounting. These are coded assumptions and historical configurations, not a verified reproduction of every current firm rule or agreement. Check the implementation and configuration used by a particular run.
+
+[`backtest/propfirm/correlated_mc.py`](backtest/propfirm/correlated_mc.py) compares account-opening schedules, concurrency limits, and cash reserves. Accounts within a simulated investor path share daily market draws; separate investor simulations use separate draws. HMM-conditioned resampling and these shared draws impose a particular dependence model, rather than establishing the true joint distribution of future returns.
+
+Simulation pass rates, payouts, and cash outcomes depend on the supplied trade pools, costs, account rules, and sampling assumptions. They do not establish that a strategy's historical behavior will persist.
+
+## Sweeps, performance, and checkpoints
+
+The AMR sweep workflow separates structural backtests, post-processing of cached trades, account-risk selection, and reinvestment simulations. Filter reuse is appropriate only when the change does not require resimulating fills or position management.
+
+The saved [AMR v2 sweep log](sweeps/logs/amr_v2_sweep.log) records 4,951 base configurations and 153 filter combinations, or 757,503 combinations. It reports Sweep B completing in **402.7 seconds**, with the best 10,000 results retained in a heap. Sweep A had already completed and was resumed from a checkpoint. The log does not supply a complete machine/environment record, so this is a historical workload example, not a portable or end-to-end benchmark.
+
+Selected Monte Carlo kernels use Numba and `prange`. First-call compilation, input size, thread count, and output collection affect runtime. No universal speedup or near-linear core scaling is claimed.
+
+Some sweep scripts write a temporary pickle, flush it, attempt `fsync`, then replace the checkpoint with `os.replace`. This reduces exposure to partial replacement; it does not guarantee recovery from every interruption, filesystem failure, or concurrent writer. See [`tmp_amr_v2_sweep.py`](tmp_amr_v2_sweep.py) for one implementation.
+
+`python make_baseline.py --check` compares selected trade records with saved hashes when the required data and strategy imports are available. Matching a baseline detects output changes for those cases; it does not prove the strategy, execution model, or statistical evaluation is correct.
+
+## Code map
+
+| Path | Purpose |
+| --- | --- |
+| `backtest/data/` | Data loading, cleaning, and `MarketData` |
+| `backtest/strategy/` | Strategy callbacks, orders, and position updates |
+| `backtest/runner/` | Bar loop, configuration, and validation |
+| `backtest/engine/` | Execution, accounts, and risk handling |
+| `backtest/performance/` | Metrics, trade logs, and tearsheets |
+| `backtest/ml/` | Features, split definitions, training, and evaluation |
+| `backtest/regime/` | HMM and volatility-regime analysis |
+| `backtest/propfirm/` | Account and reinvestment simulations |
+| `strategies/` | Strategy implementations and historical experiments |
+| `tests/` | Unit, synthetic execution, and research tests |
+| `sweeps/logs/` | Saved experiment logs |
+
+Strategy folder names such as `profitable` or `no_edge` are organizational labels from past research. They do not certify a strategy's present profitability or performance on independent data.
